@@ -7,14 +7,22 @@ requires-python = ">=3.13"
 dependencies = [
     "alembic>=1.20.1",
     "asyncpg>=0.32.0",
+    "email-validator>=2.3.0",
     "fastapi>=0.162.0",
+    "pwdlib[argon2]>=0.3.1",
     "pydantic>=2.14.1",
     "pydantic-settings>=2.16.1",
+    "pyjwt>=2.15.1",
+    "python-multipart>=0.0.32",
     "redis>=8.1.0",
     "sqlalchemy[asyncio]>=2.1.6",
     "structlog>=26.1.0",
+    "typer>=0.27.3",
     "uvicorn[standard]>=0.54.0",
 ]
+
+[project.scripts]
+daily-report = "app.cli:cli"
 
 [build-system]
 requires = ["uv_build>=0.11.6,<0.12"]
@@ -37,8 +45,11 @@ ignore = [
     "PLR0913",  # FastAPI endpoint thường có nhiều tham số dependency
 ]
 
+[tool.ruff.lint.isort]
+known-first-party = ["app", "tests"]
+
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101", "PLR2004"]
+"tests/**" = ["S101", "S105", "S106", "PLR2004"]
 "migrations/versions/**" = ["N999"]
 
 [tool.mypy]
@@ -55,6 +66,7 @@ warn_required_dynamic_aliases = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
@@ -63,6 +75,8 @@ addopts = "-ra --strict-markers --strict-config"
 [tool.coverage.run]
 source = ["app"]
 branch = true
+# SQLAlchemy async chạy qua greenlet; thiếu dòng này coverage bỏ sót code sau các lệnh await DB.
+concurrency = ["thread", "greenlet"]
 
 [tool.coverage.report]
 show_missing = true
