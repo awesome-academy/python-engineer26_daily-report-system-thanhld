@@ -66,19 +66,19 @@ Hạn chốt: cuối Ngày 2. Chưa chốt thì làm theo đề xuất mặc đ�
 
 | # | Câu hỏi | Đề xuất mặc định | Ảnh hưởng |
 | --- | --- | --- | --- |
-| Q1 | Một nhân viên thuộc một hay nhiều bộ phận? | Một bộ phận (`users.department_id`). Nếu nhiều, đổi sang bảng liên kết. | Ngày 3, 5 |
-| Q2 | Một bộ phận có nhiều manager? Một manager quản lý nhiều bộ phận? | Có cả hai. | Ngày 3, 5 |
-| Q3 | Ai phải viết báo cáo? | Chỉ role User. | Ngày 4, 8 |
-| Q4 | Người nhận báo cáo chọn từ đâu? | Manager của bộ phận người viết, mặc định chọn tất cả. | Ngày 4 |
-| Q5 | Báo cáo đã gửi có được sửa, xóa? | Không. | Ngày 4 |
-| Q6 | Được tạo báo cáo cho ngày nào? | Hôm nay và tối đa 3 ngày trước, không cho tương lai. | Ngày 4, 8 |
-| Q7 | Manager thêm nhân viên từ đâu? Xem nhân viên trong phạm vi nào? | Thêm từ user role User chưa thuộc bộ phận nào. Chỉ xem nhân viên bộ phận mình. | Ngày 5 |
-| Q8 | Khi admin tạo tài khoản, mật khẩu do ai đặt? | User tự đặt qua link dùng 1 lần, hết hạn 24 giờ. | Ngày 3, 6 |
-| Q9 | Xóa user, bộ phận là xóa hẳn hay xóa mềm? | Xóa mềm; không xóa bộ phận còn thành viên. | Ngày 3 |
-| Q10 | File import có format bắt buộc? Một dòng lỗi thì sao? | File mẫu: email, họ tên, số điện thoại, ngày sinh, mã bộ phận, role. Có lỗi thì không ghi gì. | Ngày 7 |
-| Q11 | File export gồm những gì? | Một ngày, các bộ phận trong phạm vi. Cột: nhân viên, trạng thái nộp, 4 nội dung, giờ gửi. | Ngày 7 |
-| Q12 | Thống kê tháng: ngày làm việc, giờ gửi, người nhận? | Thứ 2 đến thứ 6, chưa trừ lễ. 08:00 ngày 1 tháng sau, gửi manager từng bộ phận. | Ngày 8 |
-| Q13 | Có gồm frontend và deploy server thật? | Không. Chỉ API, Swagger, Docker Compose. | Ngày 9, 10 |
+| Q1 | Một nhân viên thuộc một hay nhiều bộ phận? | Một bộ phận (`users.department_id`). Nếu nhiều, đổi sang bảng liên kết. | Ngày 4, 6 |
+| Q2 | Một bộ phận có nhiều manager? Một manager quản lý nhiều bộ phận? | Có cả hai. | Ngày 4, 6 |
+| Q3 | Ai phải viết báo cáo? | Chỉ role User. | Ngày 5, 9 |
+| Q4 | Người nhận báo cáo chọn từ đâu? | Manager của bộ phận người viết, mặc định chọn tất cả. | Ngày 5 |
+| Q5 | Báo cáo đã gửi có được sửa, xóa? | Không. | Ngày 5 |
+| Q6 | Được tạo báo cáo cho ngày nào? | Hôm nay và tối đa 3 ngày trước, không cho tương lai. | Ngày 5, 9 |
+| Q7 | Manager thêm nhân viên từ đâu? Xem nhân viên trong phạm vi nào? | Thêm từ user role User chưa thuộc bộ phận nào. Chỉ xem nhân viên bộ phận mình. | Ngày 6 |
+| Q8 | Khi admin tạo tài khoản, mật khẩu do ai đặt? | User tự đặt qua link dùng 1 lần, hết hạn 24 giờ. | Ngày 4, 7 |
+| Q9 | Xóa user, bộ phận là xóa hẳn hay xóa mềm? | Xóa mềm; không xóa bộ phận còn thành viên. | Ngày 4 |
+| Q10 | File import có format bắt buộc? Một dòng lỗi thì sao? | File mẫu: email, họ tên, số điện thoại, ngày sinh, mã bộ phận, role. Có lỗi thì không ghi gì. | Ngày 8 |
+| Q11 | File export gồm những gì? | Một ngày, các bộ phận trong phạm vi. Cột: nhân viên, trạng thái nộp, 4 nội dung, giờ gửi. | Ngày 8 |
+| Q12 | Thống kê tháng: ngày làm việc, giờ gửi, người nhận? | Thứ 2 đến thứ 6, chưa trừ lễ. 08:00 ngày 1 tháng sau, gửi manager từng bộ phận. | Ngày 9 |
+| Q13 | Có gồm frontend và deploy server thật? | Không. Chỉ API, Swagger, Docker Compose. | Ngày 10 |
 
 ## 5. Giả định chung
 

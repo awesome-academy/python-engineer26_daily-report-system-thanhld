@@ -68,7 +68,7 @@ Phụ thuộc một chiều: router → service → repository → model. Module
     └── api/
 ```
 
-## Luồng tạo báo cáo (Ngày 4, 6)
+## Luồng tạo báo cáo (Ngày 5, 7)
 
 1. `POST /api/v1/me/reports` kèm JWT. Router kiểm tra token, role USER, validate body.
 2. `ReportService` kiểm tra trùng ngày và người nhận hợp lệ, lưu báo cáo và người nhận trong 1 transaction, commit.
