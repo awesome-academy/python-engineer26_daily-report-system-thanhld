@@ -21,6 +21,18 @@ make dev               # build và chạy api, postgres, redis, mailpit
 
 Migration chạy tự động khi container `api` khởi động. Sửa code trong `src/` thì API tự reload.
 
+## Đăng nhập thử
+
+```bash
+docker compose exec api daily-report create-admin   # hoặc: make admin (chạy trên máy host)
+```
+
+1. Mở Swagger http://localhost:8001/docs, bấm **Authorize**.
+2. Ô `username` nhập email, ô `password` nhập mật khẩu vừa tạo.
+3. Gọi `GET /api/v1/me`.
+
+Đăng nhập theo chuẩn OAuth2 password flow, trả access token JWT (hết hạn sau 15 phút).
+
 ## Phát triển trên máy host
 
 ```bash
@@ -43,6 +55,7 @@ Test chạy trên PostgreSQL thật, database riêng `daily_report_test` (tự t
 | --- | --- |
 | `make dev` / `make down` | Chạy / dừng toàn bộ stack |
 | `make logs` | Xem log API |
+| `make admin` | Tạo tài khoản admin (CLI Typer: `uv run daily-report --help`) |
 | `make migrate` | Chạy migration tới bản mới nhất |
 | `make migration m="add users table"` | Tạo migration từ model |
 | `make format` | Tự sửa lint, format |
