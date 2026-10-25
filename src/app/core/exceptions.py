@@ -5,6 +5,7 @@ Format: {"error": {"code": "...", "message": "...", "details": ...}}
 
 from collections.abc import Mapping
 from enum import StrEnum
+from types import MappingProxyType
 from typing import Any
 
 import structlog
@@ -25,6 +26,8 @@ class ErrorCode(StrEnum):
     METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED"
     CONFLICT = "CONFLICT"
     INTERNAL_ERROR = "INTERNAL_ERROR"
+    INVALID_CREDENTIALS = "INVALID_CREDENTIALS"
+    EMAIL_ALREADY_EXISTS = "EMAIL_ALREADY_EXISTS"
 
 
 class AppError(Exception):
@@ -33,6 +36,7 @@ class AppError(Exception):
     status_code: int = status.HTTP_400_BAD_REQUEST
     code: ErrorCode = ErrorCode.BAD_REQUEST
     message: str = "Yêu cầu không hợp lệ."
+    headers: Mapping[str, str] | None = None
 
     def __init__(
         self,
@@ -51,6 +55,8 @@ class UnauthorizedError(AppError):
     status_code = status.HTTP_401_UNAUTHORIZED
     code = ErrorCode.UNAUTHORIZED
     message = "Bạn chưa đăng nhập hoặc phiên đăng nhập đã hết hạn."
+    # Chuẩn OAuth2: response 401 báo client cách xác thực.
+    headers = MappingProxyType({"WWW-Authenticate": "Bearer"})
 
 
 class ForbiddenError(AppError):
@@ -99,7 +105,7 @@ def error_response(
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def handle_app_error(_: Request, exc: AppError) -> JSONResponse:
-        return error_response(exc.status_code, exc.code, exc.message, exc.details)
+        return error_response(exc.status_code, exc.code, exc.message, exc.details, exc.headers)
 
     @app.exception_handler(RequestValidationError)
     async def handle_validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
