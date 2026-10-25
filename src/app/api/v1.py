@@ -6,4 +6,9 @@ Router được thêm dần theo kế hoạch trong docs/progress/10-day-plan.md
 
 from fastapi import APIRouter
 
+from app.modules.auth.router import router as auth_router
+from app.modules.users.router import me_router
+
 api_router = APIRouter(prefix="/api/v1")
+api_router.include_router(auth_router)
+api_router.include_router(me_router)
