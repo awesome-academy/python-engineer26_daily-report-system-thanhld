@@ -7,6 +7,7 @@ from importlib.metadata import version
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app import models as _models  # noqa: F401 (nạp đủ model trước khi SQLAlchemy nối quan hệ)
 from app.api.health import router as health_router
 from app.api.v1 import api_router
 from app.core.config import get_settings

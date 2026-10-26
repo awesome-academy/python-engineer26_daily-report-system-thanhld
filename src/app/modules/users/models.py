@@ -1,16 +1,23 @@
 from datetime import date, datetime
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
-from sqlalchemy import Date, DateTime, Enum, Index, String, func, text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import BigInteger, Date, DateTime, Enum, ForeignKey, Index, String, func, text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.constants import (
     EMAIL_MAX_LENGTH,
     FULL_NAME_MAX_LENGTH,
     PASSWORD_HASH_MAX_LENGTH,
     PHONE_MAX_LENGTH,
+    STORAGE_KEY_MAX_LENGTH,
 )
 from app.core.database import Base, BigIntPK, SoftDeleteMixin, TimestampMixin
+
+if TYPE_CHECKING:
+    from app.modules.auth.models import RefreshToken, UserToken
+    from app.modules.departments.models import Department
+    from app.modules.reports.models import DailyReport
 
 
 class UserRole(StrEnum):
@@ -32,10 +39,35 @@ class User(TimestampMixin, SoftDeleteMixin, Base):
     role: Mapped[UserRole] = mapped_column(
         Enum(UserRole, name="user_role"), default=UserRole.USER, server_default=UserRole.USER.value
     )
+    # Một nhân viên thuộc một bộ phận (Q1). Bộ phận bị xóa cứng thì về null.
+    department_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("departments.id", ondelete="SET NULL"), index=True
+    )
+    avatar_key: Mapped[str | None] = mapped_column(String(STORAGE_KEY_MAX_LENGTH))
     is_active: Mapped[bool] = mapped_column(default=True, server_default=text("true"))
     # Tăng khi đổi mật khẩu, khóa hoặc xóa user: mọi access token cũ hết hiệu lực ngay.
     token_version: Mapped[int] = mapped_column(default=0, server_default=text("0"))
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # lazy="raise": cấm tự load quan hệ khi truy cập (gây N+1, và lỗi với session async).
+    # Cần dữ liệu quan hệ thì load rõ ràng bằng selectinload/joinedload trong repository.
+    department: Mapped["Department | None"] = relationship(back_populates="members", lazy="raise")
+    managed_departments: Mapped[list["Department"]] = relationship(
+        secondary="department_managers",
+        back_populates="managers",
+        passive_deletes=True,
+        lazy="raise",
+    )
+    # RESTRICT ở DB giữ lịch sử báo cáo; ORM không tự sửa hay xóa báo cáo khi xóa user.
+    reports: Mapped[list["DailyReport"]] = relationship(
+        back_populates="author", passive_deletes="all", lazy="raise"
+    )
+    refresh_tokens: Mapped[list["RefreshToken"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", passive_deletes=True, lazy="raise"
+    )
+    tokens: Mapped[list["UserToken"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", passive_deletes=True, lazy="raise"
+    )
 
     @property
     def can_log_in(self) -> bool:
