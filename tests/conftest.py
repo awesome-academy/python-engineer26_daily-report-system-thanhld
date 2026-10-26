@@ -3,8 +3,9 @@
 Test chạy trên PostgreSQL thật, database riêng (TEST_DATABASE_URL), Redis dùng DB số 15.
 Mỗi test chạy trong một transaction và rollback khi kết thúc nên dữ liệu không lẫn nhau.
 
-Engine và client Redis của app được tạo lúc import app.main, nên biến môi trường phải được
-đặt trước. Vì vậy app chỉ được import bên trong fixture `app`, không import ở đầu file.
+Engine và client Redis của app được tạo lúc import, nên biến môi trường phải được đặt trước.
+Vì vậy app.models chỉ được import sau phần đặt biến môi trường, còn app.main chỉ được import
+bên trong fixture `app`.
 """
 
 import asyncio
@@ -41,7 +42,9 @@ if not str(make_url(TEST_DATABASE_URL).database).endswith("_test"):
 from app import models as _models  # noqa: E402, F401
 from app.core.database import engine as app_engine  # noqa: E402
 
-assert app_engine.url.database == make_url(TEST_DATABASE_URL).database
+if app_engine.url.database != make_url(TEST_DATABASE_URL).database:
+    msg = f"Engine của app đang trỏ tới {app_engine.url.database!r}, không phải database test"
+    raise RuntimeError(msg)
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 

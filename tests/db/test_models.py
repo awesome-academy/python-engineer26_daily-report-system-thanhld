@@ -157,8 +157,9 @@ async def test_hard_deleting_user_removes_tokens(db_session: AsyncSession) -> No
 
     await db_session.execute(delete(User).where(User.id == user.id))
 
-    assert await db_session.scalar(text("SELECT count(*) FROM refresh_tokens")) == 0
-    assert await db_session.scalar(text("SELECT count(*) FROM user_tokens")) == 0
+    for model in (RefreshToken, UserToken):
+        remaining = await db_session.scalars(select(model.id).where(model.user_id == user.id))
+        assert remaining.all() == []
 
 
 async def test_department_code_is_unique_among_active_departments_only(
@@ -208,9 +209,7 @@ async def test_email_dedup_key_prevents_sending_twice(db_session: AsyncSession) 
 
     db_session.add(log())
     await db_session.flush()
-    savepoint = await db_session.begin_nested()
-    db_session.add(log())
 
     with pytest.raises(IntegrityError, match="uq_email_logs_dedup_key"):
-        await db_session.flush()
-    await savepoint.rollback()
+        async with db_session.begin_nested():
+            db_session.add(log())
