@@ -1,5 +1,6 @@
 import pytest
 
+from app.core.config import get_settings
 from app.core.exceptions import UnauthorizedError
 from app.core.security import (
     create_access_token,
@@ -27,7 +28,7 @@ def test_access_token_round_trip_keeps_claims() -> None:
     claims = decode_access_token(token.token)
 
     assert (claims.user_id, claims.role, claims.token_version) == (42, "ADMIN", 3)
-    assert token.expires_in == 15 * 60
+    assert token.expires_in == get_settings().access_token_expire_minutes * 60
 
 
 def test_each_access_token_has_unique_id() -> None:

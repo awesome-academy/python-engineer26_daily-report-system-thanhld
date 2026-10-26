@@ -8,6 +8,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.constants import JWT_SECRET_MIN_LENGTH
 from tests.factories import DEFAULT_PASSWORD, auth_headers, create_user
 
 ME_URL = "/api/v1/me"
@@ -24,9 +25,10 @@ def make_token(user_id: int, **overrides: Any) -> str:
         "iat": now,
         "exp": now + timedelta(minutes=5),
     }
-    secret = overrides.pop("secret", get_settings().jwt_secret_key)
+    settings = get_settings()
+    secret = overrides.pop("secret", settings.jwt_secret_key)
     claims.update(overrides)
-    return jwt.encode(claims, secret, algorithm="HS256")
+    return jwt.encode(claims, secret, algorithm=settings.jwt_algorithm)
 
 
 async def test_me_returns_current_user_without_sensitive_fields(
@@ -77,7 +79,9 @@ async def test_me_requires_token(client: AsyncClient) -> None:
         pytest.param(
             lambda uid: make_token(uid, exp=datetime.now(UTC) - timedelta(seconds=1)), id="expired"
         ),
-        pytest.param(lambda uid: make_token(uid, secret="x" * 40), id="wrong-signature"),
+        pytest.param(
+            lambda uid: make_token(uid, secret="x" * JWT_SECRET_MIN_LENGTH), id="wrong-signature"
+        ),
         pytest.param(lambda uid: make_token(uid, type="refresh"), id="wrong-type"),
         pytest.param(lambda uid: make_token(uid + 1000), id="unknown-user"),
     ],

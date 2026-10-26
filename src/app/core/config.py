@@ -6,7 +6,7 @@ from typing import Literal, Self
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from app.core.constants import Environment
+from app.core.constants import ACCESS_TOKEN_EXPIRE_MINUTES, JWT_SECRET_MIN_LENGTH, Environment
 
 # Chỉ dùng khi dev và test. Production bắt buộc đặt JWT_SECRET_KEY riêng.
 DEV_JWT_SECRET_KEY = "dev-only-secret-key-change-me-in-production"  # noqa: S105
@@ -27,9 +27,9 @@ class Settings(BaseSettings):
     )
     redis_url: str = "redis://localhost:6380/0"
 
-    jwt_secret_key: str = DEV_JWT_SECRET_KEY
+    jwt_secret_key: str = Field(default=DEV_JWT_SECRET_KEY, min_length=JWT_SECRET_MIN_LENGTH)
     jwt_algorithm: Literal["HS256"] = "HS256"
-    access_token_expire_minutes: int = Field(default=15, ge=1)
+    access_token_expire_minutes: int = Field(default=ACCESS_TOKEN_EXPIRE_MINUTES, ge=1)
 
     # Múi giờ nghiệp vụ: dùng để tính "hôm nay" cho ngày báo cáo và thống kê tháng.
     timezone: str = "Asia/Ho_Chi_Minh"

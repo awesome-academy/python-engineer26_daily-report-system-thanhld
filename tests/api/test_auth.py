@@ -2,6 +2,7 @@ import pytest
 from httpx import AsyncClient, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.security import decode_access_token
 from tests.factories import DEFAULT_PASSWORD, create_user
 
@@ -20,7 +21,7 @@ async def test_login_returns_bearer_token(client: AsyncClient, db_session: Async
     assert response.status_code == 200
     body = response.json()
     assert body["token_type"] == "bearer"
-    assert body["expires_in"] == 15 * 60
+    assert body["expires_in"] == get_settings().access_token_expire_minutes * 60
     assert decode_access_token(body["access_token"]).user_id == user.id
 
 
