@@ -43,8 +43,9 @@ class User(TimestampMixin, SoftDeleteMixin, Base):
 
 
 # Email không trùng (không phân biệt hoa thường) trong số user chưa bị xóa mềm.
+USER_EMAIL_UNIQUE_INDEX = "uq_users_email_active"
 Index(
-    "uq_users_email_active",
+    USER_EMAIL_UNIQUE_INDEX,
     func.lower(User.email),
     unique=True,
     postgresql_where=User.deleted_at.is_(None),
