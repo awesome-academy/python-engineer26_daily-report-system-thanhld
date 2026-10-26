@@ -8,8 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-DEFAULT_PAGE_SIZE = 20
-MAX_PAGE_SIZE = 100
+from app.core.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 
 
 class PageParams(BaseModel):

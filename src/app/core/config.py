@@ -6,12 +6,14 @@ from typing import Literal
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.core.constants import Environment
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     app_name: str = "Daily Report API"
-    environment: Literal["local", "test", "production"] = "local"
+    environment: Environment = Environment.LOCAL
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
     database_url: str = "postgresql+asyncpg://daily_report:daily_report@localhost:5433/daily_report"
@@ -26,7 +28,7 @@ class Settings(BaseSettings):
 
     @property
     def json_logs(self) -> bool:
-        return self.environment == "production"
+        return self.environment is Environment.PRODUCTION
 
 
 @lru_cache

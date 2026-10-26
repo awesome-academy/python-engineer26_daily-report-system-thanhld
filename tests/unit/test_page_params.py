@@ -1,7 +1,8 @@
 import pytest
 from pydantic import ValidationError
 
-from app.core.pagination import MAX_PAGE_SIZE, Page, PageParams
+from app.core.constants import MAX_PAGE_SIZE
+from app.core.pagination import Page, PageParams
 
 
 def test_defaults_to_first_page_of_twenty() -> None:

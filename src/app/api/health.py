@@ -13,8 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import DbSession, RedisClient
-
-CHECK_TIMEOUT_SECONDS = 3
+from app.core.constants import HEALTH_CHECK_TIMEOUT_SECONDS
 
 CheckStatus = Literal["ok", "error"]
 
@@ -29,7 +28,7 @@ class HealthResponse(BaseModel):
 
 async def _check_database(session: AsyncSession) -> CheckStatus:
     try:
-        async with asyncio.timeout(CHECK_TIMEOUT_SECONDS):
+        async with asyncio.timeout(HEALTH_CHECK_TIMEOUT_SECONDS):
             await session.execute(text("SELECT 1"))
     except (SQLAlchemyError, OSError):
         logger.exception("health_check_failed", component="database")
@@ -39,7 +38,7 @@ async def _check_database(session: AsyncSession) -> CheckStatus:
 
 async def _check_redis(redis: Redis) -> CheckStatus:
     try:
-        async with asyncio.timeout(CHECK_TIMEOUT_SECONDS):
+        async with asyncio.timeout(HEALTH_CHECK_TIMEOUT_SECONDS):
             await redis.ping()
     except (RedisError, OSError):
         logger.exception("health_check_failed", component="redis")
