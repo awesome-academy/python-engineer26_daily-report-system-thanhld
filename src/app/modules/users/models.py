@@ -52,10 +52,11 @@ class User(TimestampMixin, SoftDeleteMixin, Base):
     # lazy="raise": cấm tự load quan hệ khi truy cập (gây N+1, và lỗi với session async).
     # Cần dữ liệu quan hệ thì load rõ ràng bằng selectinload/joinedload trong repository.
     department: Mapped["Department | None"] = relationship(back_populates="members", lazy="raise")
+    # Chỉ đọc, xem Department.managers.
     managed_departments: Mapped[list["Department"]] = relationship(
         secondary="department_managers",
         back_populates="managers",
-        passive_deletes=True,
+        viewonly=True,
         lazy="raise",
     )
     # RESTRICT ở DB giữ lịch sử báo cáo; ORM không tự sửa hay xóa báo cáo khi xóa user.

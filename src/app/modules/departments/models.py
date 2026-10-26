@@ -24,10 +24,12 @@ class Department(TimestampMixin, SoftDeleteMixin, Base):
     members: Mapped[list["User"]] = relationship(
         back_populates="department", passive_deletes=True, lazy="raise"
     )
+    # Chỉ đọc: gán, bỏ manager bằng cách thêm, xóa DepartmentManager. Ghi qua cả hai đường trong
+    # một session thì SQLAlchemy không biết hai bên là một dòng, dễ insert trùng khóa chính.
     managers: Mapped[list["User"]] = relationship(
         secondary="department_managers",
         back_populates="managed_departments",
-        passive_deletes=True,
+        viewonly=True,
         lazy="raise",
     )
     reports: Mapped[list["DailyReport"]] = relationship(

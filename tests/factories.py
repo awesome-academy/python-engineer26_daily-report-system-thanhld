@@ -7,7 +7,7 @@ from itertools import count
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token, hash_password
-from app.modules.departments.models import Department
+from app.modules.departments.models import Department, DepartmentManager
 from app.modules.reports.models import DailyReport, ReportRecipient
 from app.modules.users.models import User, UserRole
 
@@ -62,9 +62,9 @@ async def create_department(
         name=name,
         deleted_at=datetime.now(UTC) if deleted else None,
     )
-    # Bộ phận mới chưa có gì để load, nên gán quan hệ trực tiếp không vi phạm lazy="raise".
-    department.managers = list(managers)
     session.add(department)
+    await session.flush()
+    session.add_all(DepartmentManager(department_id=department.id, user_id=u.id) for u in managers)
     await session.flush()
     return department
 
