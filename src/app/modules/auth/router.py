@@ -1,8 +1,9 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, status
 from fastapi.security import OAuth2PasswordRequestForm
 
+from app.core.exceptions import error_responses
 from app.modules.auth.dependencies import AuthServiceDep
 from app.modules.auth.schemas import TokenResponse
 
@@ -16,6 +17,7 @@ router = APIRouter(prefix="/auth", tags=["Xác thực"])
         "Chuẩn OAuth2 password flow: gửi form `username` (là email) và `password`. "
         "Trên Swagger, bấm **Authorize** để đăng nhập và tự gắn token cho các request sau."
     ),
+    responses=error_responses(status.HTTP_401_UNAUTHORIZED, status.HTTP_422_UNPROCESSABLE_CONTENT),
 )
 async def login(
     form: Annotated[OAuth2PasswordRequestForm, Depends()], auth_service: AuthServiceDep
