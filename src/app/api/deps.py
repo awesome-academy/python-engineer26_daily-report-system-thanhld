@@ -3,22 +3,18 @@
 from typing import Annotated
 
 from fastapi import Depends
-from fastapi.security import OAuth2PasswordBearer
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db_session
 from app.core.exceptions import UnauthorizedError
 from app.core.redis import get_redis
-from app.core.security import decode_access_token
+from app.core.security import decode_access_token, oauth2_scheme
 from app.modules.users.models import User
 from app.modules.users.repository import UserRepository
 
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
 RedisClient = Annotated[Redis, Depends(get_redis)]
-
-# auto_error=False: thiếu token thì tự trả lỗi theo format chung thay vì lỗi mặc định của FastAPI.
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 
 
 async def get_current_user(

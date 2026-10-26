@@ -3,9 +3,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from fastapi.security import OAuth2PasswordRequestForm
 
-from app.api.deps import DbSession
+from app.modules.auth.dependencies import AuthServiceDep
 from app.modules.auth.schemas import TokenResponse
-from app.modules.auth.service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["Xác thực"])
 
@@ -19,6 +18,6 @@ router = APIRouter(prefix="/auth", tags=["Xác thực"])
     ),
 )
 async def login(
-    form: Annotated[OAuth2PasswordRequestForm, Depends()], session: DbSession
+    form: Annotated[OAuth2PasswordRequestForm, Depends()], auth_service: AuthServiceDep
 ) -> TokenResponse:
-    return await AuthService(session).login(form.username, form.password)
+    return await auth_service.login(form.username, form.password)

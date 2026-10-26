@@ -11,12 +11,19 @@ from datetime import UTC, datetime, timedelta
 from functools import cache
 
 import jwt
+from fastapi.security import OAuth2PasswordBearer
 from pwdlib import PasswordHash
 
 from app.core.config import get_settings
 from app.core.exceptions import UnauthorizedError
 
 ACCESS_TOKEN_TYPE = "access"  # noqa: S105
+
+# Đọc token từ header "Authorization: Bearer ...". tokenUrl là endpoint nút Authorize gọi.
+# auto_error=False: thiếu token thì tự trả lỗi theo format chung thay vì lỗi của FastAPI.
+oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl=f"{get_settings().api_v1_prefix}/auth/login", auto_error=False
+)
 
 _password_hash = PasswordHash.recommended()
 

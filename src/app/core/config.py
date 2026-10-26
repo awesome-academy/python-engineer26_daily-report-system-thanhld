@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     app_name: str = "Daily Report API"
     environment: Environment = Environment.LOCAL
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    # Tiền tố chung của các router nghiệp vụ. /health không dùng tiền tố này.
+    api_v1_prefix: str = "/api/v1"
 
     database_url: str = "postgresql+asyncpg://daily_report:daily_report@localhost:5433/daily_report"
     test_database_url: str = (
