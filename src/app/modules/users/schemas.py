@@ -1,10 +1,26 @@
 from datetime import date, datetime
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints
 
+from app.core.constants import (
+    EMAIL_MAX_LENGTH,
+    FULL_NAME_MAX_LENGTH,
+    FULL_NAME_MIN_LENGTH,
+    PASSWORD_MAX_LENGTH,
+    PASSWORD_MIN_LENGTH,
+)
 from app.modules.users.models import UserRole
 
-PASSWORD_MIN_LENGTH = 8
+Email = Annotated[EmailStr, Field(max_length=EMAIL_MAX_LENGTH)]
+# Họ tên bỏ khoảng trắng đầu cuối, nên chuỗi chỉ có dấu cách bị từ chối. Mật khẩu giữ nguyên.
+FullName = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True, min_length=FULL_NAME_MIN_LENGTH, max_length=FULL_NAME_MAX_LENGTH
+    ),
+]
+Password = Annotated[str, Field(min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH)]
 
 
 class UserOut(BaseModel):
@@ -22,7 +38,7 @@ class UserOut(BaseModel):
 
 
 class UserCreate(BaseModel):
-    email: EmailStr
-    full_name: str = Field(min_length=1, max_length=100)
-    password: str = Field(min_length=PASSWORD_MIN_LENGTH, max_length=128)
+    email: Email
+    full_name: FullName
+    password: Password
     role: UserRole = UserRole.USER

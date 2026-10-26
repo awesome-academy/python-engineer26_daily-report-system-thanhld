@@ -4,6 +4,12 @@ from enum import StrEnum
 from sqlalchemy import Date, DateTime, Enum, Index, String, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.constants import (
+    EMAIL_MAX_LENGTH,
+    FULL_NAME_MAX_LENGTH,
+    PASSWORD_HASH_MAX_LENGTH,
+    PHONE_MAX_LENGTH,
+)
 from app.core.database import Base, BigIntPK, SoftDeleteMixin, TimestampMixin
 
 
@@ -17,11 +23,11 @@ class User(TimestampMixin, SoftDeleteMixin, Base):
     __tablename__ = "users"
 
     id: Mapped[BigIntPK]
-    email: Mapped[str] = mapped_column(String(255))
+    email: Mapped[str] = mapped_column(String(EMAIL_MAX_LENGTH))
     # Null đến khi user đặt mật khẩu qua link trong email (S2).
-    password_hash: Mapped[str | None] = mapped_column(String(255))
-    full_name: Mapped[str] = mapped_column(String(100))
-    phone: Mapped[str | None] = mapped_column(String(20))
+    password_hash: Mapped[str | None] = mapped_column(String(PASSWORD_HASH_MAX_LENGTH))
+    full_name: Mapped[str] = mapped_column(String(FULL_NAME_MAX_LENGTH))
+    phone: Mapped[str | None] = mapped_column(String(PHONE_MAX_LENGTH))
     date_of_birth: Mapped[date | None] = mapped_column(Date)
     role: Mapped[UserRole] = mapped_column(
         Enum(UserRole, name="user_role"), default=UserRole.USER, server_default=UserRole.USER.value
