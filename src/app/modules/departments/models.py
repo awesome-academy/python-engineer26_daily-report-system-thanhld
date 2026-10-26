@@ -55,8 +55,9 @@ class DepartmentManager(Base):
 
 
 # Mã bộ phận không trùng trong số bộ phận chưa bị xóa mềm.
+DEPARTMENT_CODE_UNIQUE_INDEX = "uq_departments_code_active"
 Index(
-    "uq_departments_code_active",
+    DEPARTMENT_CODE_UNIQUE_INDEX,
     Department.code,
     unique=True,
     postgresql_where=Department.deleted_at.is_(None),

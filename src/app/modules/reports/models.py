@@ -10,12 +10,14 @@ if TYPE_CHECKING:
     from app.modules.departments.models import Department
     from app.modules.users.models import User
 
+# Mỗi nhân viên một báo cáo mỗi ngày. Cột đầu author_id cũng phục vụ tra báo cáo theo user.
+REPORT_AUTHOR_DATE_UNIQUE = "uq_daily_reports_author_date"
+
 
 class DailyReport(TimestampMixin, Base):
     __tablename__ = "daily_reports"
     __table_args__ = (
-        # Mỗi nhân viên một báo cáo mỗi ngày. Cột đầu author_id cũng phục vụ tra báo cáo theo user.
-        UniqueConstraint("author_id", "report_date", name="uq_daily_reports_author_date"),
+        UniqueConstraint("author_id", "report_date", name=REPORT_AUTHOR_DATE_UNIQUE),
         # Màn hình manager, export và thống kê tháng lọc theo bộ phận và ngày.
         Index("ix_daily_reports_department_date", "department_id", "report_date"),
     )

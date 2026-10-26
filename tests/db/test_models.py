@@ -7,9 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.modules.auth.models import RefreshToken, UserToken, UserTokenPurpose
-from app.modules.departments.models import Department
+from app.modules.departments.models import DEPARTMENT_CODE_UNIQUE_INDEX, Department
 from app.modules.notifications.models import EmailLog, EmailStatus
-from app.modules.reports.models import DailyReport, ReportRecipient
+from app.modules.reports.models import REPORT_AUTHOR_DATE_UNIQUE, DailyReport, ReportRecipient
 from app.modules.users.models import User, UserRole
 from tests.factories import create_department, create_report, create_user
 
@@ -77,7 +77,7 @@ async def test_one_report_per_author_per_day(db_session: AsyncSession) -> None:
     author = await create_user(db_session, department=department)
     await create_report(db_session, author=author, department=department, report_date=TODAY)
 
-    with pytest.raises(IntegrityError, match="uq_daily_reports_author_date"):
+    with pytest.raises(IntegrityError, match=REPORT_AUTHOR_DATE_UNIQUE):
         async with db_session.begin_nested():
             await create_report(db_session, author=author, department=department, report_date=TODAY)
 
@@ -167,7 +167,7 @@ async def test_department_code_is_unique_among_active_departments_only(
     await create_department(db_session, code="HR", deleted=True)
     await create_department(db_session, code="HR")
 
-    with pytest.raises(IntegrityError, match="uq_departments_code_active"):
+    with pytest.raises(IntegrityError, match=DEPARTMENT_CODE_UNIQUE_INDEX):
         async with db_session.begin_nested():
             await create_department(db_session, code="HR")
 
