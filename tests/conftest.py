@@ -31,6 +31,18 @@ os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ["REDIS_URL"] = TEST_REDIS_URL
 os.environ["ENVIRONMENT"] = "test"
 
+# Chặn nhầm database: test xóa và ghi dữ liệu, chỉ được chạy trên database tên kết thúc bằng _test.
+if not str(make_url(TEST_DATABASE_URL).database).endswith("_test"):
+    msg = f"TEST_DATABASE_URL phải trỏ tới database *_test, đang là {TEST_DATABASE_URL!r}"
+    raise RuntimeError(msg)
+
+# Chỉ import sau khi đặt biến môi trường: app.models kéo theo app.core.database, nơi engine được
+# tạo từ DATABASE_URL. Import sớm hơn thì engine trỏ vào database dev.
+from app import models as _models  # noqa: E402, F401
+from app.core.database import engine as app_engine  # noqa: E402
+
+assert app_engine.url.database == make_url(TEST_DATABASE_URL).database
+
 ROOT_DIR = Path(__file__).resolve().parents[1]
 
 
