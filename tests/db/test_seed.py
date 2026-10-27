@@ -23,7 +23,7 @@ from app.modules.departments.models import Department
 from app.modules.reports.models import DailyReport, ReportRecipient
 from app.modules.users.models import User, UserRole
 from tests.db.test_cli import invoke
-from tests.factories import create_user
+from tests.factories import create_department, create_user
 
 SEED_PASSWORD = "Matkhau@123"
 MONDAY = date(2026, 10, 26)
@@ -134,6 +134,75 @@ async def test_seed_keeps_existing_accounts_unchanged(db_session: AsyncSession) 
     assert result.users == len(USERS) - 1
 
 
+@pytest.mark.parametrize(("role", "is_active"), [(UserRole.USER, True), (UserRole.MANAGER, False)])
+async def test_seed_skips_existing_account_that_cannot_be_manager(
+    db_session: AsyncSession, role: UserRole, is_active: bool
+) -> None:
+    await create_user(db_session, email="manager.dev@example.com", role=role, is_active=is_active)
+
+    result = await seed_data(db_session, password=SEED_PASSWORD, today=MONDAY)
+
+    dev = await db_session.scalar(
+        select(Department)
+        .where(Department.code == "DEV")
+        .options(selectinload(Department.managers))
+    )
+    assert dev is not None
+    assert dev.managers == []
+    assert result.managers == len(DEPARTMENTS) - 1
+    assert any("manager.dev@example.com" in message for message in result.skipped)
+
+
+@pytest.mark.parametrize(
+    ("role", "is_active", "has_department"),
+    [
+        (UserRole.USER, False, True),
+        (UserRole.USER, True, False),
+        (UserRole.MANAGER, True, True),
+    ],
+)
+async def test_seed_skips_reports_of_existing_account_that_cannot_write_reports(
+    db_session: AsyncSession, role: UserRole, is_active: bool, has_department: bool
+) -> None:
+    department = await create_department(db_session, code="OPS") if has_department else None
+    author = await create_user(
+        db_session,
+        email="an.nguyen@example.com",
+        role=role,
+        is_active=is_active,
+        department=department,
+    )
+
+    result = await seed_data(db_session, password=SEED_PASSWORD, today=MONDAY)
+
+    reports = await db_session.scalar(
+        select(func.count()).select_from(DailyReport).where(DailyReport.author_id == author.id)
+    )
+    assert reports == 0
+    assert result.reports == (len(EMPLOYEES) - 1) * REPORT_DAYS
+    assert any("an.nguyen@example.com" in message for message in result.skipped)
+
+
+async def test_seed_reports_follow_author_actual_department(db_session: AsyncSession) -> None:
+    ops_manager = await create_user(db_session, role=UserRole.MANAGER)
+    ops = await create_department(db_session, code="OPS", managers=[ops_manager])
+    author = await create_user(db_session, email="an.nguyen@example.com", department=ops)
+
+    await seed_data(db_session, password=SEED_PASSWORD, today=MONDAY)
+
+    reports = (
+        await db_session.scalars(
+            select(DailyReport)
+            .where(DailyReport.author_id == author.id)
+            .options(selectinload(DailyReport.recipients))
+        )
+    ).all()
+    assert len(reports) == REPORT_DAYS
+    for report in reports:
+        assert report.department_id == ops.id
+        assert [r.recipient_id for r in report.recipients] == [ops_manager.id]
+
+
 async def test_reset_clears_all_data(db_session: AsyncSession) -> None:
     await seed_data(db_session, password=SEED_PASSWORD, today=MONDAY)
 
@@ -163,6 +232,18 @@ async def test_seed_command_runs_twice_without_duplicates() -> None:
     assert second.exit_code == 0, second.output
     assert f"{len(USERS)} user" in second.output
     assert "không tạo thêm gì" in third.output
+
+
+@pytest.mark.usefixtures("clean_after")
+async def test_seed_command_warns_about_skipped_accounts(engine: AsyncEngine) -> None:
+    async with AsyncSession(engine) as session:
+        await create_user(session, email="an.nguyen@example.com", is_active=False)
+        await session.commit()
+
+    result = await invoke("seed", "--password", SEED_PASSWORD)
+
+    assert result.exit_code == 0, result.output
+    assert "Bỏ qua an.nguyen@example.com: tài khoản bị khóa" in result.output
 
 
 async def test_seed_command_rejects_short_password() -> None:
