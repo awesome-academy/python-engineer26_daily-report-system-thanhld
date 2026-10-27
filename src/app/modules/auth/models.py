@@ -46,7 +46,7 @@ class UserToken(CreatedAtMixin, Base):
     purpose: Mapped[UserTokenPurpose] = mapped_column(
         Enum(
             UserTokenPurpose,
-            name="purpose",
+            name="user_token_purpose",
             native_enum=False,
             create_constraint=True,
             length=TOKEN_PURPOSE_MAX_LENGTH,

@@ -30,7 +30,7 @@ class EmailLog(CreatedAtMixin, Base):
     status: Mapped[EmailStatus] = mapped_column(
         Enum(
             EmailStatus,
-            name="status",
+            name="email_status",
             native_enum=False,
             create_constraint=True,
             length=EMAIL_STATUS_MAX_LENGTH,

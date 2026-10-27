@@ -60,7 +60,7 @@ def upgrade() -> None:
             sa.Enum(
                 "SENT",
                 "FAILED",
-                name="status",
+                name="email_status",
                 native_enum=False,
                 create_constraint=True,
                 length=16,
@@ -179,7 +179,7 @@ def upgrade() -> None:
             "purpose",
             sa.Enum(
                 "SETUP_PASSWORD",
-                name="purpose",
+                name="user_token_purpose",
                 native_enum=False,
                 create_constraint=True,
                 length=32,

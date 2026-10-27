@@ -180,12 +180,12 @@ async def test_department_code_is_unique_among_active_departments_only(
         (
             "INSERT INTO user_tokens (user_id, token_hash, purpose, expires_at) "
             "VALUES (:user_id, 'x', 'RESET_EVERYTHING', now())",
-            "ck_user_tokens_purpose",
+            "ck_user_tokens_user_token_purpose",
         ),
         (
             "INSERT INTO email_logs (to_email, template, status) "
             "VALUES ('a@example.com', 'report_created', 'QUEUED')",
-            "ck_email_logs_status",
+            "ck_email_logs_email_status",
         ),
     ],
 )
