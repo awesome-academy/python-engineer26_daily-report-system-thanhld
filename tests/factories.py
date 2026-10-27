@@ -1,5 +1,6 @@
 """Hàm tạo dữ liệu mẫu cho test."""
 
+import uuid
 from collections.abc import Sequence
 from datetime import UTC, date, datetime
 from itertools import count
@@ -92,5 +93,10 @@ async def create_report(
 
 
 def auth_headers(user: User) -> dict[str, str]:
-    token = create_access_token(user_id=user.id, role=user.role, token_version=user.token_version)
+    token = create_access_token(
+        user_id=user.id,
+        role=user.role,
+        token_version=user.token_version,
+        session_id=uuid.uuid4().hex,
+    )
     return {"Authorization": f"Bearer {token.token}"}

@@ -18,6 +18,7 @@ from alembic import command
 from alembic.config import Config
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
@@ -27,7 +28,8 @@ from app.core.config import Settings
 
 _settings = Settings()
 TEST_DATABASE_URL = _settings.test_database_url
-TEST_REDIS_URL = _settings.redis_url.rsplit("/", 1)[0] + "/15"
+TEST_REDIS_DB = 15
+TEST_REDIS_URL = _settings.redis_url.rsplit("/", 1)[0] + f"/{TEST_REDIS_DB}"
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ["REDIS_URL"] = TEST_REDIS_URL
 os.environ["ENVIRONMENT"] = "test"
@@ -41,9 +43,15 @@ if not str(make_url(TEST_DATABASE_URL).database).endswith("_test"):
 # tạo từ DATABASE_URL. Import sớm hơn thì engine trỏ vào database dev.
 from app import models as _models  # noqa: E402, F401
 from app.core.database import engine as app_engine  # noqa: E402
+from app.core.redis import redis_client  # noqa: E402
 
 if app_engine.url.database != make_url(TEST_DATABASE_URL).database:
     msg = f"Engine của app đang trỏ tới {app_engine.url.database!r}, không phải database test"
+    raise RuntimeError(msg)
+
+# Fixture `redis` xóa sạch DB Redis trước mỗi test, nên chỉ được chạy trên DB dành cho test.
+if redis_client.connection_pool.connection_kwargs.get("db") != TEST_REDIS_DB:
+    msg = f"Client Redis của app không trỏ tới DB {TEST_REDIS_DB} dành cho test"
     raise RuntimeError(msg)
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -104,6 +112,13 @@ async def db_session(engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
 
 
 @pytest.fixture
+async def redis() -> Redis:
+    # Blacklist token và bộ đếm đăng nhập sai không được lẫn giữa các test.
+    await redis_client.flushdb()
+    return redis_client
+
+
+@pytest.fixture
 def app() -> Iterator[FastAPI]:
     from app.main import app as fastapi_app  # noqa: PLC0415 (xem docstring của module)
 
@@ -112,7 +127,9 @@ def app() -> Iterator[FastAPI]:
 
 
 @pytest.fixture
-async def client(app: FastAPI, db_session: AsyncSession) -> AsyncIterator[AsyncClient]:
+async def client(
+    app: FastAPI, db_session: AsyncSession, redis: Redis
+) -> AsyncIterator[AsyncClient]:
     from app.core.database import get_db_session  # noqa: PLC0415 (xem docstring của module)
 
     app.dependency_overrides[get_db_session] = lambda: db_session

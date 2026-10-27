@@ -9,6 +9,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from functools import cache
+from typing import Any
 
 import jwt
 from fastapi.security import OAuth2PasswordBearer
@@ -18,6 +19,7 @@ from app.core.config import get_settings
 from app.core.exceptions import UnauthorizedError
 
 ACCESS_TOKEN_TYPE = "access"  # noqa: S105
+REFRESH_TOKEN_TYPE = "refresh"  # noqa: S105
 
 # Đọc token từ header "Authorization: Bearer ...". tokenUrl là endpoint nút Authorize gọi.
 # auto_error=False: thiếu token thì tự trả lỗi theo format chung thay vì lỗi của FastAPI.
@@ -61,9 +63,28 @@ class AccessTokenClaims:
     role: str
     token_version: int
     jti: str
+    # jti của refresh token cấp cùng lúc, để đăng xuất thu hồi đúng phiên đăng nhập này.
+    session_id: str
+    expires_at: datetime
 
 
-def create_access_token(*, user_id: int, role: str, token_version: int) -> AccessToken:
+@dataclass(frozen=True)
+class IssuedRefreshToken:
+    token: str
+    jti: str
+    expires_at: datetime
+
+
+@dataclass(frozen=True)
+class RefreshTokenClaims:
+    user_id: int
+    token_version: int
+    jti: str
+
+
+def create_access_token(
+    *, user_id: int, role: str, token_version: int, session_id: str
+) -> AccessToken:
     settings = get_settings()
     now = datetime.now(UTC)
     expires_in = settings.access_token_expire_minutes * 60
@@ -72,6 +93,7 @@ def create_access_token(*, user_id: int, role: str, token_version: int) -> Acces
         "role": role,
         "ver": token_version,
         "jti": uuid.uuid4().hex,
+        "sid": session_id,
         "type": ACCESS_TOKEN_TYPE,
         "iat": now,
         "exp": now + timedelta(seconds=expires_in),
@@ -80,21 +102,59 @@ def create_access_token(*, user_id: int, role: str, token_version: int) -> Acces
     return AccessToken(token=token, expires_in=expires_in)
 
 
-def decode_access_token(token: str) -> AccessTokenClaims:
-    """Kiểm tra chữ ký, hạn dùng và loại token. Token không hợp lệ thì ném UnauthorizedError."""
+def create_refresh_token(*, user_id: int, token_version: int) -> IssuedRefreshToken:
     settings = get_settings()
+    now = datetime.now(UTC)
+    jti = uuid.uuid4().hex
+    expires_at = now + timedelta(days=settings.refresh_token_expire_days)
+    claims = {
+        "sub": str(user_id),
+        "ver": token_version,
+        "jti": jti,
+        "type": REFRESH_TOKEN_TYPE,
+        "iat": now,
+        "exp": expires_at,
+    }
+    token = jwt.encode(claims, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+    return IssuedRefreshToken(token=token, jti=jti, expires_at=expires_at)
+
+
+def _decode_token(token: str, token_type: str, *required: str) -> dict[str, Any]:
+    """Kiểm tra chữ ký, hạn dùng và loại token: access token không dùng thay refresh token được."""
+    settings = get_settings()
+    claims: dict[str, Any] = jwt.decode(
+        token,
+        settings.jwt_secret_key,
+        algorithms=[settings.jwt_algorithm],
+        options={"require": ["sub", "exp", "jti", "ver", "type", *required]},
+    )
+    if claims["type"] != token_type:
+        raise UnauthorizedError
+    return claims
+
+
+def decode_access_token(token: str) -> AccessTokenClaims:
+    """Token không hợp lệ thì ném UnauthorizedError."""
     try:
-        claims = jwt.decode(
-            token,
-            settings.jwt_secret_key,
-            algorithms=[settings.jwt_algorithm],
-            options={"require": ["sub", "exp", "jti", "ver", "type"]},
-        )
-        if claims["type"] != ACCESS_TOKEN_TYPE:
-            raise UnauthorizedError
+        claims = _decode_token(token, ACCESS_TOKEN_TYPE, "role", "sid")
         return AccessTokenClaims(
             user_id=int(claims["sub"]),
             role=str(claims["role"]),
+            token_version=int(claims["ver"]),
+            jti=str(claims["jti"]),
+            session_id=str(claims["sid"]),
+            expires_at=datetime.fromtimestamp(claims["exp"], UTC),
+        )
+    except (jwt.PyJWTError, KeyError, TypeError, ValueError) as exc:
+        raise UnauthorizedError from exc
+
+
+def decode_refresh_token(token: str) -> RefreshTokenClaims:
+    """Token không hợp lệ thì ném UnauthorizedError."""
+    try:
+        claims = _decode_token(token, REFRESH_TOKEN_TYPE)
+        return RefreshTokenClaims(
+            user_id=int(claims["sub"]),
             token_version=int(claims["ver"]),
             jti=str(claims["jti"]),
         )
