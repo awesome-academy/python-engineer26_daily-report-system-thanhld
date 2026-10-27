@@ -45,3 +45,22 @@ async def test_openapi_schema_is_available(client: AsyncClient) -> None:
 
     assert response.status_code == 200
     assert response.json()["info"]["title"] == "Daily Report API"
+
+
+@pytest.mark.parametrize(
+    ("path", "method", "status_code"),
+    [
+        ("/api/v1/auth/login", "post", "401"),
+        ("/api/v1/auth/login", "post", "422"),
+        ("/api/v1/me", "get", "401"),
+    ],
+)
+async def test_openapi_documents_errors_with_common_format(
+    client: AsyncClient, path: str, method: str, status_code: str
+) -> None:
+    schema = (await client.get("/openapi.json")).json()
+
+    response = schema["paths"][path][method]["responses"][status_code]
+    assert response["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/ErrorResponse"
+    }

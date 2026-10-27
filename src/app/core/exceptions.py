@@ -5,12 +5,14 @@ Format: {"error": {"code": "...", "message": "...", "details": ...}}
 
 from collections.abc import Mapping
 from enum import StrEnum
+from types import MappingProxyType
 from typing import Any
 
 import structlog
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 logger = structlog.get_logger(__name__)
@@ -25,6 +27,8 @@ class ErrorCode(StrEnum):
     METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED"
     CONFLICT = "CONFLICT"
     INTERNAL_ERROR = "INTERNAL_ERROR"
+    INVALID_CREDENTIALS = "INVALID_CREDENTIALS"
+    EMAIL_ALREADY_EXISTS = "EMAIL_ALREADY_EXISTS"
 
 
 class AppError(Exception):
@@ -33,6 +37,7 @@ class AppError(Exception):
     status_code: int = status.HTTP_400_BAD_REQUEST
     code: ErrorCode = ErrorCode.BAD_REQUEST
     message: str = "Yêu cầu không hợp lệ."
+    headers: Mapping[str, str] | None = None
 
     def __init__(
         self,
@@ -51,6 +56,8 @@ class UnauthorizedError(AppError):
     status_code = status.HTTP_401_UNAUTHORIZED
     code = ErrorCode.UNAUTHORIZED
     message = "Bạn chưa đăng nhập hoặc phiên đăng nhập đã hết hạn."
+    # Chuẩn OAuth2: response 401 báo client cách xác thực.
+    headers = MappingProxyType({"WWW-Authenticate": "Bearer"})
 
 
 class ForbiddenError(AppError):
@@ -82,6 +89,23 @@ _HTTP_ERRORS: dict[int, tuple[ErrorCode, str]] = {
 }
 
 
+class ErrorBody(BaseModel):
+    code: ErrorCode
+    message: str
+    details: Any = None
+
+
+class ErrorResponse(BaseModel):
+    """Body của mọi response lỗi: handler dùng để trả lỗi, Swagger dùng để mô tả lỗi."""
+
+    error: ErrorBody
+
+
+def error_responses(*status_codes: int) -> dict[int | str, dict[str, Any]]:
+    """Khai báo response lỗi trên Swagger theo format chung, thay schema mặc định của FastAPI."""
+    return {status_code: {"model": ErrorResponse} for status_code in status_codes}
+
+
 def error_response(
     status_code: int,
     code: ErrorCode,
@@ -89,17 +113,16 @@ def error_response(
     details: Any = None,
     headers: Mapping[str, str] | None = None,
 ) -> JSONResponse:
+    body = ErrorResponse(error=ErrorBody(code=code, message=message, details=details))
     return JSONResponse(
-        status_code=status_code,
-        content={"error": {"code": code, "message": message, "details": details}},
-        headers=headers,
+        status_code=status_code, content=body.model_dump(mode="json"), headers=headers
     )
 
 
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def handle_app_error(_: Request, exc: AppError) -> JSONResponse:
-        return error_response(exc.status_code, exc.code, exc.message, exc.details)
+        return error_response(exc.status_code, exc.code, exc.message, exc.details, exc.headers)
 
     @app.exception_handler(RequestValidationError)
     async def handle_validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:

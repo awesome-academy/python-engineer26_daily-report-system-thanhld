@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 COMPOSE := docker compose
 
-.PHONY: help install dev down logs services run migrate migration lint format typecheck test check
+.PHONY: help install dev down logs services run admin migrate migration lint format typecheck test check
 
 help: ## Liệt kê các lệnh
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-11s %s\n", $$1, $$2}'
@@ -25,6 +25,9 @@ services: ## Chỉ chạy PostgreSQL, Redis, Mailpit (để chạy API hoặc te
 run: ## Chạy API trên máy host, tự reload khi sửa code (cần make services, dừng container api trước)
 	uv run alembic upgrade head
 	uv run uvicorn app.main:app --reload --port 8001 --no-access-log
+
+admin: ## Tạo tài khoản admin (hỏi email, họ tên, mật khẩu)
+	uv run daily-report create-admin
 
 migrate: ## Chạy migration tới bản mới nhất
 	uv run alembic upgrade head

@@ -7,22 +7,27 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 
-async def _unaccent_function_exists(engine: AsyncEngine) -> bool:
+async def _schema_objects(engine: AsyncEngine) -> set[str]:
     async with engine.connect() as connection:
-        found = await connection.scalar(
-            text("SELECT 1 FROM pg_proc WHERE proname = 'immutable_unaccent'")
+        rows = await connection.scalars(
+            text(
+                "SELECT proname FROM pg_proc WHERE proname = 'immutable_unaccent' "
+                "UNION ALL SELECT tablename FROM pg_tables WHERE schemaname = 'public' "
+                "AND tablename <> 'alembic_version' "
+                "UNION ALL SELECT typname FROM pg_type WHERE typname = 'user_role'"
+            )
         )
-    return found is not None
+        return set(rows)
 
 
 async def test_migrations_can_downgrade_and_upgrade_again(
     engine: AsyncEngine, alembic_config: Config
 ) -> None:
     await asyncio.to_thread(command.downgrade, alembic_config, "base")
-    assert not await _unaccent_function_exists(engine)
+    assert await _schema_objects(engine) == set()
 
     await asyncio.to_thread(command.upgrade, alembic_config, "head")
-    assert await _unaccent_function_exists(engine)
+    assert await _schema_objects(engine) == {"immutable_unaccent", "users", "user_role"}
 
 
 @pytest.mark.parametrize(
