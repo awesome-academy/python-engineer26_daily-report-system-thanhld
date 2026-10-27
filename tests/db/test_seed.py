@@ -22,8 +22,8 @@ from app.core.security import verify_password
 from app.modules.departments.models import Department
 from app.modules.reports.models import DailyReport, ReportRecipient
 from app.modules.users.models import User, UserRole
-from tests.db.test_cli import invoke
 from tests.factories import create_department, create_user
+from tests.helpers import invoke
 
 SEED_PASSWORD = "Matkhau@123"
 MONDAY = date(2026, 10, 26)
