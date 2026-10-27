@@ -162,15 +162,16 @@ async def test_hard_deleting_user_removes_tokens(db_session: AsyncSession) -> No
         assert remaining.all() == []
 
 
+@pytest.mark.parametrize("duplicate_code", ["HR", "hr"])
 async def test_department_code_is_unique_among_active_departments_only(
-    db_session: AsyncSession,
+    db_session: AsyncSession, duplicate_code: str
 ) -> None:
     await create_department(db_session, code="HR", deleted=True)
     await create_department(db_session, code="HR")
 
     with pytest.raises(IntegrityError, match=DEPARTMENT_CODE_UNIQUE_INDEX):
         async with db_session.begin_nested():
-            await create_department(db_session, code="HR")
+            await create_department(db_session, code=duplicate_code)
 
 
 @pytest.mark.parametrize(

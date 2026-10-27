@@ -45,7 +45,7 @@ def upgrade() -> None:
     op.create_index(
         "uq_departments_code_active",
         "departments",
-        ["code"],
+        [sa.literal_column("lower(code)")],
         unique=True,
         postgresql_where=sa.text("deleted_at IS NULL"),
     )
