@@ -76,10 +76,17 @@ Lỗi validate (422) có `details` là danh sách `{ "field": "body.report_date"
 
 | Method | Endpoint | Mã | Ghi chú |
 | --- | --- | --- | --- |
-| POST | `/auth/login` | U1 | Form `username`, `password`. Trả access token (Ngày 1), thêm refresh token (Ngày 3) |
-| POST | `/auth/refresh` | U1 | Cấp cặp token mới, vô hiệu token cũ |
-| POST | `/auth/logout` | U1 | Cần đăng nhập, thu hồi token |
+| POST | `/auth/login` | U1 | Form `username`, `password`. Trả access token và refresh token. Sai quá 5 lần trong 15 phút: 429 |
+| POST | `/auth/refresh` | U1 | Body `refresh_token`. Cấp cặp token mới, vô hiệu token cũ |
+| POST | `/auth/logout` | U1 | Cần đăng nhập, thu hồi phiên hiện tại. Trả 204 |
 | POST | `/auth/setup-password` | S2 | Đặt mật khẩu lần đầu bằng token trong email |
+
+Phiên đăng nhập:
+
+- Access token (15 phút) và refresh token (7 ngày) đều là JWT, phân biệt bằng claim `type`. Bảng `refresh_tokens` chỉ lưu `jti` của refresh token. Access token có claim `sid` là `jti` của refresh token cấp cùng lúc.
+- Refresh xoay vòng: mỗi refresh token chỉ dùng được một lần. Gửi lại token đã thu hồi (đã dùng hoặc đã đăng xuất) bị coi là token bị lộ: thu hồi mọi phiên của user và tăng `token_version`, mọi access token đang dùng cũng hết hiệu lực.
+- Đăng xuất thu hồi refresh token của phiên (`sid`) và đưa `jti` của access token vào blacklist Redis đến khi token hết hạn. Các phiên trên thiết bị khác không bị ảnh hưởng.
+- Khóa tạm đăng nhập đếm theo email (không phân biệt hoa thường, kể cả email không tồn tại), cửa sổ 15 phút tính từ lần thử đầu. Lần thứ 6 trả 429 `TOO_MANY_ATTEMPTS` kèm header `Retry-After` (số giây còn lại), không kiểm tra mật khẩu. Đăng nhập đúng thì xóa bộ đếm.
 
 ### /me: mọi user đã đăng nhập; báo cáo chỉ cho role USER (8)
 
