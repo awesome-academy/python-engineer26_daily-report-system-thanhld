@@ -57,7 +57,7 @@ erDiagram
 | Cột | Kiểu | Ràng buộc | Ghi chú |
 | --- | --- | --- | --- |
 | id | bigint | PK, identity | |
-| code | varchar(20) | not null | unique trên bản ghi chưa xóa |
+| code | varchar(20) | not null | unique trên bản ghi chưa xóa, không phân biệt hoa thường |
 | name | varchar(100) | not null | |
 | description | text | null | |
 | created_at, updated_at, deleted_at | timestamptz | | xóa mềm |
@@ -134,7 +134,7 @@ erDiagram
 | users | `UNIQUE (lower(email)) WHERE deleted_at IS NULL` | email không trùng, không phân biệt hoa thường, cho phép tạo lại sau khi xóa mềm |
 | users | `GIN (immutable_unaccent(lower(full_name)) gin_trgm_ops)` | tìm tên không dấu: "nguyen van a" khớp "Nguyễn Văn A" |
 | users | `(department_id)` | lấy thành viên bộ phận |
-| departments | `UNIQUE (code) WHERE deleted_at IS NULL` | mã bộ phận không trùng |
+| departments | `UNIQUE (lower(code)) WHERE deleted_at IS NULL` | mã bộ phận không trùng, không phân biệt hoa thường (như email) |
 | department_managers | `(user_id)` | lấy các bộ phận một manager quản lý, dùng khi kiểm tra quyền |
 | daily_reports | `UNIQUE (author_id, report_date)` | mỗi người 1 báo cáo / ngày |
 | daily_reports | `(department_id, report_date)` | màn hình manager, export, thống kê tháng |
