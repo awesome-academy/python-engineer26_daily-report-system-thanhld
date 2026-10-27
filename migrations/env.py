@@ -1,7 +1,10 @@
 """Môi trường chạy Alembic (async).
 
 URL lấy theo thứ tự: sqlalchemy.url trong config (test đặt giá trị này),
-rồi DATABASE_URL từ Settings.
+rồi DATABASE_URL từ Settings. Vì vậy sqlalchemy.url trong alembic.ini để trống.
+
+alembic.ini chỉ ghi ASCII: Alembic và fileConfig đọc file đó bằng encoding mặc định của hệ điều
+hành, trên Windows (cp1252) gặp chữ tiếng Việt là lỗi UnicodeDecodeError. Ghi chú để ở file này.
 """
 
 import asyncio

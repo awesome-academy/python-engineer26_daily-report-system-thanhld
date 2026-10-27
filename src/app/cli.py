@@ -13,7 +13,8 @@ from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
 from app.core.exceptions import AppError
-from app.modules.users.models import User, UserRole
+from app.models import User
+from app.modules.users.models import UserRole
 from app.modules.users.schemas import UserCreate
 from app.modules.users.service import UserService
 

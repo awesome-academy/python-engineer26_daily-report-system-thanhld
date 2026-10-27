@@ -27,7 +27,23 @@ async def test_migrations_can_downgrade_and_upgrade_again(
     assert await _schema_objects(engine) == set()
 
     await asyncio.to_thread(command.upgrade, alembic_config, "head")
-    assert await _schema_objects(engine) == {"immutable_unaccent", "users", "user_role"}
+    assert await _schema_objects(engine) == {
+        "immutable_unaccent",
+        "user_role",
+        "users",
+        "departments",
+        "department_managers",
+        "daily_reports",
+        "report_recipients",
+        "refresh_tokens",
+        "user_tokens",
+        "email_logs",
+    }
+
+
+async def test_models_match_migrations(engine: AsyncEngine, alembic_config: Config) -> None:
+    """Giống `alembic check`: model đổi mà quên tạo migration thì test này fail."""
+    await asyncio.to_thread(command.check, alembic_config)
 
 
 @pytest.mark.parametrize(
