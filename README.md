@@ -33,6 +33,23 @@ docker compose exec api daily-report create-admin   # hoặc: make admin (chạy
 
 Đăng nhập theo chuẩn OAuth2 password flow, trả access token JWT (hết hạn sau 15 phút).
 
+## Dữ liệu mẫu
+
+```bash
+docker compose exec api daily-report seed      # hoặc: make seed (chạy trên máy host)
+```
+
+- Tạo 3 bộ phận (DEV, QA, HR), 1 admin, 3 manager, 5 nhân viên và báo cáo 5 ngày làm việc gần nhất.
+- Mật khẩu tài khoản mẫu nhập ẩn khi chạy, hoặc đặt qua biến `SEED_USER_PASSWORD`. Không có mật khẩu viết cứng.
+- Chỉ thêm phần còn thiếu, chạy lại không tạo trùng. `--reset` xóa toàn bộ dữ liệu rồi seed lại.
+- Không chạy được khi `ENVIRONMENT=production`.
+
+| Tài khoản | Role |
+| --- | --- |
+| `admin@example.com` | ADMIN |
+| `manager.dev@example.com`, `manager.qa@example.com`, `manager.hr@example.com` | MANAGER |
+| `an.nguyen@example.com`, `binh.tran@example.com`, `cuong.le@example.com`, … | USER |
+
 ## Phát triển trên máy host
 
 ```bash
@@ -56,6 +73,7 @@ Test chạy trên PostgreSQL thật, database riêng `daily_report_test` (tự t
 | `make dev` / `make down` | Chạy / dừng toàn bộ stack |
 | `make logs` | Xem log API |
 | `make admin` | Tạo tài khoản admin (CLI Typer: `uv run daily-report --help`) |
+| `make seed` | Tạo dữ liệu mẫu |
 | `make migrate` | Chạy migration tới bản mới nhất |
 | `make migration m="add users table"` | Tạo migration từ model |
 | `make format` | Tự sửa lint, format |

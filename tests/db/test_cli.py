@@ -1,26 +1,14 @@
-import asyncio
 import uuid
 from collections.abc import AsyncIterator
 
 import pytest
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
-from typer.testing import CliRunner, Result
 
-from app.cli import cli
 from app.core.security import verify_password
 from app.modules.users.models import User, UserRole
 from app.modules.users.repository import UserRepository
-
-runner = CliRunner()
-
-
-async def invoke(*args: str) -> Result:
-    # Lệnh CLI tự chạy asyncio.run(), nên phải chạy ở thread khác event loop của test.
-    def run() -> Result:
-        return runner.invoke(cli, list(args))
-
-    return await asyncio.to_thread(run)
+from tests.helpers import invoke
 
 
 @pytest.fixture
