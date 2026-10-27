@@ -2,20 +2,27 @@ name: daily-report
 
 services:
   api:
-    build: .
-    command: >
-      sh -c "alembic upgrade head &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir src --no-access-log"
+    build:
+      context: .
+      args:
+        INSTALL_DEBUGPY: "true"
+    command: sh scripts/start-api.sh
     environment:
       ENVIRONMENT: local
+      # make debug: chạy API dưới debugpy để VS Code attach (xem README, mục Debug).
+      DEBUGPY: ${DEBUGPY:-0}
+      DEBUGPY_WAIT: ${DEBUGPY_WAIT:-0}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-daily_report}:${POSTGRES_PASSWORD:-daily_report}@postgres:5432/${POSTGRES_DB:-daily_report}
       REDIS_URL: redis://redis:6379/0
     ports:
       - "${API_PORT:-8001}:8000"
+      # Chỉ mở trên 127.0.0.1: ai attach được debugpy là chạy được code tùy ý trong container.
+      - "127.0.0.1:${DEBUGPY_PORT:-5678}:5678"
     volumes:
       - ./src:/app/src
       - ./migrations:/app/migrations
+      - ./scripts:/app/scripts
     depends_on:
       postgres:
         condition: service_healthy

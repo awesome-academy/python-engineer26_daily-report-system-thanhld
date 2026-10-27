@@ -33,6 +33,21 @@ docker compose exec api daily-report create-admin   # hoặc: make admin (chạy
 
 Đăng nhập theo chuẩn OAuth2 password flow, trả access token JWT (hết hạn sau 15 phút).
 
+## Debug
+
+**Debug API chạy trong Docker:**
+
+1. Chạy `make debug` (tương đương `DEBUGPY=1 docker compose up -d --build`). API chạy dưới debugpy, mở cổng 5678 chỉ trên `127.0.0.1` của máy host (máy khác trong mạng LAN không attach được).
+2. Trong VS Code, mở tab Run and Debug, chọn **Docker: attach API (debugpy)**, rồi đặt breakpoint trong `src/`.
+3. Gọi API từ Swagger, chương trình sẽ dừng ở breakpoint.
+
+- Muốn debug từ lúc API khởi động thì thêm `DEBUGPY_WAIT=1`. API sẽ chờ VS Code attach rồi mới chạy.
+- Ở chế độ debug, API không tự reload khi sửa code. Chạy `make dev` để quay lại chế độ thường.
+
+**Chạy và debug trên máy host:** dùng cấu hình **Local: API (uvicorn)** hoặc **Local: pytest file đang mở** trong `.vscode/launch.json`.
+
+**Log:** mỗi request có một dòng log kèm `request_id`, và header `X-Request-ID` trên response có cùng giá trị. Dùng giá trị này để tìm log của request đang lỗi: `make logs | grep <request_id>`.
+
 ## Dữ liệu mẫu
 
 ```bash

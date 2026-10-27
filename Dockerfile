@@ -11,16 +11,21 @@ ENV UV_COMPILE_BYTECODE=1 \
 
 WORKDIR /app
 
+# true: cài thêm nhóm dependency "debug" (debugpy). Chỉ bật cho image dev (docker-compose.yml).
+ARG INSTALL_DEBUGPY=false
+
 # Cài dependency trước để tận dụng cache khi chỉ sửa code.
 COPY pyproject.toml uv.lock .python-version ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-install-project
+    uv sync --frozen --no-dev --no-install-project \
+        $([ "$INSTALL_DEBUGPY" = "true" ] && echo --group debug)
 
 COPY README.md alembic.ini ./
 COPY migrations ./migrations
+COPY scripts ./scripts
 COPY src ./src
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev
+    uv sync --frozen --no-dev $([ "$INSTALL_DEBUGPY" = "true" ] && echo --group debug)
 
 RUN useradd --system --uid 1001 --no-create-home app
 USER app

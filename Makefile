@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 COMPOSE := docker compose
 
-.PHONY: help install dev down logs services run admin seed migrate migration lint format typecheck test check
+.PHONY: help install dev debug down logs services run admin seed migrate migration lint format typecheck test check
 
 help: ## Liệt kê các lệnh
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-11s %s\n", $$1, $$2}'
@@ -12,6 +12,9 @@ install: ## Cài dependency và git hook
 
 dev: ## Chạy toàn bộ stack bằng Docker (Swagger: http://localhost:8001/docs)
 	$(COMPOSE) up -d --build
+
+debug: ## Chạy stack với API dưới debugpy (cổng 5678), rồi attach bằng VS Code
+	DEBUGPY=1 $(COMPOSE) up -d --build
 
 down: ## Dừng stack
 	$(COMPOSE) down
