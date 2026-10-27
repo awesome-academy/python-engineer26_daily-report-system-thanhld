@@ -1,0 +1,144 @@
+# Thiết kế API
+
+39 endpoint, nhóm theo người dùng: `/auth`, `/me`, `/manager`, `/admin`. Mỗi nhóm khớp một nhóm quyền trong requirement, nên dễ đối chiếu và dễ test phân quyền. Swagger tự sinh tại `/docs`.
+
+## Quy ước
+
+### URL và định dạng
+
+- Tiền tố `/api/v1`. Riêng `/health` không có tiền tố để container healthcheck gọi trực tiếp.
+- JSON snake_case. Ngày theo ISO 8601 (`2026-11-09`), thời điểm có múi giờ (`2026-11-09T08:30:00+07:00`).
+- Xác thực: OAuth2 password flow + JWT. Header `Authorization: Bearer <access_token>`.
+- `POST /auth/login` nhận form `application/x-www-form-urlencoded` với `username` (là email) và `password`, đúng chuẩn OAuth2, để nút **Authorize** trên Swagger đăng nhập được. Các endpoint khác nhận JSON.
+
+### Danh sách có phân trang
+
+Query: `page` (từ 1), `page_size` (mặc định 20, tối đa 100), `sort` (ví dụ `-report_date`), `keyword`.
+
+```json
+{
+  "data": [{ "id": 128, "report_date": "2026-11-09" }],
+  "meta": { "page": 1, "page_size": 20, "total": 135 }
+}
+```
+
+### Lỗi
+
+Mọi lỗi cùng một format:
+
+```json
+{
+  "error": {
+    "code": "REPORT_ALREADY_EXISTS",
+    "message": "Bạn đã tạo báo cáo cho ngày 2026-11-09.",
+    "details": null
+  }
+}
+```
+
+Lỗi validate (422) có `details` là danh sách `{ "field": "body.report_date", "message": "..." }`.
+
+| HTTP | Khi nào |
+| --- | --- |
+| 200, 201, 204 | Thành công |
+| 401 | Chưa đăng nhập, token hết hạn hoặc đã thu hồi |
+| 403 | Sai role |
+| 404 | Không tồn tại hoặc ngoài phạm vi quyền |
+| 409 | Trùng dữ liệu |
+| 422 | Dữ liệu không hợp lệ |
+| 429 | Quá số lần thử |
+| 500 | Lỗi hệ thống |
+
+### Mã lỗi
+
+| Mã | HTTP | Ngày |
+| --- | --- | --- |
+| `VALIDATION_ERROR` | 422 | 1 |
+| `NOT_FOUND` | 404 | 1 |
+| `METHOD_NOT_ALLOWED` | 405 | 1 |
+| `INTERNAL_ERROR` | 500 | 1 |
+| `UNAUTHORIZED` | 401 | 1 |
+| `FORBIDDEN` | 403 | 3 |
+| `INVALID_CREDENTIALS` | 401 | 1 |
+| `TOO_MANY_ATTEMPTS` | 429 | 3 |
+| `EMAIL_ALREADY_EXISTS` | 409 | 4 |
+| `DEPARTMENT_CODE_ALREADY_EXISTS` | 409 | 4 |
+| `DEPARTMENT_NOT_EMPTY` | 409 | 4 |
+| `REPORT_ALREADY_EXISTS` | 409 | 5 |
+| `REPORT_DATE_OUT_OF_RANGE` | 422 | 5 |
+| `INVALID_RECIPIENT` | 422 | 5 |
+| `SETUP_TOKEN_INVALID` | 400 | 7 |
+| `IMPORT_VALIDATION_FAILED` | 422 | 8 |
+
+## Danh sách endpoint
+
+### /auth: công khai, trừ logout (4)
+
+| Method | Endpoint | Mã | Ghi chú |
+| --- | --- | --- | --- |
+| POST | `/auth/login` | U1 | Form `username`, `password`. Trả access token (Ngày 1), thêm refresh token (Ngày 3) |
+| POST | `/auth/refresh` | U1 | Cấp cặp token mới, vô hiệu token cũ |
+| POST | `/auth/logout` | U1 | Cần đăng nhập, thu hồi token |
+| POST | `/auth/setup-password` | S2 | Đặt mật khẩu lần đầu bằng token trong email |
+
+### /me: mọi user đã đăng nhập; báo cáo chỉ cho role USER (8)
+
+| Method | Endpoint | Mã | Ghi chú |
+| --- | --- | --- | --- |
+| GET | `/me` | U2 | Gồm role và bộ phận |
+| PATCH | `/me` | U2 | Không tự đổi được email, role |
+| PUT | `/me/password` | U2 | Cần mật khẩu cũ |
+| PUT | `/me/avatar` | U2 | `multipart/form-data`, JPEG hoặc PNG, tối đa 2 MB |
+| GET | `/me/recipients` | U3 | Manager của bộ phận mình |
+| POST | `/me/reports` | U3, S1 | Tạo báo cáo, kích hoạt email |
+| GET | `/me/reports` | U3 | `date_from`, `date_to`, phân trang |
+| GET | `/me/reports/{id}` | U3 | |
+
+### /manager: role MANAGER, chỉ bộ phận mình quản lý (11)
+
+| Method | Endpoint | Mã | Ghi chú |
+| --- | --- | --- | --- |
+| GET | `/manager/departments` | M1 | |
+| GET | `/manager/departments/{id}` | M1 | Gồm danh sách manager, số nhân viên |
+| GET | `/manager/departments/{id}/members` | M1 | `keyword`, phân trang |
+| GET | `/manager/candidates` | M2 | User role User chưa thuộc bộ phận nào |
+| POST | `/manager/departments/{id}/members` | M2 | Body `user_ids[]` |
+| DELETE | `/manager/departments/{id}/members/{user_id}` | M2 | Chỉ gỡ liên kết |
+| GET | `/manager/employees` | M4 | `keyword`, `department_id`, phân trang |
+| GET | `/manager/employees/{id}` | M4 | |
+| GET | `/manager/reports` | M3 | `keyword`, `date_from`, `date_to`, `department_id`, `sort`, phân trang |
+| GET | `/manager/reports/{id}` | M3 | |
+| GET | `/manager/reports/export` | M5 | `date`, `department_id`, trả file .xlsx |
+
+### /admin: role ADMIN (15)
+
+| Method | Endpoint | Mã | Ghi chú |
+| --- | --- | --- | --- |
+| GET | `/admin/users` | A1 | `keyword`, `role`, `department_id`, phân trang |
+| POST | `/admin/users` | A1, S2 | Tạo tài khoản, gửi link đặt mật khẩu |
+| GET | `/admin/users/{id}` | A1 | |
+| PATCH | `/admin/users/{id}` | A1 | Gồm gán bộ phận, khóa tài khoản |
+| DELETE | `/admin/users/{id}` | A1 | Xóa mềm, thu hồi mọi phiên |
+| GET | `/admin/users/import-template` | A4 | Tải file Excel mẫu |
+| POST | `/admin/users/import` | A4 | Upload .xlsx |
+| GET | `/admin/departments` | A2 | `keyword`, phân trang |
+| POST | `/admin/departments` | A2 | |
+| GET | `/admin/departments/{id}` | A2 | |
+| PATCH | `/admin/departments/{id}` | A2 | |
+| DELETE | `/admin/departments/{id}` | A2 | Xóa mềm, chặn khi còn thành viên |
+| GET | `/admin/departments/{id}/members` | A3 | Xem thành viên để chọn manager |
+| POST | `/admin/departments/{id}/managers` | A3 | Body `user_id`, user phải có role MANAGER |
+| DELETE | `/admin/departments/{id}/managers/{user_id}` | A3 | |
+
+### Hệ thống (1 endpoint, 3 tác vụ nền)
+
+| Loại | Tên | Mã | Ghi chú |
+| --- | --- | --- | --- |
+| GET | `/health` | — | Kiểm tra DB, Redis. 200 khi ổn, 503 khi có thành phần lỗi |
+| Event | `send_report_notification` | S1 | Sau khi tạo báo cáo |
+| Event | `send_account_setup_email` | S2 | Sau khi admin tạo user hoặc import |
+| Cron | `send_monthly_summary` | S3 | 08:00 ngày 1 hằng tháng |
+
+## Thứ tự khai báo route
+
+Route tĩnh phải khai báo trước route có tham số trong cùng router, ví dụ `/admin/users/import-template` trước `/admin/users/{id}` và `/manager/reports/export` trước `/manager/reports/{id}`. Nếu không, FastAPI khớp nhầm vào `{id}` và trả 422.

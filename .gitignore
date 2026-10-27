@@ -218,3 +218,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# macOS, JetBrains
+.DS_Store
+.idea/
+
+# Thư mục tạm của Playwright MCP
+.playwright-mcp/
