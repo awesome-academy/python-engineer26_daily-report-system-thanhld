@@ -9,7 +9,7 @@ services:
     command: sh scripts/start-api.sh
     environment:
       ENVIRONMENT: local
-      # DEBUGPY=1 make dev: chạy API dưới debugpy để VS Code attach (xem README, mục Debug).
+      # make debug: chạy API dưới debugpy để VS Code attach (xem README, mục Debug).
       DEBUGPY: ${DEBUGPY:-0}
       DEBUGPY_WAIT: ${DEBUGPY_WAIT:-0}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
@@ -17,7 +17,8 @@ services:
       REDIS_URL: redis://redis:6379/0
     ports:
       - "${API_PORT:-8001}:8000"
-      - "${DEBUGPY_PORT:-5678}:5678"
+      # Chỉ mở trên 127.0.0.1: ai attach được debugpy là chạy được code tùy ý trong container.
+      - "127.0.0.1:${DEBUGPY_PORT:-5678}:5678"
     volumes:
       - ./src:/app/src
       - ./migrations:/app/migrations

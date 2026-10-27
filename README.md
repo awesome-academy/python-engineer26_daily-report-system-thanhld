@@ -37,7 +37,7 @@ docker compose exec api daily-report create-admin   # hoặc: make admin (chạy
 
 **Debug API chạy trong Docker:**
 
-1. Chạy `make debug` (tương đương `DEBUGPY=1 docker compose up -d --build`). API chạy dưới debugpy, mở cổng 5678.
+1. Chạy `make debug` (tương đương `DEBUGPY=1 docker compose up -d --build`). API chạy dưới debugpy, mở cổng 5678 chỉ trên `127.0.0.1` của máy host (máy khác trong mạng LAN không attach được).
 2. Trong VS Code, mở tab Run and Debug, chọn **Docker: attach API (debugpy)**, rồi đặt breakpoint trong `src/`.
 3. Gọi API từ Swagger, chương trình sẽ dừng ở breakpoint.
 
