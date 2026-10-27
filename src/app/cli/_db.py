@@ -23,9 +23,12 @@ async def cli_session() -> AsyncIterator[AsyncSession]:
         await engine.dispose()
 
 
-def exit_with_validation_errors(exc: ValidationError) -> typer.Exit:
-    """In lỗi validate theo từng trường, trả về Exit để caller `raise ... from exc`."""
+def exit_with_validation_errors(exc: ValidationError, field: str = "giá trị") -> typer.Exit:
+    """In lỗi validate theo từng trường, trả về Exit để caller `raise ... from exc`.
+
+    `field` là tên in ra khi lỗi không gắn với trường nào (validate một giá trị qua TypeAdapter).
+    """
     for error in exc.errors():
-        field = error["loc"][0] if error["loc"] else "giá trị"
-        typer.secho(f"{field}: {error['msg']}", fg=typer.colors.RED, err=True)
+        name = error["loc"][0] if error["loc"] else field
+        typer.secho(f"{name}: {error['msg']}", fg=typer.colors.RED, err=True)
     return typer.Exit(code=1)

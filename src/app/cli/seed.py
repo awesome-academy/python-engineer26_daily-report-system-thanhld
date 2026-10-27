@@ -16,7 +16,7 @@ from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import func, select, text, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.cli._db import cli_session
+from app.cli._db import cli_session, exit_with_validation_errors
 from app.core.config import get_settings
 from app.core.constants import Environment
 from app.core.database import Base
@@ -309,8 +309,7 @@ def seed(
     try:
         TypeAdapter(Password).validate_python(password)
     except ValidationError as exc:
-        typer.secho(f"password: {exc.errors()[0]['msg']}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=1) from exc
+        raise exit_with_validation_errors(exc, field="password") from exc
     if reset and not yes:
         typer.confirm("Xóa TOÀN BỘ dữ liệu hiện có rồi seed lại?", abort=True)
 
