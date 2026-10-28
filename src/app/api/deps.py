@@ -10,7 +10,7 @@ from app.core.database import get_db_session
 from app.core.exceptions import UnauthorizedError
 from app.core.redis import get_redis
 from app.core.security import AccessTokenClaims, decode_access_token, oauth2_scheme
-from app.modules.auth.blacklist import is_access_token_revoked
+from app.modules.auth.blacklist import is_session_blacklisted
 from app.modules.users.models import User
 from app.modules.users.repository import UserRepository
 
@@ -24,7 +24,7 @@ async def get_token_claims(
     if not token:
         raise UnauthorizedError
     claims = decode_access_token(token)
-    if await is_access_token_revoked(redis, claims.jti):
+    if await is_session_blacklisted(redis, claims.session_id):
         raise UnauthorizedError
     return claims
 

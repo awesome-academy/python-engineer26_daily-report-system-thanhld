@@ -5,7 +5,12 @@ from typing import TYPE_CHECKING
 from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.constants import TOKEN_HASH_LENGTH, TOKEN_JTI_MAX_LENGTH, TOKEN_PURPOSE_MAX_LENGTH
+from app.core.constants import (
+    SESSION_ID_MAX_LENGTH,
+    TOKEN_HASH_LENGTH,
+    TOKEN_JTI_MAX_LENGTH,
+    TOKEN_PURPOSE_MAX_LENGTH,
+)
 from app.core.database import Base, BigIntPK, CreatedAtMixin
 
 if TYPE_CHECKING:
@@ -17,7 +22,10 @@ class UserTokenPurpose(StrEnum):
 
 
 class RefreshToken(CreatedAtMixin, Base):
-    """Phiên đăng nhập. Chỉ lưu jti của refresh token, không lưu token gốc."""
+    """Refresh token của phiên đăng nhập. Chỉ lưu jti, không lưu token gốc.
+
+    Mỗi lần refresh tạo một dòng mới cùng session_id, dòng cũ bị thu hồi.
+    """
 
     __tablename__ = "refresh_tokens"
 
@@ -26,6 +34,8 @@ class RefreshToken(CreatedAtMixin, Base):
         BigInteger, ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
     jti: Mapped[str] = mapped_column(String(TOKEN_JTI_MAX_LENGTH), unique=True)
+    # Giữ nguyên qua các lần refresh, là claim sid của access token: đăng xuất thu hồi cả phiên.
+    session_id: Mapped[str] = mapped_column(String(SESSION_ID_MAX_LENGTH), index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

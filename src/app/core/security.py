@@ -63,9 +63,8 @@ class AccessTokenClaims:
     role: str
     token_version: int
     jti: str
-    # jti của refresh token cấp cùng lúc, để đăng xuất thu hồi đúng phiên đăng nhập này.
+    # Mã phiên đăng nhập, giữ nguyên qua các lần refresh: đăng xuất thu hồi cả phiên.
     session_id: str
-    expires_at: datetime
 
 
 @dataclass(frozen=True)
@@ -143,7 +142,6 @@ def decode_access_token(token: str) -> AccessTokenClaims:
             token_version=int(claims["ver"]),
             jti=str(claims["jti"]),
             session_id=str(claims["sid"]),
-            expires_at=datetime.fromtimestamp(claims["exp"], UTC),
         )
     except (jwt.PyJWTError, KeyError, TypeError, ValueError) as exc:
         raise UnauthorizedError from exc

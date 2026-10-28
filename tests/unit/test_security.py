@@ -38,7 +38,6 @@ def test_access_token_round_trip_keeps_claims() -> None:
         "abc",
     )
     assert token.expires_in == get_settings().access_token_expire_minutes * 60
-    assert claims.expires_at - datetime.now(UTC) <= timedelta(seconds=token.expires_in)
 
 
 def test_each_access_token_has_unique_id() -> None:

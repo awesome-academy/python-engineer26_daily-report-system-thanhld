@@ -28,6 +28,7 @@ DEPARTMENT_NAME_MAX_LENGTH = 100
 # Đường dẫn file trong kho lưu trữ (local hoặc S3), ví dụ ảnh đại diện.
 STORAGE_KEY_MAX_LENGTH = 255
 TOKEN_JTI_MAX_LENGTH = 64
+SESSION_ID_MAX_LENGTH = 64
 # SHA-256 dạng hex.
 TOKEN_HASH_LENGTH = 64
 TOKEN_PURPOSE_MAX_LENGTH = 32
@@ -47,7 +48,7 @@ LOGIN_MAX_FAILED_ATTEMPTS = 5
 LOGIN_ATTEMPT_WINDOW_MINUTES = 15
 
 # Tiền tố key trên Redis
-REDIS_ACCESS_TOKEN_BLACKLIST_PREFIX = "auth:blacklist:"  # noqa: S105 (tiền tố key, không phải mật khẩu)
+REDIS_REVOKED_SESSION_PREFIX = "auth:revoked-session:"
 REDIS_LOGIN_ATTEMPTS_PREFIX = "auth:login-attempts:"
 
 # Mật khẩu người dùng nhập

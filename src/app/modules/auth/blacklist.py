@@ -1,27 +1,26 @@
-"""Blacklist access token trên Redis.
+"""Blacklist phiên đăng nhập trên Redis.
 
 Access token đã đăng xuất vẫn đúng chữ ký và còn hạn, nên chỉ từ chối được nhờ danh sách này.
+Blacklist theo mã phiên (claim sid) chứ không theo từng token, để cả access token cấp trước lần
+refresh gần nhất cũng bị từ chối.
 """
-
-import math
-from datetime import UTC, datetime
 
 from redis.asyncio import Redis
 
-from app.core.constants import REDIS_ACCESS_TOKEN_BLACKLIST_PREFIX
-from app.core.security import AccessTokenClaims
+from app.core.config import get_settings
+from app.core.constants import REDIS_REVOKED_SESSION_PREFIX
 
 
-def _key(jti: str) -> str:
-    return f"{REDIS_ACCESS_TOKEN_BLACKLIST_PREFIX}{jti}"
+def _key(session_id: str) -> str:
+    return f"{REDIS_REVOKED_SESSION_PREFIX}{session_id}"
 
 
-async def revoke_access_token(redis: Redis, claims: AccessTokenClaims) -> None:
-    # Chỉ cần giữ đến khi token hết hạn, sau đó decode_access_token tự từ chối.
-    ttl = math.ceil((claims.expires_at - datetime.now(UTC)).total_seconds())
-    if ttl > 0:
-        await redis.set(_key(claims.jti), 1, ex=ttl)
+async def blacklist_session(redis: Redis, session_id: str) -> None:
+    # Access token cấp muộn nhất của phiên hết hạn sau tối đa chừng này giây, sau đó
+    # decode_access_token tự từ chối nên không cần giữ key nữa.
+    ttl = get_settings().access_token_expire_minutes * 60
+    await redis.set(_key(session_id), 1, ex=ttl)
 
 
-async def is_access_token_revoked(redis: Redis, jti: str) -> bool:
-    return bool(await redis.exists(_key(jti)))
+async def is_session_blacklisted(redis: Redis, session_id: str) -> bool:
+    return bool(await redis.exists(_key(session_id)))

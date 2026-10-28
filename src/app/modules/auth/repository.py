@@ -20,12 +20,12 @@ class RefreshTokenRepository:
             select(RefreshToken).where(RefreshToken.jti == jti).with_for_update()
         )
 
-    async def revoke(self, *, user_id: int, jti: str, revoked_at: datetime) -> None:
+    async def revoke_session(self, *, user_id: int, session_id: str, revoked_at: datetime) -> None:
         await self.session.execute(
             update(RefreshToken)
             .where(
                 RefreshToken.user_id == user_id,
-                RefreshToken.jti == jti,
+                RefreshToken.session_id == session_id,
                 RefreshToken.revoked_at.is_(None),
             )
             .values(revoked_at=revoked_at)

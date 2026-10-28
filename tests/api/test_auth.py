@@ -13,7 +13,7 @@ from app.core.constants import (
     JWT_SECRET_MIN_LENGTH,
     LOGIN_ATTEMPT_WINDOW_MINUTES,
     LOGIN_MAX_FAILED_ATTEMPTS,
-    REDIS_ACCESS_TOKEN_BLACKLIST_PREFIX,
+    REDIS_REVOKED_SESSION_PREFIX,
 )
 from app.core.security import (
     create_access_token,
@@ -144,7 +144,7 @@ async def test_login_returns_refresh_token_bound_to_access_token(
     row = await get_refresh_token_row(db_session, tokens["refresh_token"])
     assert row.user_id == user.id
     assert row.revoked_at is None
-    assert decode_access_token(tokens["access_token"]).session_id == row.jti
+    assert decode_access_token(tokens["access_token"]).session_id == row.session_id
 
 
 async def test_refresh_returns_new_tokens_and_revokes_old_one(
@@ -161,7 +161,10 @@ async def test_refresh_returns_new_tokens_and_revokes_old_one(
     assert new_tokens["expires_in"] == get_settings().access_token_expire_minutes * 60
     assert (await client.get(ME_URL, headers=bearer(new_tokens["access_token"]))).status_code == 200
     old_row = await get_refresh_token_row(db_session, tokens["refresh_token"])
+    new_row = await get_refresh_token_row(db_session, new_tokens["refresh_token"])
     assert old_row.revoked_at is not None
+    assert new_row.session_id == old_row.session_id
+    assert decode_access_token(new_tokens["access_token"]).session_id == old_row.session_id
 
 
 async def test_reused_refresh_token_revokes_all_sessions_of_user(
@@ -275,8 +278,8 @@ async def test_logout_rejects_access_and_refresh_token_immediately(
     assert me.status_code == 401
     assert me.json()["error"]["code"] == "UNAUTHORIZED"
     assert (await refresh(client, tokens["refresh_token"])).status_code == 401
-    jti = decode_access_token(tokens["access_token"]).jti
-    ttl = await redis.ttl(f"{REDIS_ACCESS_TOKEN_BLACKLIST_PREFIX}{jti}")
+    session_id = decode_access_token(tokens["access_token"]).session_id
+    ttl = await redis.ttl(f"{REDIS_REVOKED_SESSION_PREFIX}{session_id}")
     assert 0 < ttl <= get_settings().access_token_expire_minutes * 60
 
 
@@ -324,6 +327,32 @@ async def test_access_token_from_refresh_can_log_out(
 
     assert response.status_code == 204
     assert (await refresh(client, tokens["refresh_token"])).status_code == 401
+
+
+async def test_logout_with_older_access_token_ends_whole_session(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    await create_user(db_session, email="an@example.com")
+    first = await login_tokens(client, "an@example.com")
+    rotated = (await refresh(client, first["refresh_token"])).json()
+
+    response = await client.post(LOGOUT_URL, headers=bearer(first["access_token"]))
+
+    assert response.status_code == 204
+    assert (await client.get(ME_URL, headers=bearer(rotated["access_token"]))).status_code == 401
+    assert (await refresh(client, rotated["refresh_token"])).status_code == 401
+
+
+async def test_logout_rejects_every_access_token_of_session(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    await create_user(db_session, email="an@example.com")
+    first = await login_tokens(client, "an@example.com")
+    rotated = (await refresh(client, first["refresh_token"])).json()
+
+    await client.post(LOGOUT_URL, headers=bearer(rotated["access_token"]))
+
+    assert (await client.get(ME_URL, headers=bearer(first["access_token"]))).status_code == 401
 
 
 @pytest.mark.parametrize("account", ["existing", "unknown"])

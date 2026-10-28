@@ -1,3 +1,4 @@
+import uuid
 from datetime import UTC, datetime
 
 import structlog
@@ -13,7 +14,7 @@ from app.core.security import (
     verify_dummy_password,
     verify_password,
 )
-from app.modules.auth.blacklist import revoke_access_token
+from app.modules.auth.blacklist import blacklist_session
 from app.modules.auth.exceptions import InvalidCredentialsError
 from app.modules.auth.login_attempts import LoginAttempts
 from app.modules.auth.models import RefreshToken
@@ -48,7 +49,7 @@ class AuthService:
 
         await self.login_attempts.reset(email)
         user.last_login_at = datetime.now(UTC)
-        return await self._issue_tokens(user)
+        return await self._issue_tokens(user, session_id=uuid.uuid4().hex)
 
     async def refresh(self, refresh_token: str) -> TokenResponse:
         """Xoay vòng: refresh token chỉ dùng được một lần, mỗi lần đổi lấy cặp token mới."""
@@ -71,14 +72,19 @@ class AuthService:
             raise UnauthorizedError
 
         stored.revoked_at = now
-        return await self._issue_tokens(user)
+        return await self._issue_tokens(user, session_id=stored.session_id)
 
     async def logout(self, claims: AccessTokenClaims) -> None:
-        await self.refresh_tokens.revoke(
-            user_id=claims.user_id, jti=claims.session_id, revoked_at=datetime.now(UTC)
+        """Thu hồi cả phiên: mọi refresh token và access token cấp trong phiên.
+
+        Đăng xuất bằng access token nào của phiên (kể cả token cấp trước lần refresh gần nhất)
+        cũng có hiệu lực như nhau.
+        """
+        await self.refresh_tokens.revoke_session(
+            user_id=claims.user_id, session_id=claims.session_id, revoked_at=datetime.now(UTC)
         )
         await self.session.commit()
-        await revoke_access_token(self.redis, claims)
+        await blacklist_session(self.redis, claims.session_id)
 
     async def _revoke_all_sessions(self, user_id: int, now: datetime) -> None:
         """Refresh token đã thu hồi bị gửi lại: token có thể đã lộ.
@@ -93,10 +99,15 @@ class AuthService:
         await self.session.commit()
         logger.warning("refresh_token_reused", user_id=user_id)
 
-    async def _issue_tokens(self, user: User) -> TokenResponse:
+    async def _issue_tokens(self, user: User, *, session_id: str) -> TokenResponse:
         refresh = create_refresh_token(user_id=user.id, token_version=user.token_version)
         await self.refresh_tokens.add(
-            RefreshToken(user_id=user.id, jti=refresh.jti, expires_at=refresh.expires_at)
+            RefreshToken(
+                user_id=user.id,
+                jti=refresh.jti,
+                session_id=session_id,
+                expires_at=refresh.expires_at,
+            )
         )
         await self.session.commit()
 
@@ -104,7 +115,7 @@ class AuthService:
             user_id=user.id,
             role=user.role,
             token_version=user.token_version,
-            session_id=refresh.jti,
+            session_id=session_id,
         )
         return TokenResponse(
             access_token=access.token, refresh_token=refresh.token, expires_in=access.expires_in
