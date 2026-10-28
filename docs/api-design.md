@@ -116,7 +116,7 @@ Hồ sơ cá nhân:
 - `phone`: chỉ chữ số, có thể có `+` đầu, 9 đến 15 chữ số. `date_of_birth`: ngày trong quá khứ.
 - Mật khẩu người dùng tự chọn (đổi mật khẩu, `create-admin`, đặt mật khẩu lần đầu): 8 đến 128 ký tự, có chữ thường, chữ hoa, chữ số và ký tự đặc biệt. Không đạt thì 422 ở field đó. Mật khẩu khi đăng nhập và mật khẩu hiện tại không xét quy tắc này.
 - `PUT /me/password` body `current_password`, `new_password` (phải khác mật khẩu hiện tại). Sai mật khẩu hiện tại trả 400 `CURRENT_PASSWORD_INCORRECT` (không dùng 401 để client không hiểu nhầm là hết phiên), đếm chung với đăng nhập sai nên quá 5 lần trong 15 phút trả 429.
-- Đổi mật khẩu tăng `token_version`: mọi access token, refresh token cũ (cả của phiên hiện tại) hết hiệu lực, response trả cặp token mới cho phiên hiện tại. Refresh token cũ không bị đánh dấu thu hồi, để thiết bị khác refresh bằng token cũ chỉ nhận 401, không bị coi là token bị lộ (việc đó sẽ đăng xuất cả phiên vừa đổi mật khẩu).
+- Đổi mật khẩu tăng `token_version`: mọi access token, refresh token cũ (cả của phiên hiện tại) hết hiệu lực, response trả cặp token mới cho phiên hiện tại. Nếu trong lúc xử lý phiên đã hết hiệu lực (request đổi mật khẩu khác chạy trước, tài khoản bị khóa) thì trả 401. Refresh token cũ không bị đánh dấu thu hồi, để thiết bị khác refresh bằng token cũ chỉ nhận 401, không bị coi là token bị lộ (việc đó sẽ đăng xuất cả phiên vừa đổi mật khẩu).
 
 ### /manager: role MANAGER, chỉ bộ phận mình quản lý (11)
 

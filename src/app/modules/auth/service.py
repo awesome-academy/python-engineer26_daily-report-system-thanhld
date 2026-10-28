@@ -101,12 +101,15 @@ class AuthService:
         """
         # Dùng chung bộ đếm với đăng nhập: người cầm access token bị lộ không dò được mật khẩu.
         await self.login_attempts.register(user.email)
-        # Khóa dòng: hai request đổi mật khẩu song song thì request sau thấy mật khẩu đã đổi.
+        token_version = user.token_version
+        # Khóa dòng rồi kiểm tra lại phiên: trong lúc chờ khóa, request khác có thể đã đổi mật khẩu,
+        # khóa tài khoản hoặc thu hồi mọi phiên. Khi đó phiên này đã hết hiệu lực, trả 401.
         locked = await self.users.get_by_id_for_update(user.id)
-        if (
-            locked is None
-            or locked.password_hash is None
-            or not await verify_password(data.current_password, locked.password_hash)
+        if locked is None or not locked.can_log_in or locked.token_version != token_version:
+            await self.session.rollback()
+            raise UnauthorizedError
+        if locked.password_hash is None or not await verify_password(
+            data.current_password, locked.password_hash
         ):
             await self.session.rollback()
             raise CurrentPasswordIncorrectError
