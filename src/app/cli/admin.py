@@ -28,7 +28,10 @@ def create_admin(
             hide_input=True,
             confirmation_prompt="Nhập lại mật khẩu",
             envvar="ADMIN_PASSWORD",
-            help="Tối thiểu 8 ký tự. Bỏ trống để nhập ẩn.",
+            help=(
+                "Tối thiểu 8 ký tự, có chữ thường, chữ hoa, chữ số, ký tự đặc biệt. "
+                "Bỏ trống để nhập ẩn."
+            ),
         ),
     ],
 ) -> None:

@@ -10,6 +10,12 @@ class InvalidCredentialsError(UnauthorizedError):
     message = "Email hoặc mật khẩu không đúng."
 
 
+class CurrentPasswordIncorrectError(AppError):
+    # 400 thay vì 401: client không được hiểu nhầm là phiên đăng nhập hết hạn rồi đăng xuất.
+    code = ErrorCode.CURRENT_PASSWORD_INCORRECT
+    message = "Mật khẩu hiện tại không đúng."
+
+
 class TooManyAttemptsError(AppError):
     status_code = status.HTTP_429_TOO_MANY_REQUESTS
     code = ErrorCode.TOO_MANY_ATTEMPTS
