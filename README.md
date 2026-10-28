@@ -27,11 +27,13 @@ Migration chạy tự động khi container `api` khởi động. Sửa code tro
 docker compose exec api daily-report create-admin   # hoặc: make admin (chạy trên máy host)
 ```
 
+Mật khẩu tối thiểu 8 ký tự, có chữ thường, chữ hoa, chữ số và ký tự đặc biệt (ví dụ `Matkhau@123`).
+
 1. Mở Swagger http://localhost:8001/docs, bấm **Authorize**.
 2. Ô `username` nhập email, ô `password` nhập mật khẩu vừa tạo.
 3. Gọi `GET /api/v1/me`.
 
-Đăng nhập theo chuẩn OAuth2 password flow, trả access token JWT (hết hạn sau 15 phút) và refresh token (7 ngày). Gọi `POST /api/v1/auth/refresh` để lấy cặp token mới, `POST /api/v1/auth/logout` để đăng xuất. Sai mật khẩu quá 5 lần trong 15 phút thì bị khóa tạm (429).
+Đăng nhập theo chuẩn OAuth2 password flow, trả access token JWT (hết hạn sau 15 phút) và refresh token (7 ngày). Gọi `POST /api/v1/auth/refresh` để lấy cặp token mới, `POST /api/v1/auth/logout` để đăng xuất. Sai mật khẩu quá 5 lần trong 15 phút thì bị khóa tạm (429). `PATCH /api/v1/me` sửa hồ sơ, `PUT /api/v1/me/password` đổi mật khẩu (các phiên đăng nhập khác bị đăng xuất).
 
 ## Debug
 
