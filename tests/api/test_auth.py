@@ -14,6 +14,7 @@ from app.core.constants import (
     LOGIN_ATTEMPT_WINDOW_MINUTES,
     LOGIN_MAX_FAILED_ATTEMPTS,
     REDIS_REVOKED_SESSION_PREFIX,
+    REFRESH_TOKEN_REUSE_GRACE_SECONDS,
 )
 from app.core.security import (
     create_access_token,
@@ -174,6 +175,10 @@ async def test_reused_refresh_token_revokes_all_sessions_of_user(
     stolen = await login_tokens(client, "an@example.com")
     other_device = await login_tokens(client, "an@example.com")
     rotated = (await refresh(client, stolen["refresh_token"])).json()
+    row = await get_refresh_token_row(db_session, stolen["refresh_token"])
+    assert row.revoked_at is not None
+    row.revoked_at -= timedelta(seconds=REFRESH_TOKEN_REUSE_GRACE_SECONDS)
+    await db_session.flush()
 
     response = await refresh(client, stolen["refresh_token"])
 
@@ -182,6 +187,23 @@ async def test_reused_refresh_token_revokes_all_sessions_of_user(
     for tokens in (rotated, other_device):
         assert (await refresh(client, tokens["refresh_token"])).status_code == 401
         assert (await client.get(ME_URL, headers=bearer(tokens["access_token"]))).status_code == 401
+
+
+async def test_refresh_retried_right_after_rotation_keeps_sessions(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    # Client gửi lại request refresh (timeout, hai tab cùng refresh): chỉ từ chối request sau.
+    await create_user(db_session, email="an@example.com")
+    tokens = await login_tokens(client, "an@example.com")
+    other_device = await login_tokens(client, "an@example.com")
+    rotated = (await refresh(client, tokens["refresh_token"])).json()
+
+    response = await refresh(client, tokens["refresh_token"])
+
+    assert response.status_code == 401
+    assert (await client.get(ME_URL, headers=bearer(rotated["access_token"]))).status_code == 200
+    assert (await refresh(client, rotated["refresh_token"])).status_code == 200
+    assert (await refresh(client, other_device["refresh_token"])).status_code == 200
 
 
 @pytest.mark.parametrize(

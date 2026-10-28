@@ -1,10 +1,11 @@
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import structlog
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.constants import REFRESH_TOKEN_REUSE_GRACE_SECONDS
 from app.core.exceptions import UnauthorizedError
 from app.core.security import (
     AccessTokenClaims,
@@ -63,7 +64,10 @@ class AuthService:
 
         now = datetime.now(UTC)
         if stored.revoked_at is not None:
-            await self._revoke_all_sessions(claims.user_id, now)
+            if now - stored.revoked_at < timedelta(seconds=REFRESH_TOKEN_REUSE_GRACE_SECONDS):
+                await self.session.rollback()
+            else:
+                await self._revoke_all_sessions(claims.user_id, now)
             raise UnauthorizedError
 
         user = await self.users.get_by_id(claims.user_id)
@@ -87,7 +91,7 @@ class AuthService:
         await blacklist_session(self.redis, claims.session_id)
 
     async def _revoke_all_sessions(self, user_id: int, now: datetime) -> None:
-        """Refresh token đã thu hồi bị gửi lại: token có thể đã lộ.
+        """Refresh token đã thu hồi quá khoảng ân hạn bị gửi lại: token có thể đã lộ.
 
         Không biết bên nào là chủ tài khoản, nên thu hồi mọi phiên của user, và tăng
         token_version để cả access token đang dùng cũng hết hiệu lực ngay.

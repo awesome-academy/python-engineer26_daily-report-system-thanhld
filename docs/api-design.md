@@ -85,6 +85,7 @@ Phiên đăng nhập:
 
 - Access token (15 phút) và refresh token (7 ngày) đều là JWT, phân biệt bằng claim `type`. Bảng `refresh_tokens` chỉ lưu `jti` của refresh token. Mỗi lần đăng nhập là một phiên có mã riêng (`session_id`), giữ nguyên qua các lần refresh; access token mang mã này trong claim `sid`.
 - Refresh xoay vòng: mỗi refresh token chỉ dùng được một lần. Gửi lại token đã thu hồi (đã dùng hoặc đã đăng xuất) bị coi là token bị lộ: thu hồi mọi phiên của user và tăng `token_version`, mọi access token đang dùng cũng hết hiệu lực.
+- Ngoại lệ: token gửi lại trong 30 giây kể từ lúc bị thu hồi (client timeout rồi gửi lại, hai tab cùng refresh) chỉ bị từ chối (401), không thu hồi phiên nào. Đánh đổi: kẻ trộm dùng token trước, chủ tài khoản gửi lại trong 30 giây đó thì không phát hiện được.
 - Đăng xuất thu hồi cả phiên: mọi refresh token cùng `session_id` trong DB, và đưa mã phiên vào blacklist Redis trong 15 phút (thời hạn access token), nên mọi access token của phiên, kể cả token cấp trước lần refresh gần nhất, bị từ chối ngay. Các phiên trên thiết bị khác không bị ảnh hưởng.
 - Khóa tạm đăng nhập đếm theo email (không phân biệt hoa thường, kể cả email không tồn tại), cửa sổ 15 phút tính từ lần thử đầu. Lần thứ 6 trả 429 `TOO_MANY_ATTEMPTS` kèm header `Retry-After` (số giây còn lại), không kiểm tra mật khẩu. Đăng nhập đúng thì xóa bộ đếm.
 

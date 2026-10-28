@@ -39,6 +39,9 @@ EMAIL_STATUS_MAX_LENGTH = 16
 # JWT. HS256 cần khóa tối thiểu 256 bit (RFC 7518, mục 3.2).
 ACCESS_TOKEN_EXPIRE_MINUTES = 15
 REFRESH_TOKEN_EXPIRE_DAYS = 7
+# Refresh token vừa bị thu hồi mà được gửi lại trong khoảng này (client timeout rồi gửi lại,
+# hai tab cùng refresh) thì chỉ từ chối, không coi là token bị lộ.
+REFRESH_TOKEN_REUSE_GRACE_SECONDS = 30
 JWT_SECRET_MIN_LENGTH = 32
 # Refresh token client gửi lên trong body. JWT của project dài khoảng 300 ký tự.
 JWT_MAX_LENGTH = 1024
