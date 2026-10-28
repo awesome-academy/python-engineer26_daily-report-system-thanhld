@@ -23,6 +23,8 @@ PASSWORD_HASH_MAX_LENGTH = 255
 FULL_NAME_MIN_LENGTH = 1
 FULL_NAME_MAX_LENGTH = 100
 PHONE_MAX_LENGTH = 20
+# Số điện thoại: chỉ chữ số, có thể có dấu + đầu, từ 9 đến 15 chữ số (E.164 tối đa 15).
+PHONE_PATTERN = r"^\+?[0-9]{9,15}$"
 DEPARTMENT_CODE_MAX_LENGTH = 20
 DEPARTMENT_NAME_MAX_LENGTH = 100
 # Đường dẫn file trong kho lưu trữ (local hoặc S3), ví dụ ảnh đại diện.
