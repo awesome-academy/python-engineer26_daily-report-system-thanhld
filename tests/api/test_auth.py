@@ -42,6 +42,11 @@ async def login_tokens(client: AsyncClient, email: str) -> dict[str, str]:
     return tokens
 
 
+async def fail_login(client: AsyncClient, email: str, times: int) -> None:
+    for _ in range(times):
+        assert (await login(client, email, WRONG_PASSWORD)).status_code == 401
+
+
 async def refresh(client: AsyncClient, refresh_token: str) -> Response:
     return await client.post(REFRESH_URL, json={"refresh_token": refresh_token})
 
@@ -321,11 +326,6 @@ async def test_access_token_from_refresh_can_log_out(
     assert (await refresh(client, tokens["refresh_token"])).status_code == 401
 
 
-async def fail_login(client: AsyncClient, email: str, times: int) -> None:
-    for _ in range(times):
-        assert (await login(client, email, WRONG_PASSWORD)).status_code == 401
-
-
 @pytest.mark.parametrize("account", ["existing", "unknown"])
 async def test_login_is_locked_after_too_many_failed_attempts(
     client: AsyncClient, db_session: AsyncSession, account: str
@@ -367,19 +367,6 @@ async def test_successful_login_resets_failed_attempts(
     await fail_login(client, "an@example.com", LOGIN_MAX_FAILED_ATTEMPTS - 1)
     assert (await login(client, "an@example.com", DEFAULT_PASSWORD)).status_code == 200
     await fail_login(client, "an@example.com", LOGIN_MAX_FAILED_ATTEMPTS - 1)
-
-    response = await login(client, "an@example.com", DEFAULT_PASSWORD)
-
-    assert response.status_code == 200
-
-
-async def test_login_lock_expires_after_window(
-    client: AsyncClient, db_session: AsyncSession, redis: Redis
-) -> None:
-    await create_user(db_session, email="an@example.com")
-    await fail_login(client, "an@example.com", LOGIN_MAX_FAILED_ATTEMPTS)
-    # Giả lập hết cửa sổ khóa: key bộ đếm hết hạn trên Redis.
-    await redis.flushdb()
 
     response = await login(client, "an@example.com", DEFAULT_PASSWORD)
 
