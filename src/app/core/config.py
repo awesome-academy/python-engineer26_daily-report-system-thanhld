@@ -31,6 +31,9 @@ class Settings(BaseSettings):
         "postgresql+asyncpg://daily_report:daily_report@localhost:5433/daily_report_test"
     )
     redis_url: str = "redis://localhost:6380/0"
+    # Test xóa sạch DB Redis này trước mỗi test. Chạy test song song ở nhiều worktree thì mỗi
+    # nơi đặt một DB khác nhau, như TEST_DATABASE_URL.
+    test_redis_url: str = "redis://localhost:6380/15"
 
     jwt_secret_key: str = Field(default=DEV_JWT_SECRET_KEY, min_length=JWT_SECRET_MIN_LENGTH)
     jwt_algorithm: Literal["HS256"] = "HS256"

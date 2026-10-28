@@ -1,6 +1,7 @@
 """Fixture dùng chung.
 
-Test chạy trên PostgreSQL thật, database riêng (TEST_DATABASE_URL), Redis dùng DB số 15.
+Test chạy trên PostgreSQL thật, database riêng (TEST_DATABASE_URL), Redis dùng DB riêng
+(TEST_REDIS_URL).
 Mỗi test chạy trong một transaction và rollback khi kết thúc nên dữ liệu không lẫn nhau.
 
 Engine và client Redis của app được tạo lúc import, nên biến môi trường phải được đặt trước.
@@ -12,6 +13,7 @@ import asyncio
 import os
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 from alembic import command
@@ -28,15 +30,25 @@ from app.core.config import Settings
 
 _settings = Settings()
 TEST_DATABASE_URL = _settings.test_database_url
-TEST_REDIS_DB = 15
-TEST_REDIS_URL = _settings.redis_url.rsplit("/", 1)[0] + f"/{TEST_REDIS_DB}"
+TEST_REDIS_URL = _settings.test_redis_url
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ["REDIS_URL"] = TEST_REDIS_URL
 os.environ["ENVIRONMENT"] = "test"
 
+
+def _redis_target(url: str) -> tuple[str | None, int | None, int]:
+    """Host, cổng, số DB của URL Redis (không ghi số DB thì là DB 0)."""
+    parts = urlsplit(url)
+    return parts.hostname, parts.port, int(parts.path.lstrip("/") or 0)
+
+
 # Chặn nhầm database: test xóa và ghi dữ liệu, chỉ được chạy trên database tên kết thúc bằng _test.
 if not str(make_url(TEST_DATABASE_URL).database).endswith("_test"):
     msg = f"TEST_DATABASE_URL phải trỏ tới database *_test, đang là {TEST_DATABASE_URL!r}"
+    raise RuntimeError(msg)
+# Fixture `redis` xóa sạch DB Redis của test, nên DB này không được trùng DB dev.
+if _redis_target(TEST_REDIS_URL) == _redis_target(_settings.redis_url):
+    msg = f"TEST_REDIS_URL phải dùng DB Redis khác REDIS_URL, đang là {TEST_REDIS_URL!r}"
     raise RuntimeError(msg)
 
 # Chỉ import sau khi đặt biến môi trường: app.models kéo theo app.core.database, nơi engine được
@@ -49,9 +61,8 @@ if app_engine.url.database != make_url(TEST_DATABASE_URL).database:
     msg = f"Engine của app đang trỏ tới {app_engine.url.database!r}, không phải database test"
     raise RuntimeError(msg)
 
-# Fixture `redis` xóa sạch DB Redis trước mỗi test, nên chỉ được chạy trên DB dành cho test.
-if redis_client.connection_pool.connection_kwargs.get("db") != TEST_REDIS_DB:
-    msg = f"Client Redis của app không trỏ tới DB {TEST_REDIS_DB} dành cho test"
+if redis_client.connection_pool.connection_kwargs.get("db") != _redis_target(TEST_REDIS_URL)[2]:
+    msg = f"Client Redis của app không trỏ tới {TEST_REDIS_URL!r}"
     raise RuntimeError(msg)
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
