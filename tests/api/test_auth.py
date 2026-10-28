@@ -2,7 +2,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from httpx import AsyncClient, Response
+from httpx import AsyncClient
 from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,37 +23,24 @@ from app.core.security import (
 )
 from app.modules.auth.models import RefreshToken
 from tests.factories import DEFAULT_PASSWORD, create_user
-from tests.helpers import make_token
+from tests.helpers import (
+    LOGIN_URL,
+    REFRESH_URL,
+    bearer,
+    login,
+    login_tokens,
+    make_token,
+    refresh,
+)
 
-LOGIN_URL = "/api/v1/auth/login"
-REFRESH_URL = "/api/v1/auth/refresh"
 LOGOUT_URL = "/api/v1/auth/logout"
 ME_URL = "/api/v1/me"
 WRONG_PASSWORD = "SaiMatKhau@1"
 
 
-async def login(client: AsyncClient, email: str, password: str) -> Response:
-    return await client.post(LOGIN_URL, data={"username": email, "password": password})
-
-
-async def login_tokens(client: AsyncClient, email: str) -> dict[str, str]:
-    response = await login(client, email, DEFAULT_PASSWORD)
-    assert response.status_code == 200
-    tokens: dict[str, str] = response.json()
-    return tokens
-
-
 async def fail_login(client: AsyncClient, email: str, times: int) -> None:
     for _ in range(times):
         assert (await login(client, email, WRONG_PASSWORD)).status_code == 401
-
-
-async def refresh(client: AsyncClient, refresh_token: str) -> Response:
-    return await client.post(REFRESH_URL, json={"refresh_token": refresh_token})
-
-
-def bearer(access_token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {access_token}"}
 
 
 async def get_refresh_token_row(session: AsyncSession, refresh_token: str) -> RefreshToken:
