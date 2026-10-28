@@ -92,13 +92,16 @@ erDiagram
 | recipient_id | bigint | PK, FK → users.id, on delete restrict |
 | notified_at | timestamptz | null, ghi khi đã gửi mail S1 |
 
-### refresh_tokens (Ngày 2)
+### refresh_tokens (Ngày 2; `session_id` thêm ở Ngày 3)
+
+Mỗi lần refresh tạo một dòng mới cùng `session_id`, dòng cũ được ghi `revoked_at`.
 
 | Cột | Kiểu | Ràng buộc |
 | --- | --- | --- |
 | id | bigint | PK, identity |
 | user_id | bigint | FK → users.id, not null, on delete cascade |
 | jti | varchar(64) | not null, unique |
+| session_id | varchar(64) | not null; mã phiên đăng nhập, giữ nguyên qua các lần refresh |
 | expires_at | timestamptz | not null |
 | revoked_at | timestamptz | null |
 | created_at | timestamptz | not null |
@@ -140,6 +143,7 @@ erDiagram
 | daily_reports | `(department_id, report_date)` | màn hình manager, export, thống kê tháng |
 | report_recipients | `(recipient_id)` | báo cáo gửi tới một manager |
 | refresh_tokens | `(user_id)` | thu hồi mọi phiên của một user; xóa cascade không phải quét cả bảng |
+| refresh_tokens | `(session_id)` | đăng xuất thu hồi mọi refresh token của một phiên |
 | user_tokens | `(user_id)` | vô hiệu link cũ khi gửi link mới; xóa cascade không phải quét cả bảng |
 
 PostgreSQL không tự tạo index cho khóa ngoại. Mọi cột khóa ngoại ở trên đều có index riêng hoặc là cột đầu của một index (khóa chính ghép, unique) nên tra cứu và xóa không phải quét cả bảng.
