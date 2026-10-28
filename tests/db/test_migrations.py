@@ -41,6 +41,41 @@ async def test_migrations_can_downgrade_and_upgrade_again(
     }
 
 
+async def test_session_id_migration_keeps_existing_refresh_tokens(
+    engine: AsyncEngine, alembic_config: Config
+) -> None:
+    await asyncio.to_thread(command.downgrade, alembic_config, "0003")
+    try:
+        async with engine.begin() as connection:
+            user_id = await connection.scalar(
+                text(
+                    "INSERT INTO users (email, full_name) "
+                    "VALUES ('migration@example.com', 'Test') RETURNING id"
+                )
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO refresh_tokens (user_id, jti, expires_at) "
+                    "VALUES (:user_id, 'jti-cu', now())"
+                ),
+                {"user_id": user_id},
+            )
+
+        await asyncio.to_thread(command.upgrade, alembic_config, "head")
+
+        async with engine.connect() as connection:
+            session_id = await connection.scalar(
+                text("SELECT session_id FROM refresh_tokens WHERE jti = 'jti-cu'")
+            )
+        assert session_id == "jti-cu"
+    finally:
+        await asyncio.to_thread(command.upgrade, alembic_config, "head")
+        async with engine.begin() as connection:
+            await connection.execute(
+                text("DELETE FROM users WHERE email = 'migration@example.com'")
+            )
+
+
 async def test_models_match_migrations(engine: AsyncEngine, alembic_config: Config) -> None:
     """Giống `alembic check`: model đổi mà quên tạo migration thì test này fail."""
     await asyncio.to_thread(command.check, alembic_config)

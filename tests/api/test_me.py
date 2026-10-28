@@ -1,34 +1,15 @@
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from typing import Any
 
-import jwt
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import get_settings
 from app.core.constants import JWT_SECRET_MIN_LENGTH
 from tests.factories import DEFAULT_PASSWORD, auth_headers, create_user
+from tests.helpers import make_token
 
 ME_URL = "/api/v1/me"
-
-
-def make_token(user_id: int, **overrides: Any) -> str:
-    now = datetime.now(UTC)
-    claims: dict[str, Any] = {
-        "sub": str(user_id),
-        "role": "USER",
-        "ver": 0,
-        "jti": "test",
-        "type": "access",
-        "iat": now,
-        "exp": now + timedelta(minutes=5),
-    }
-    settings = get_settings()
-    secret = overrides.pop("secret", settings.jwt_secret_key)
-    claims.update(overrides)
-    return jwt.encode(claims, secret, algorithm=settings.jwt_algorithm)
 
 
 async def test_me_returns_current_user_without_sensitive_fields(

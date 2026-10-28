@@ -6,7 +6,12 @@ from typing import Literal, Self
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from app.core.constants import ACCESS_TOKEN_EXPIRE_MINUTES, JWT_SECRET_MIN_LENGTH, Environment
+from app.core.constants import (
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+    JWT_SECRET_MIN_LENGTH,
+    REFRESH_TOKEN_EXPIRE_DAYS,
+    Environment,
+)
 
 # Chỉ dùng khi dev và test. Production bắt buộc đặt JWT_SECRET_KEY riêng.
 DEV_JWT_SECRET_KEY = "dev-only-secret-key-change-me-in-production"  # noqa: S105
@@ -26,10 +31,14 @@ class Settings(BaseSettings):
         "postgresql+asyncpg://daily_report:daily_report@localhost:5433/daily_report_test"
     )
     redis_url: str = "redis://localhost:6380/0"
+    # Test xóa sạch DB Redis này trước mỗi test. Chạy test song song ở nhiều worktree thì mỗi
+    # nơi đặt một DB khác nhau, như TEST_DATABASE_URL.
+    test_redis_url: str = "redis://localhost:6380/15"
 
     jwt_secret_key: str = Field(default=DEV_JWT_SECRET_KEY, min_length=JWT_SECRET_MIN_LENGTH)
     jwt_algorithm: Literal["HS256"] = "HS256"
     access_token_expire_minutes: int = Field(default=ACCESS_TOKEN_EXPIRE_MINUTES, ge=1)
+    refresh_token_expire_days: int = Field(default=REFRESH_TOKEN_EXPIRE_DAYS, ge=1)
 
     # Múi giờ nghiệp vụ: dùng để tính "hôm nay" cho ngày báo cáo và thống kê tháng.
     timezone: str = "Asia/Ho_Chi_Minh"

@@ -31,7 +31,7 @@ docker compose exec api daily-report create-admin   # hoặc: make admin (chạy
 2. Ô `username` nhập email, ô `password` nhập mật khẩu vừa tạo.
 3. Gọi `GET /api/v1/me`.
 
-Đăng nhập theo chuẩn OAuth2 password flow, trả access token JWT (hết hạn sau 15 phút).
+Đăng nhập theo chuẩn OAuth2 password flow, trả access token JWT (hết hạn sau 15 phút) và refresh token (7 ngày). Gọi `POST /api/v1/auth/refresh` để lấy cặp token mới, `POST /api/v1/auth/logout` để đăng xuất. Sai mật khẩu quá 5 lần trong 15 phút thì bị khóa tạm (429).
 
 ## Debug
 

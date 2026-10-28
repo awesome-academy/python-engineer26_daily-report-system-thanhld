@@ -144,7 +144,7 @@ async def test_hard_deleting_user_removes_tokens(db_session: AsyncSession) -> No
     expires = datetime.now(UTC) + timedelta(days=1)
     db_session.add_all(
         [
-            RefreshToken(user_id=user.id, jti="jti-1", expires_at=expires),
+            RefreshToken(user_id=user.id, jti="jti-1", session_id="session-1", expires_at=expires),
             UserToken(
                 user_id=user.id,
                 token_hash="a" * 64,
