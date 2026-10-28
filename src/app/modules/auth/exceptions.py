@@ -15,6 +15,9 @@ class CurrentPasswordIncorrectError(AppError):
     code = ErrorCode.CURRENT_PASSWORD_INCORRECT
     message = "Mật khẩu hiện tại không đúng."
 
+    def __init__(self) -> None:
+        super().__init__(details={"field": "current_password"})
+
 
 class TooManyAttemptsError(AppError):
     status_code = status.HTTP_429_TOO_MANY_REQUESTS

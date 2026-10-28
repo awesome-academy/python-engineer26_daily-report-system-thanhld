@@ -109,7 +109,7 @@ class AuthService:
             or not await verify_password(data.current_password, locked.password_hash)
         ):
             await self.session.rollback()
-            raise CurrentPasswordIncorrectError(details={"field": "current_password"})
+            raise CurrentPasswordIncorrectError
 
         await self.login_attempts.reset(user.email)
         locked.password_hash = await hash_password(data.new_password)
