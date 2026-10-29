@@ -123,6 +123,16 @@ Hồ sơ cá nhân:
 - `PUT /me/password` body `current_password`, `new_password` (phải khác mật khẩu hiện tại). Sai mật khẩu hiện tại trả 400 `CURRENT_PASSWORD_INCORRECT` (không dùng 401 để client không hiểu nhầm là hết phiên), đếm chung với đăng nhập sai nên quá 5 lần trong 15 phút trả 429.
 - Đổi mật khẩu tăng `token_version`: mọi access token, refresh token cũ (cả của phiên hiện tại) hết hiệu lực, response trả cặp token mới cho phiên hiện tại. Nếu trong lúc xử lý phiên đã hết hiệu lực (request đổi mật khẩu khác chạy trước, tài khoản bị khóa) thì trả 401. Refresh token cũ không bị đánh dấu thu hồi, để thiết bị khác refresh bằng token cũ chỉ nhận 401, không bị coi là token bị lộ (việc đó sẽ đăng xuất cả phiên vừa đổi mật khẩu).
 
+Báo cáo hằng ngày (U3):
+
+- `/me/recipients`, `/me/reports` chỉ cho role USER (Q3), kiểm tra ở nhóm router như `/admin`; MANAGER, ADMIN nhận 403. Các endpoint `/me` khác dùng được với mọi role.
+- `GET /me/recipients`: manager của bộ phận mình còn nhận được báo cáo (role MANAGER, chưa bị khóa, chưa bị xóa), sắp theo họ tên; mỗi người gồm `id`, `full_name`, `email`. Chưa thuộc bộ phận nào thì trả danh sách rỗng.
+- `POST /me/reports` body `report_date`, `planned_work`, `actual_work`, `incomplete_reason` (tùy chọn), `next_day_plan`, `recipient_ids` (tùy chọn). Nội dung được trim, 1 đến 5000 ký tự; `incomplete_reason` rỗng sau khi trim lưu thành `null`; chứa ký tự NUL trả 422. Gửi field lạ trả 422. Trả 201 kèm báo cáo và danh sách người nhận.
+- `report_date` từ hôm nay trừ 3 ngày đến hôm nay, "hôm nay" theo giờ Việt Nam (cấu hình `timezone`, mặc định `Asia/Ho_Chi_Minh`). Ngoài khoảng trả 422 `REPORT_DATE_OUT_OF_RANGE`, `details` là `{"field": "report_date", "min_date": ..., "max_date": ...}`.
+- Mỗi người một báo cáo mỗi ngày: trùng trả 409 `REPORT_ALREADY_EXISTS`, `details` là `{"field": "report_date"}`. Hai request cùng ngày gửi đồng thời cũng chỉ một request thành công (unique `(author_id, report_date)` ở DB).
+- `recipient_ids` bỏ trống hoặc `null` thì gửi cho mọi người trong `GET /me/recipients` (Q4). Có gửi thì 1 đến 50 id, id trùng được gộp, mỗi id từ 1 đến 2^63 − 1. Id không có trong danh sách người nhận trả 422 `INVALID_RECIPIENT`, `details` là `{"field": "recipient_ids", "invalid_ids": [...]}`. Danh sách người nhận rỗng (chưa thuộc bộ phận nào, bộ phận chưa có manager) cũng trả 422 `INVALID_RECIPIENT`, `details` là `{"field": "recipient_ids"}`.
+- Báo cáo và người nhận lưu trong một transaction. Báo cáo đã gửi không sửa, xóa được (Q5).
+
 ### /manager: role MANAGER, chỉ bộ phận mình quản lý (11)
 
 | Method | Endpoint | Mã | Ghi chú |
