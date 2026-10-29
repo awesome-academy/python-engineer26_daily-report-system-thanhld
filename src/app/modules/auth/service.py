@@ -92,8 +92,13 @@ class AuthService:
         await self.session.commit()
         await blacklist_session(self.redis, claims.session_id)
 
-    async def change_password(self, user: User, data: PasswordChange) -> TokenResponse:
+    async def change_password(
+        self, user: User, session_id: str, data: PasswordChange
+    ) -> TokenResponse:
         """Đổi mật khẩu, mọi phiên khác hết hiệu lực; phiên hiện tại nhận cặp token mới.
+
+        Cặp token mới giữ `session_id` của phiên hiện tại, nên đăng xuất sau đó vẫn thu hồi đúng
+        phiên này.
 
         Tăng token_version là đủ chặn mọi access token và refresh token cũ. Không đánh dấu thu hồi
         refresh token: thiết bị khác gửi token đã thu hồi sẽ bị coi là token bị lộ, và phiên vừa
@@ -117,7 +122,7 @@ class AuthService:
         await self.login_attempts.reset(user.email)
         locked.password_hash = await hash_password(data.new_password)
         locked.token_version += 1
-        return await self._issue_tokens(locked)
+        return await self._issue_tokens(locked, session_id=session_id)
 
     async def _revoke_all_sessions(self, user_id: int, now: datetime) -> None:
         """Refresh token đã thu hồi quá khoảng ân hạn bị gửi lại: token có thể đã lộ.

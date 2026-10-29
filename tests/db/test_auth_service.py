@@ -36,7 +36,9 @@ async def test_change_password_rejects_session_ended_while_waiting_for_lock(
 
     with pytest.raises(UnauthorizedError):
         await AuthService(db_session, redis).change_password(
-            user, PasswordChange(current_password=DEFAULT_PASSWORD, new_password="MatKhauMoi#2026")
+            user,
+            "session",
+            PasswordChange(current_password=DEFAULT_PASSWORD, new_password="MatKhauMoi#2026"),
         )
 
     await db_session.refresh(user)

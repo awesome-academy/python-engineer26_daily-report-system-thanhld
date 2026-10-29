@@ -1,6 +1,6 @@
 from fastapi import APIRouter, status
 
-from app.api.deps import CurrentUser
+from app.api.deps import CurrentTokenClaims, CurrentUser
 from app.core.constants import LOGIN_ATTEMPT_WINDOW_MINUTES, LOGIN_MAX_FAILED_ATTEMPTS
 from app.core.exceptions import error_responses
 from app.modules.auth.dependencies import AuthServiceDep
@@ -52,6 +52,9 @@ async def update_me(
     ),
 )
 async def change_my_password(
-    data: PasswordChange, user: CurrentUser, auth_service: AuthServiceDep
+    data: PasswordChange,
+    user: CurrentUser,
+    claims: CurrentTokenClaims,
+    auth_service: AuthServiceDep,
 ) -> TokenResponse:
-    return await auth_service.change_password(user, data)
+    return await auth_service.change_password(user, claims.session_id, data)

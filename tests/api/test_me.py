@@ -15,6 +15,7 @@ from tests.helpers import bearer, login, login_tokens, make_token, refresh
 
 ME_URL = "/api/v1/me"
 PASSWORD_URL = "/api/v1/me/password"
+LOGOUT_URL = "/api/v1/auth/logout"
 NEW_PASSWORD = "MatKhauMoi#2026"
 WRONG_PASSWORD = "SaiMatKhau@1"
 
@@ -261,6 +262,24 @@ async def test_change_password_ends_all_previous_sessions(
     for tokens in (current, other_device):
         assert (await client.get(ME_URL, headers=bearer(tokens["access_token"]))).status_code == 401
         assert (await refresh(client, tokens["refresh_token"])).status_code == 401
+
+
+async def test_change_password_keeps_current_session(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    # Cặp token mới thuộc đúng phiên đang đăng nhập: đăng xuất bằng token mới thu hồi phiên này.
+    await create_user(db_session, email="an@example.com")
+    current = await login_tokens(client, "an@example.com")
+
+    new_tokens = (await change_password(client, current["access_token"], DEFAULT_PASSWORD)).json()
+
+    assert (
+        decode_access_token(new_tokens["access_token"]).session_id
+        == decode_access_token(current["access_token"]).session_id
+    )
+    logout = await client.post(LOGOUT_URL, headers=bearer(new_tokens["access_token"]))
+    assert logout.status_code == 204
+    assert (await refresh(client, new_tokens["refresh_token"])).status_code == 401
 
 
 async def test_old_refresh_token_after_password_change_does_not_end_new_session(
