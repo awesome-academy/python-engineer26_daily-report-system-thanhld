@@ -6,14 +6,14 @@ thật có `{department_id}` trên URL thêm vào SCOPED_ENDPOINTS để chạy 
 """
 
 import pytest
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, status
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1 import manager_router
 from app.core.config import get_settings
 from app.core.constants import BIGINT_MAX, ID_MIN
-from app.core.exceptions import AppError, UnauthorizedError
+from app.core.exceptions import AppError, ForbiddenError, UnauthorizedError, error_responses
 from app.modules.departments.dependencies import ManagedDepartment
 from app.modules.departments.exceptions import DepartmentNotFoundError
 from app.modules.departments.service import DepartmentService
@@ -34,7 +34,11 @@ SCOPED_ENDPOINTS = [pytest.param(("GET", PROBE_PATH), id="probe")]
 probe_router = APIRouter()
 
 
-@probe_router.get("/scope-probe/{department_id}")
+# Khai 404, 422 như mọi endpoint thật dùng ManagedDepartment phải khai.
+@probe_router.get(
+    "/scope-probe/{department_id}",
+    responses=error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
+)
 async def scope_probe(department: ManagedDepartment) -> dict[str, int]:
     # Trả id để test thấy handler nhận đúng bản ghi bộ phận trên URL.
     return {"id": department.id}
@@ -97,6 +101,7 @@ async def test_manager_loses_access_once_removed_from_department(
 
     response = await probe_client.get(probe_url(department.id), headers=headers)
 
+    assert response.status_code == 404
     assert response.json() == error_json(DepartmentNotFoundError())
 
 
@@ -112,7 +117,37 @@ async def test_managed_department_rejects_invalid_id(
     assert response.json()["error"]["details"][0]["field"] == "path.department_id"
 
 
-async def test_token_is_checked_before_department_id(probe_client: AsyncClient) -> None:
-    response = await probe_client.get(probe_url(ID_MIN - 1))
+@pytest.mark.parametrize(
+    ("role", "error"),
+    [(None, UnauthorizedError()), (UserRole.USER, ForbiddenError())],
+    ids=["anonymous", "user"],
+)
+async def test_token_and_role_are_checked_before_department_id(
+    probe_client: AsyncClient, db_session: AsyncSession, role: UserRole | None, error: AppError
+) -> None:
+    headers = auth_headers(await create_user(db_session, role=role)) if role else {}
 
-    assert response.json() == error_json(UnauthorizedError())
+    response = await probe_client.get(probe_url(ID_MIN - 1), headers=headers)
+
+    assert response.status_code == error.status_code
+    assert response.json() == error_json(error)
+
+
+async def test_scoped_endpoints_document_scope_errors_in_swagger(
+    probe_client: AsyncClient,
+) -> None:
+    # ManagedDepartment trả 404, 422 nhưng dependency không tự khai được response trên Swagger:
+    # endpoint nào có {department_id} trong /manager mà quên khai thì test này đỏ.
+    paths = (await probe_client.get("/openapi.json")).json()["paths"]
+    scoped = {
+        path: operations
+        for path, operations in paths.items()
+        if path.startswith(f"{API}{manager_router.prefix}/") and "{department_id}" in path
+    }
+
+    assert scoped
+    for operations in scoped.values():
+        for operation in operations.values():
+            for status_code in ("404", "422"):
+                schema = operation["responses"][status_code]["content"]["application/json"]
+                assert schema["schema"] == {"$ref": "#/components/schemas/ErrorResponse"}
