@@ -171,7 +171,7 @@ Quản lý user (A1):
 - `POST` nhận `email`, `full_name`, `phone`, `date_of_birth`, `role` (mặc định `USER`), `department_id`; không nhận mật khẩu. User mới có `password_hash` null nên chưa đăng nhập được đến khi tự đặt mật khẩu qua link (S2, Ngày 7).
 - Email không phân biệt hoa thường, trùng với user chưa bị xóa trả 409 `EMAIL_ALREADY_EXISTS` (tạo và sửa). Email của user đã xóa mềm dùng lại được.
 - `PATCH` cập nhật từng phần, sửa được mọi field của `POST` và `is_active`. `null` xóa `phone`, `date_of_birth`, `department_id` (gỡ khỏi bộ phận); `email`, `full_name`, `role`, `is_active` không nhận `null`. Field lạ trả 422.
-- `department_id` không tồn tại hoặc bộ phận đã xóa: 404 `NOT_FOUND`, `details` là `{"field": "department_id"}`. User không tồn tại hoặc đã xóa: 404, `details` là `{"field": "user_id"}`.
+- `department_id` không tồn tại hoặc bộ phận đã xóa: 404 `NOT_FOUND`, `details` là `{"field": "department_id"}`. Gán bộ phận khóa dòng bộ phận (`FOR SHARE`) đến khi lưu xong, nên không chạy xen được với lệnh xóa bộ phận: xóa trước thì lệnh gán nhận 404, gán trước thì lệnh xóa thấy bộ phận còn thành viên. User không tồn tại hoặc đã xóa: 404, `details` là `{"field": "user_id"}`.
 - Khóa (`is_active: false`) và xóa tăng `token_version`: mọi access token, refresh token đã cấp hết hiệu lực ngay. Không ghi `revoked_at` cho refresh token, để thiết bị của user refresh chỉ nhận 401, không bị coi là token bị lộ.
 - `DELETE` là xóa mềm (`deleted_at`), giữ `department_id` và báo cáo của user. Xóa lại user đã xóa trả 404.
 - Admin không tự khóa, tự xóa, tự đổi role của mình: 400 `CANNOT_MODIFY_OWN_ACCOUNT` (tránh mất quyền quản trị).

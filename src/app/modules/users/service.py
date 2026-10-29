@@ -134,7 +134,9 @@ class UserService:
             raise EmailAlreadyExistsError
 
     async def _ensure_department_exists(self, department_id: int) -> None:
-        if await self.departments.get_by_id(department_id) is None:
+        # Khóa FOR SHARE đến khi commit: lệnh xóa bộ phận chạy cùng lúc phải chờ rồi mới đếm thành
+        # viên (thấy user vừa gán, trả 409); xóa xong trước thì ở đây không thấy bộ phận (404).
+        if await self.departments.get_by_id_for_share(department_id) is None:
             raise DepartmentNotFoundError
 
     async def _save_new(self, user: User) -> None:

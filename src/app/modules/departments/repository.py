@@ -45,6 +45,12 @@ class DepartmentRepository:
             self._active().where(Department.id == department_id).with_for_update()
         )
 
+    async def get_by_id_for_share(self, department_id: int) -> Department | None:
+        # FOR SHARE: thao tác khác vẫn đọc, gán manager được; xóa, sửa bộ phận phải chờ.
+        return await self.session.scalar(
+            self._active().where(Department.id == department_id).with_for_update(read=True)
+        )
+
     async def has_managed_department(self, user_id: int) -> bool:
         """User có đang là manager của bộ phận nào chưa bị xóa không."""
         managed = (
