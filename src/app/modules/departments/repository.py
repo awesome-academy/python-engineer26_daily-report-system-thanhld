@@ -1,6 +1,8 @@
 from collections.abc import Sequence
+from datetime import datetime
 
 from sqlalchemy import Select, delete, exists, func, or_, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.constants import LIKE_ESCAPE_CHAR
@@ -11,7 +13,7 @@ from app.modules.users.models import User
 
 
 class DepartmentRepository:
-    """Truy vấn bảng departments. Mặc định bỏ qua bộ phận đã bị xóa mềm."""
+    """Truy vấn bộ phận, thành viên và manager. Mặc định bỏ qua bản ghi đã bị xóa mềm."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -74,6 +76,47 @@ class DepartmentRepository:
                 )
             )
             or 0
+        )
+
+    def members_statement(self, department_id: int) -> Select[User]:
+        return (
+            select(User)
+            .where(User.department_id == department_id, User.deleted_at.is_(None))
+            .order_by(User.full_name, User.id)
+        )
+
+    async def get_manager_ids(self, department_id: int, user_ids: Sequence[int]) -> set[int]:
+        """Trong `user_ids`, những ai là manager của bộ phận."""
+        rows = await self.session.scalars(
+            select(DepartmentManager.user_id).where(
+                DepartmentManager.department_id == department_id,
+                DepartmentManager.user_id.in_(user_ids),
+            )
+        )
+        return set(rows)
+
+    async def add_manager(self, department_id: int, user_id: int) -> datetime:
+        """Gán manager, trả thời điểm gán. Đã là manager thì giữ nguyên dòng cũ."""
+        # ON CONFLICT: hai request gán cùng một người chạy song song không thành lỗi trùng khóa.
+        await self.session.execute(
+            insert(DepartmentManager)
+            .values(department_id=department_id, user_id=user_id)
+            .on_conflict_do_nothing()
+        )
+        result = await self.session.execute(
+            select(DepartmentManager.assigned_at).where(
+                DepartmentManager.department_id == department_id,
+                DepartmentManager.user_id == user_id,
+            )
+        )
+        return result.scalar_one()
+
+    async def remove_manager(self, department_id: int, user_id: int) -> None:
+        await self.session.execute(
+            delete(DepartmentManager).where(
+                DepartmentManager.department_id == department_id,
+                DepartmentManager.user_id == user_id,
+            )
         )
 
     async def remove_managers(self, department_id: int) -> None:

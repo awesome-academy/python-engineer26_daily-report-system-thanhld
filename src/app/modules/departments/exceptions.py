@@ -1,4 +1,4 @@
-from app.core.exceptions import ConflictError, ErrorCode, NotFoundError
+from app.core.exceptions import ConflictError, ErrorCode, NotFoundError, UnprocessableError
 
 
 class DepartmentNotFoundError(NotFoundError):
@@ -22,3 +22,11 @@ class DepartmentNotEmptyError(ConflictError):
 
     def __init__(self, member_count: int) -> None:
         super().__init__(details={"member_count": member_count})
+
+
+class ManagerRoleRequiredError(UnprocessableError):
+    code = ErrorCode.MANAGER_ROLE_REQUIRED
+    message = "Chỉ gán được tài khoản có role MANAGER làm manager bộ phận."
+
+    def __init__(self) -> None:
+        super().__init__(details={"field": "user_id"})
