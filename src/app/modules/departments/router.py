@@ -1,5 +1,6 @@
 from fastapi import APIRouter, status
 
+from app.api.deps import IdPath
 from app.core.exceptions import error_responses
 from app.core.pagination import Page
 from app.modules.departments.dependencies import DepartmentServiceDep
@@ -47,7 +48,7 @@ async def create_department(data: DepartmentCreate, service: DepartmentServiceDe
     summary="Xem bộ phận",
     responses=error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
 )
-async def get_department(department_id: int, service: DepartmentServiceDep) -> DepartmentOut:
+async def get_department(department_id: IdPath, service: DepartmentServiceDep) -> DepartmentOut:
     return DepartmentOut.model_validate(await service.get_department(department_id))
 
 
@@ -62,7 +63,7 @@ async def get_department(department_id: int, service: DepartmentServiceDep) -> D
     ),
 )
 async def update_department(
-    department_id: int, data: DepartmentUpdate, service: DepartmentServiceDep
+    department_id: IdPath, data: DepartmentUpdate, service: DepartmentServiceDep
 ) -> DepartmentOut:
     return DepartmentOut.model_validate(await service.update_department(department_id, data))
 
@@ -81,5 +82,5 @@ async def update_department(
         status.HTTP_422_UNPROCESSABLE_CONTENT,
     ),
 )
-async def delete_department(department_id: int, service: DepartmentServiceDep) -> None:
+async def delete_department(department_id: IdPath, service: DepartmentServiceDep) -> None:
     await service.delete_department(department_id)

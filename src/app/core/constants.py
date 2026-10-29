@@ -18,6 +18,9 @@ KEYWORD_MAX_LENGTH = 100
 # Health check
 HEALTH_CHECK_TIMEOUT_SECONDS = 3
 
+# Khóa chính bigint: id trên URL lớn hơn số này thì trả 422, không gửi xuống DB.
+BIGINT_MAX = 2**63 - 1
+
 # Độ dài cột: model dùng cho String(n), schema dùng cho min_length, max_length để luôn khớp nhau.
 # Migration vẫn ghi số trực tiếp vì migration là bản chụp schema tại thời điểm tạo.
 EMAIL_MAX_LENGTH = 255

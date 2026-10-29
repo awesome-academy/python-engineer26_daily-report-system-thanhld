@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.constants import (
+    BIGINT_MAX,
     DEPARTMENT_CODE_MAX_LENGTH,
     DEPARTMENT_DESCRIPTION_MAX_LENGTH,
     DEPARTMENT_NAME_MAX_LENGTH,
@@ -265,6 +266,20 @@ async def test_get_department_returns_404_for_deleted_or_missing(
 
     assert response.status_code == 404
     assert response.json()["error"]["details"] == {"field": "department_id"}
+
+
+@pytest.mark.parametrize("method", ["GET", "PATCH", "DELETE"])
+@pytest.mark.parametrize("department_id", [0, BIGINT_MAX + 1], ids=["zero", "over-bigint"])
+async def test_department_id_out_of_range_returns_422(
+    client: AsyncClient, headers: dict[str, str], method: str, department_id: int
+) -> None:
+    # Số vượt bigint không được chạm DB: asyncpg từ chối tham số và API trả 500.
+    response = await client.request(
+        method, department_url(department_id), json={"name": "Phòng"}, headers=headers
+    )
+
+    assert response.status_code == 422
+    assert [d["field"] for d in response.json()["error"]["details"]] == ["path.department_id"]
 
 
 # Sửa
