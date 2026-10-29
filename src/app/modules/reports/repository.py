@@ -1,0 +1,46 @@
+from collections.abc import Sequence
+from datetime import date
+
+from sqlalchemy import exists, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.modules.departments.models import DepartmentManager
+from app.modules.reports.models import DailyReport
+from app.modules.users.models import User, UserRole
+
+
+class ReportRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def exists_for_date(self, author_id: int, report_date: date) -> bool:
+        return bool(
+            await self.session.scalar(
+                select(
+                    exists().where(
+                        DailyReport.author_id == author_id, DailyReport.report_date == report_date
+                    )
+                )
+            )
+        )
+
+    async def list_recipients(self, department_id: int) -> Sequence[User]:
+        """Manager của bộ phận còn nhận được báo cáo: đúng role, chưa bị khóa, chưa bị xóa.
+
+        Xét lại role: liên kết manager là dữ liệu riêng, user đổi role thì liên kết vẫn còn.
+        """
+        statement = (
+            select(User)
+            .join(DepartmentManager, DepartmentManager.user_id == User.id)
+            .where(
+                DepartmentManager.department_id == department_id,
+                User.role == UserRole.MANAGER,
+                User.is_active.is_(True),
+                User.deleted_at.is_(None),
+            )
+            .order_by(User.full_name, User.id)
+        )
+        return (await self.session.scalars(statement)).all()
+
+    def add(self, report: DailyReport) -> None:
+        self.session.add(report)

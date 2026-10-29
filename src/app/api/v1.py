@@ -11,6 +11,7 @@ from app.core.config import get_settings
 from app.core.exceptions import error_responses
 from app.modules.auth.router import router as auth_router
 from app.modules.departments.router import admin_department_router
+from app.modules.reports.router import me_report_router
 from app.modules.users.models import UserRole
 from app.modules.users.router import admin_users_router, me_router
 
@@ -26,11 +27,17 @@ manager_router = APIRouter(
     dependencies=[Depends(require_roles(UserRole.MANAGER))],
     responses=_ROLE_ERRORS,
 )
+# Báo cáo chỉ role USER viết (Q3), nên tách khỏi me_router (mọi role dùng được hồ sơ cá nhân).
+employee_router = APIRouter(
+    prefix="/me", dependencies=[Depends(require_roles(UserRole.USER))], responses=_ROLE_ERRORS
+)
 admin_router.include_router(admin_department_router)
 admin_router.include_router(admin_users_router)
+employee_router.include_router(me_report_router)
 
 api_router = APIRouter(prefix=get_settings().api_v1_prefix)
 api_router.include_router(auth_router)
 api_router.include_router(me_router)
+api_router.include_router(employee_router)
 api_router.include_router(admin_router)
 api_router.include_router(manager_router)
