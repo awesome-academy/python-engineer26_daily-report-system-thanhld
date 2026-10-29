@@ -1,8 +1,9 @@
-"""Phân quyền theo role: require_roles và nhóm router /admin, /manager.
+"""Phân quyền theo role: require_roles và nhóm router /admin, /manager, /me của nhân viên.
 
 Test gắn route thăm dò vào app với đúng dependency và response lỗi của nhóm, giống cách nhóm
 áp dụng cho route của module khi include, nên không phụ thuộc endpoint cụ thể nào của nhóm.
-Endpoint thật của /admin kiểm tra 401, 403 trong test của module (test_admin_departments.py).
+Endpoint thật kiểm tra 401, 403 trong test của module (test_admin_departments.py,
+test_me_reports.py).
 """
 
 from collections.abc import AsyncIterator
@@ -14,7 +15,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_roles
-from app.api.v1 import admin_router, manager_router
+from app.api.v1 import admin_router, employee_router, manager_router
 from app.core.config import get_settings
 from app.core.exceptions import ForbiddenError
 from app.modules.users.models import UserRole
@@ -22,7 +23,11 @@ from tests.factories import auth_headers, create_user
 
 API = get_settings().api_v1_prefix
 # Role được phép của từng nhóm router.
-GROUPS = {UserRole.ADMIN: admin_router, UserRole.MANAGER: manager_router}
+GROUPS = {
+    UserRole.ADMIN: admin_router,
+    UserRole.MANAGER: manager_router,
+    UserRole.USER: employee_router,
+}
 WRONG_ROLES = [(group, role) for group in GROUPS for role in UserRole if role != group]
 REPORTING_PREFIX = "/reporting"
 

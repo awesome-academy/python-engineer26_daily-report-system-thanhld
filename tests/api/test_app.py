@@ -53,6 +53,9 @@ async def test_openapi_schema_is_available(client: AsyncClient) -> None:
         ("/api/v1/auth/login", "post", "401"),
         ("/api/v1/auth/login", "post", "422"),
         ("/api/v1/me", "get", "401"),
+        ("/api/v1/me/reports", "post", "403"),
+        ("/api/v1/me/reports", "post", "409"),
+        ("/api/v1/me/reports", "post", "422"),
     ],
 )
 async def test_openapi_documents_errors_with_common_format(
