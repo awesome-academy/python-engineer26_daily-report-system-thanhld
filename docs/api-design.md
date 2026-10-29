@@ -11,6 +11,13 @@
 - Xác thực: OAuth2 password flow + JWT. Header `Authorization: Bearer <access_token>`.
 - `POST /auth/login` nhận form `application/x-www-form-urlencoded` với `username` (là email) và `password`, đúng chuẩn OAuth2, để nút **Authorize** trên Swagger đăng nhập được. Các endpoint khác nhận JSON.
 
+### Phân quyền
+
+- Nhóm `/admin` chỉ cho role ADMIN, nhóm `/manager` chỉ cho role MANAGER. Role được kiểm tra một lần ở cấp nhóm router bằng dependency `require_roles` (`app/api/deps.py`), endpoint trong nhóm không tự kiểm tra lại.
+- Không có thứ bậc role: ADMIN gọi `/manager` cũng nhận 403, vì chức năng manager gắn với bộ phận mình quản lý.
+- Thứ tự kiểm tra: token (401) → role (403) → phạm vi dữ liệu trong service (404).
+- Role đọc từ user trong DB ở mỗi request, không từ claim `role` của token, nên đổi role có hiệu lực ngay.
+
 ### Danh sách có phân trang
 
 Query: `page` (từ 1), `page_size` (mặc định 20, tối đa 100), `sort` (ví dụ `-report_date`), `keyword`.

@@ -1,5 +1,6 @@
 """Dependency dùng chung cho các router."""
 
+from collections.abc import Awaitable, Callable
 from typing import Annotated
 
 from fastapi import Depends
@@ -7,11 +8,11 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db_session
-from app.core.exceptions import UnauthorizedError
+from app.core.exceptions import ForbiddenError, UnauthorizedError
 from app.core.redis import get_redis
 from app.core.security import AccessTokenClaims, decode_access_token, oauth2_scheme
 from app.modules.auth.blacklist import is_session_blacklisted
-from app.modules.users.models import User
+from app.modules.users.models import User, UserRole
 from app.modules.users.repository import UserRepository
 
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
@@ -41,3 +42,19 @@ async def get_current_user(session: DbSession, claims: CurrentTokenClaims) -> Us
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+def require_roles(*roles: UserRole) -> Callable[[User], Awaitable[User]]:
+    """Tạo dependency chỉ cho user có một trong các role đi qua, role khác nhận 403.
+
+    Role lấy từ user trong DB chứ không từ claim của token, nên admin đổi role thì có hiệu lực
+    ngay, không phải chờ access token cũ hết hạn.
+    """
+    allowed = frozenset(roles)
+
+    async def check_role(user: CurrentUser) -> User:
+        if user.role not in allowed:
+            raise ForbiddenError
+        return user
+
+    return check_role
