@@ -12,6 +12,8 @@ class Environment(StrEnum):
 # Phân trang
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
+# Từ khóa tìm kiếm trong danh sách
+KEYWORD_MAX_LENGTH = 100
 
 # Health check
 HEALTH_CHECK_TIMEOUT_SECONDS = 3
@@ -26,7 +28,13 @@ PHONE_MAX_LENGTH = 20
 # Số điện thoại: chỉ chữ số, có thể có dấu + đầu, từ 9 đến 15 chữ số (E.164 tối đa 15).
 PHONE_PATTERN = r"^\+?[0-9]{9,15}$"
 DEPARTMENT_CODE_MAX_LENGTH = 20
+# Mã bộ phận lưu chữ hoa; chỉ chữ cái không dấu, chữ số, gạch ngang, gạch dưới để dùng được
+# trong file import Excel và URL.
+DEPARTMENT_CODE_PATTERN = r"^[A-Z0-9_-]+$"
+DEPARTMENT_NAME_MIN_LENGTH = 1
 DEPARTMENT_NAME_MAX_LENGTH = 100
+# Cột description là text, giới hạn ở schema để request không gửi nội dung quá dài.
+DEPARTMENT_DESCRIPTION_MAX_LENGTH = 1000
 # Đường dẫn file trong kho lưu trữ (local hoặc S3), ví dụ ảnh đại diện.
 STORAGE_KEY_MAX_LENGTH = 255
 TOKEN_JTI_MAX_LENGTH = 64
