@@ -43,7 +43,7 @@ Mọi lỗi cùng một format:
 }
 ```
 
-Lỗi validate (422) có `details` là danh sách `{ "field": "body.report_date", "message": "..." }`.
+Lỗi validate (422) có `details` là danh sách `{ "field": "body.report_date", "message": "..." }`. Lỗi nghiệp vụ gắn với một field (id không tồn tại, mật khẩu hiện tại sai…) có `details` là `{ "field": "user_id" }` (tên field đó) để client biết sai ở đâu.
 
 | HTTP | Khi nào |
 | --- | --- |
@@ -75,6 +75,8 @@ Lỗi validate (422) có `details` là danh sách `{ "field": "body.report_date"
 | `LAST_ACTIVE_ADMIN` | 409 | 4 |
 | `DEPARTMENT_CODE_ALREADY_EXISTS` | 409 | 4 |
 | `DEPARTMENT_NOT_EMPTY` | 409 | 4 |
+| `USER_INACTIVE` | 422 | 4 |
+| `MANAGER_ROLE_REQUIRED` | 422 | 4 |
 | `REPORT_ALREADY_EXISTS` | 409 | 5 |
 | `REPORT_DATE_OUT_OF_RANGE` | 422 | 5 |
 | `INVALID_RECIPIENT` | 422 | 5 |
@@ -153,9 +155,9 @@ Hồ sơ cá nhân:
 | GET | `/admin/departments/{id}` | A2 | |
 | PATCH | `/admin/departments/{id}` | A2 | |
 | DELETE | `/admin/departments/{id}` | A2 | Xóa mềm, chặn khi còn thành viên |
-| GET | `/admin/departments/{id}/members` | A3 | Xem thành viên để chọn manager |
+| GET | `/admin/departments/{id}/members` | A3 | Xem thành viên để chọn manager, phân trang |
 | POST | `/admin/departments/{id}/managers` | A3 | Body `user_id`, user phải có role MANAGER |
-| DELETE | `/admin/departments/{id}/managers/{user_id}` | A3 | |
+| DELETE | `/admin/departments/{id}/managers/{user_id}` | A3 | Trả 204 |
 
 Bộ phận (A2):
 
@@ -178,6 +180,15 @@ Quản lý user (A1):
 - Admin không tự khóa, tự xóa, tự đổi role của mình: 400 `CANNOT_MODIFY_OWN_ACCOUNT` (tránh mất quyền quản trị).
 - Luôn còn ít nhất một admin đăng nhập được: khóa, hạ role, xóa admin cuối cùng trả 409 `LAST_ACTIVE_ADMIN`. Chỉ chặn tự sửa mình là chưa đủ, vì hai admin có thể khóa nhau cùng lúc. Các lệnh này khóa dòng mọi admin đang hoạt động (theo thứ tự id) trước khi kiểm tra, nên chạy lần lượt: lệnh sau đếm theo kết quả của lệnh trước.
 - Manager đang quản lý bộ phận chưa xóa không đổi role, không khóa, không xóa được: 409 `USER_MANAGES_DEPARTMENTS`. Gỡ khỏi bộ phận (A3) trước, để bộ phận không còn liên kết tới người không còn là manager.
+
+Manager của bộ phận (A3):
+
+- Một bộ phận có nhiều manager, một manager quản lý nhiều bộ phận (Q2). Manager không cần là thành viên bộ phận mình quản lý.
+- Thành viên là user có `department_id` là bộ phận đó (không gồm user đã xóa mềm), sắp theo họ tên, mỗi người có `is_manager` cho biết đang là manager của bộ phận này.
+- `POST .../managers` trả 200 với `id`, `email`, `full_name` của manager và `assigned_at`. Chỉ gán được tài khoản role MANAGER (khác thì 422 `MANAGER_ROLE_REQUIRED`) đang hoạt động (bị khóa thì 422 `USER_INACTIVE`). Gán lại người đã là manager không lỗi, `assigned_at` giữ thời điểm gán lần đầu, nên client gửi lại khi timeout cũng an toàn.
+- `DELETE .../managers/{user_id}` chỉ gỡ liên kết, tài khoản giữ nguyên. Người không phải manager của bộ phận thì không có gì để gỡ, vẫn trả 204.
+- Bộ phận không tồn tại hoặc đã xóa mềm: 404 `details.field` là `department_id`. User không tồn tại hoặc đã xóa mềm: 404 `details.field` là `user_id`.
+- `user_id` (trong body hay trên URL) cùng khoảng 1 đến 2^63 − 1 như `department_id`, ngoài khoảng trả 422.
 
 ### Hệ thống (1 endpoint, 3 tác vụ nền)
 
