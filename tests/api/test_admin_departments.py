@@ -102,6 +102,20 @@ async def test_admin_creates_department_with_normalized_code(
     assert body["updated_at"]
 
 
+@pytest.mark.parametrize("description", ["", "   "], ids=["empty", "spaces"])
+async def test_create_department_stores_blank_description_as_null(
+    client: AsyncClient, headers: dict[str, str], description: str
+) -> None:
+    response = await client.post(
+        DEPARTMENTS_URL,
+        json={"code": "DEV", "name": "Phòng", "description": description},
+        headers=headers,
+    )
+
+    assert response.status_code == 201
+    assert response.json()["description"] is None
+
+
 async def test_create_department_rejects_code_differing_only_in_case(
     client: AsyncClient, db_session: AsyncSession, headers: dict[str, str]
 ) -> None:
@@ -318,6 +332,19 @@ async def test_patch_department_updates_only_sent_fields(
         "Phòng Phát triển sản phẩm",
         None,
     )
+
+
+async def test_patch_department_stores_blank_description_as_null(
+    client: AsyncClient, db_session: AsyncSession, headers: dict[str, str]
+) -> None:
+    department = await create_department(db_session, description="Mô tả cũ")
+
+    response = await client.patch(
+        department_url(department.id), json={"description": "  "}, headers=headers
+    )
+
+    assert response.status_code == 200
+    assert response.json()["description"] is None
 
 
 async def test_patch_department_changes_code(

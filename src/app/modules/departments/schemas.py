@@ -16,7 +16,7 @@ from app.core.constants import (
     KEYWORD_MAX_LENGTH,
 )
 from app.core.pagination import PageParams
-from app.core.validators import NoNul, reject_null
+from app.core.validators import NoNul, blank_to_none, reject_null
 
 
 def _check_department_code(code: str) -> str:
@@ -52,6 +52,7 @@ DepartmentDescription = Annotated[
     str,
     StringConstraints(strip_whitespace=True, max_length=DEPARTMENT_DESCRIPTION_MAX_LENGTH),
     NoNul,
+    AfterValidator(blank_to_none),
 ]
 Keyword = Annotated[
     str, StringConstraints(strip_whitespace=True, max_length=KEYWORD_MAX_LENGTH), NoNul

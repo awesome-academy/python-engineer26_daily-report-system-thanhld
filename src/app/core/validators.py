@@ -25,3 +25,11 @@ def reject_nul(value: str) -> str:
 
 # Gắn vào mọi kiểu chuỗi tự do người dùng nhập rồi đi xuống DB (tên, mô tả, từ khóa tìm kiếm).
 NoNul = AfterValidator(reject_nul)
+
+
+def blank_to_none(value: str) -> str | None:
+    """Field tùy chọn: chuỗi rỗng sau khi trim là "không có", lưu null như khi gửi null.
+
+    Không vậy thì API có hai cách biểu diễn cùng một trạng thái ("" và null).
+    """
+    return value or None
