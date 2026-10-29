@@ -90,3 +90,11 @@ Index(
     postgresql_using="gin",
     postgresql_ops={"full_name_search": "gin_trgm_ops"},
 )
+# Tìm một phần email ("an.nguyen@") trong danh sách admin. Thiếu index này thì điều kiện
+# "tên LIKE ... OR email LIKE ..." không dùng được index tên, cả câu thành Seq Scan.
+Index(
+    "ix_users_email_search",
+    func.lower(User.email).label("email_search"),
+    postgresql_using="gin",
+    postgresql_ops={"email_search": "gin_trgm_ops"},
+)
