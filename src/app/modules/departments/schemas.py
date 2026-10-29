@@ -71,6 +71,9 @@ class DepartmentOut(BaseModel):
 
 
 class DepartmentCreate(BaseModel):
+    # Field lạ trả 422 như DepartmentUpdate, để client biết dữ liệu đó không được lưu.
+    model_config = ConfigDict(extra="forbid")
+
     code: DepartmentCode
     name: DepartmentName
     description: DepartmentDescription | None = None

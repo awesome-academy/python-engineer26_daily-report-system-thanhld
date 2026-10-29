@@ -167,6 +167,7 @@ async def test_create_department_reuses_code_of_deleted_department(
         ({"code": "\u0131" * 3, "name": "Phòng"}, "body.code"),
         ({"code": "DEV", "name": "Phòng\x00"}, "body.name"),
         ({"code": "DEV", "name": "Phòng", "description": "Mô tả\x00"}, "body.description"),
+        ({"code": "DEV", "name": "Phòng", "manager_id": 1}, "body.manager_id"),
     ],
     ids=[
         "missing-code",
@@ -183,6 +184,7 @@ async def test_create_department_reuses_code_of_deleted_department(
         "code-dotless-i",
         "name-with-nul",
         "description-with-nul",
+        "unknown-field",
     ],
 )
 async def test_create_department_rejects_invalid_data(
