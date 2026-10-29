@@ -30,3 +30,10 @@ def test_local_uses_readable_logs() -> None:
 def test_rejects_unknown_environment() -> None:
     with pytest.raises(ValidationError, match="environment"):
         Settings(environment="prod")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("timezone", ["Asia/Hanoi_City", "", "../etc/passwd"])
+def test_rejects_unknown_timezone(timezone: str) -> None:
+    # Sai múi giờ phải báo ngay khi khởi động, không để mỗi request tạo báo cáo trả 500.
+    with pytest.raises(ValidationError, match="timezone"):
+        Settings(timezone=timezone)
