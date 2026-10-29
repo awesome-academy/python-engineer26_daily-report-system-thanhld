@@ -70,6 +70,8 @@ Lỗi validate (422) có `details` là danh sách `{ "field": "body.report_date"
 | `TOO_MANY_ATTEMPTS` | 429 | 3 |
 | `CURRENT_PASSWORD_INCORRECT` | 400 | 3 |
 | `EMAIL_ALREADY_EXISTS` | 409 | 4 |
+| `CANNOT_MODIFY_OWN_ACCOUNT` | 400 | 4 |
+| `USER_MANAGES_DEPARTMENTS` | 409 | 4 |
 | `DEPARTMENT_CODE_ALREADY_EXISTS` | 409 | 4 |
 | `DEPARTMENT_NOT_EMPTY` | 409 | 4 |
 | `REPORT_ALREADY_EXISTS` | 409 | 5 |
@@ -162,6 +164,18 @@ Bộ phận (A2):
 - `department_id` trên URL phải từ 1 đến 2^63 − 1 (phạm vi khóa chính bigint), ngoài phạm vi trả 422 ở field `path.department_id`.
 - `POST`, `PATCH` gửi field lạ trả 422, không bỏ qua âm thầm. `PATCH` cập nhật từng phần như `PATCH /me`: `null` xóa `description`; `code`, `name` không nhận `null`. `PATCH` và `DELETE` khóa dòng bộ phận: sửa đúng lúc bộ phận đang bị xóa thì chờ lệnh xóa xong rồi nhận 404.
 - `DELETE` xóa mềm, trả 204. Còn thành viên (user chưa bị xóa có `department_id` là bộ phận này, kể cả user bị khóa) thì trả 409 `DEPARTMENT_NOT_EMPTY`, `details` là `{"member_count": n}`. Xóa được thì liên kết manager của bộ phận bị gỡ luôn, giống ON DELETE CASCADE khi xóa cứng.
+
+Quản lý user (A1):
+
+- Danh sách chỉ gồm user chưa bị xóa, sắp theo `id`. `keyword` tìm trong họ tên (không phân biệt dấu, hoa thường: "nguyen van" khớp "Nguyễn Văn An") hoặc email; `%`, `_` trong từ khóa là ký tự thường. Lọc thêm `role`, `department_id`.
+- `POST` nhận `email`, `full_name`, `phone`, `date_of_birth`, `role` (mặc định `USER`), `department_id`; không nhận mật khẩu. User mới có `password_hash` null nên chưa đăng nhập được đến khi tự đặt mật khẩu qua link (S2, Ngày 7).
+- Email không phân biệt hoa thường, trùng với user chưa bị xóa trả 409 `EMAIL_ALREADY_EXISTS` (tạo và sửa). Email của user đã xóa mềm dùng lại được.
+- `PATCH` cập nhật từng phần, sửa được mọi field của `POST` và `is_active`. `null` xóa `phone`, `date_of_birth`, `department_id` (gỡ khỏi bộ phận); `email`, `full_name`, `role`, `is_active` không nhận `null`. Field lạ trả 422.
+- `department_id` không tồn tại hoặc bộ phận đã xóa: 404 `NOT_FOUND`, `details` là `{"field": "department_id"}`. User không tồn tại hoặc đã xóa: 404, `details` là `{"field": "user_id"}`.
+- Khóa (`is_active: false`) và xóa tăng `token_version`: mọi access token, refresh token đã cấp hết hiệu lực ngay. Không ghi `revoked_at` cho refresh token, để thiết bị của user refresh chỉ nhận 401, không bị coi là token bị lộ.
+- `DELETE` là xóa mềm (`deleted_at`), giữ `department_id` và báo cáo của user. Xóa lại user đã xóa trả 404.
+- Admin không tự khóa, tự xóa, tự đổi role của mình: 400 `CANNOT_MODIFY_OWN_ACCOUNT` (tránh mất quyền quản trị).
+- Manager đang quản lý bộ phận chưa xóa không đổi role được, không xóa được: 409 `USER_MANAGES_DEPARTMENTS`. Gỡ khỏi bộ phận (A3) trước, để bộ phận không còn liên kết tới người không còn là manager.
 
 ### Hệ thống (1 endpoint, 3 tác vụ nền)
 
