@@ -43,6 +43,27 @@ class DepartmentRepository:
     async def get_by_id(self, department_id: int) -> Department | None:
         return await self.session.scalar(self._active().where(Department.id == department_id))
 
+    def managed_department_ids(self, manager_id: int) -> Select[int]:
+        """Id các bộ phận (chưa xóa) mà manager quản lý: định nghĩa duy nhất của phạm vi manager.
+
+        Trả câu truy vấn, không chạy, để dùng làm `IN (...)` khi lọc bộ phận, nhân viên, báo cáo
+        theo phạm vi. Phạm vi theo bảng `department_managers`, không theo `users.department_id`:
+        manager là thành viên bộ phận nhưng chưa được admin gán thì vẫn ngoài phạm vi.
+        """
+        return (
+            select(DepartmentManager.department_id)
+            .join(Department, Department.id == DepartmentManager.department_id)
+            .where(DepartmentManager.user_id == manager_id, Department.deleted_at.is_(None))
+        )
+
+    async def get_managed_by_id(self, department_id: int, manager_id: int) -> Department | None:
+        return await self.session.scalar(
+            self._active().where(
+                Department.id == department_id,
+                Department.id.in_(self.managed_department_ids(manager_id)),
+            )
+        )
+
     async def get_by_id_for_update(self, department_id: int) -> Department | None:
         return await self.session.scalar(
             self._active().where(Department.id == department_id).with_for_update()
