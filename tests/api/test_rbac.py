@@ -6,12 +6,9 @@ Endpoint thật kiểm tra 401, 403 trong test của module (test_admin_departme
 test_me_reports.py).
 """
 
-from collections.abc import AsyncIterator
-
 import pytest
-from fastapi import APIRouter, Depends, status
-from httpx import ASGITransport, AsyncClient
-from redis.asyncio import Redis
+from fastapi import APIRouter, Depends, FastAPI, status
+from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_roles
@@ -44,12 +41,8 @@ def probe_url(prefix: str) -> str:
     return f"{API}{prefix}/probe"
 
 
-@pytest.fixture
-async def probe_client(db_session: AsyncSession, redis: Redis) -> AsyncIterator[AsyncClient]:
-    from app.core.database import get_db_session  # noqa: PLC0415 (xem docstring của conftest)
-    from app.main import create_app  # noqa: PLC0415
-
-    probe_app = create_app()
+@pytest.fixture(autouse=True)
+def mount_probe_routes(probe_app: FastAPI) -> None:
     for group in GROUPS.values():
         probe_app.include_router(
             probe_router,
@@ -62,9 +55,6 @@ async def probe_client(db_session: AsyncSession, redis: Redis) -> AsyncIterator[
         prefix=f"{API}{REPORTING_PREFIX}",
         dependencies=[Depends(require_roles(UserRole.USER, UserRole.MANAGER))],
     )
-    probe_app.dependency_overrides[get_db_session] = lambda: db_session
-    async with AsyncClient(transport=ASGITransport(app=probe_app), base_url="http://test") as http:
-        yield http
 
 
 @pytest.mark.parametrize("group", GROUPS)
