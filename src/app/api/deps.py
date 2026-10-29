@@ -7,20 +7,19 @@ from fastapi import Depends, Path
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.constants import BIGINT_MAX
 from app.core.database import get_db_session
 from app.core.exceptions import ForbiddenError, UnauthorizedError
 from app.core.redis import get_redis
 from app.core.security import AccessTokenClaims, decode_access_token, oauth2_scheme
+from app.core.validators import Id
 from app.modules.auth.blacklist import is_session_blacklisted
 from app.modules.users.models import User, UserRole
 from app.modules.users.repository import UserRepository
 
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
 RedisClient = Annotated[Redis, Depends(get_redis)]
-# Id trên URL: ngoài phạm vi khóa chính bigint thì trả 422 ngay. Số lớn hơn mà gửi xuống DB thì
-# asyncpg từ chối tham số, API trả 500.
-IdPath = Annotated[int, Path(ge=1, le=BIGINT_MAX)]
+# Id trên URL, cùng ràng buộc với id trong body, query (xem Id).
+IdPath = Annotated[Id, Path()]
 
 
 async def get_token_claims(

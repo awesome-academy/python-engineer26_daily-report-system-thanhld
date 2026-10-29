@@ -1,8 +1,11 @@
-"""Validator Pydantic dùng chung cho schema của các module."""
+"""Validator và kiểu Pydantic dùng chung cho schema của các module."""
 
-from pydantic import AfterValidator
+from typing import Annotated
+
+from pydantic import AfterValidator, Field, StringConstraints
 
 from app.core import messages
+from app.core.constants import BIGINT_MAX, KEYWORD_MAX_LENGTH
 
 
 def reject_null[T](value: T | None) -> T:
@@ -33,3 +36,12 @@ def blank_to_none(value: str) -> str | None:
     Không vậy thì API có hai cách biểu diễn cùng một trạng thái ("" và null).
     """
     return value or None
+
+
+# Id bản ghi (path, query, body): ngoài phạm vi khóa chính bigint thì trả 422 ngay. Số lớn hơn mà
+# gửi xuống DB thì asyncpg từ chối tham số, API trả 500.
+Id = Annotated[int, Field(ge=1, le=BIGINT_MAX)]
+# Từ khóa tìm kiếm của danh sách. Chuỗi rỗng sau khi trim nghĩa là không lọc.
+Keyword = Annotated[
+    str, StringConstraints(strip_whitespace=True, max_length=KEYWORD_MAX_LENGTH), NoNul
+]

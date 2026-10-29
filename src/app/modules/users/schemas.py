@@ -1,6 +1,7 @@
 from datetime import date, datetime
 from typing import Annotated
 
+from fastapi import Query
 from pydantic import (
     AfterValidator,
     BaseModel,
@@ -23,7 +24,8 @@ from app.core.constants import (
     PHONE_MAX_LENGTH,
     PHONE_PATTERN,
 )
-from app.core.validators import NoNul, reject_null
+from app.core.pagination import PageParams
+from app.core.validators import Id, Keyword, NoNul, reject_null
 from app.modules.users.models import UserRole
 
 
@@ -76,6 +78,10 @@ class UserOut(BaseModel):
     created_at: datetime
 
 
+class AdminUserOut(UserOut):
+    department_id: int | None
+
+
 class UserCreate(BaseModel):
     email: Email
     full_name: FullName
@@ -109,3 +115,47 @@ class PasswordChange(BaseModel):
         if value == info.data.get("current_password"):
             raise ValueError(messages.NEW_PASSWORD_SAME_AS_CURRENT)
         return value
+
+
+class AdminUserCreate(BaseModel):
+    """Admin tạo tài khoản. Không có mật khẩu: user tự đặt qua link gửi email (Q8, S2)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    email: Email
+    full_name: FullName
+    phone: Phone | None = None
+    date_of_birth: PastDate | None = None
+    role: UserRole = UserRole.USER
+    department_id: Id | None = None
+
+
+class AdminUserUpdate(BaseModel):
+    """Cập nhật từng phần: field không gửi thì giữ nguyên.
+
+    `null` xóa `phone`, `date_of_birth`, `department_id` (gỡ khỏi bộ phận); các field còn lại
+    bắt buộc nên không nhận `null`. `is_active = false` là khóa tài khoản.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    email: Email | None = None
+    full_name: FullName | None = None
+    phone: Phone | None = None
+    date_of_birth: PastDate | None = None
+    role: UserRole | None = None
+    department_id: Id | None = None
+    is_active: bool | None = None
+
+    _not_null = field_validator("email", "full_name", "role", "is_active")(reject_null)
+
+
+class UserListParams(PageParams):
+    keyword: Annotated[
+        Keyword | None, Field(description="Tìm theo họ tên (không dấu) hoặc email")
+    ] = None
+    role: UserRole | None = None
+    department_id: Id | None = None
+
+
+UserListQuery = Annotated[UserListParams, Query()]

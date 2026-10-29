@@ -17,6 +17,8 @@ MAX_PAGE_SIZE = 100
 MAX_PAGE = 1_000_000
 # Từ khóa tìm kiếm trong danh sách
 KEYWORD_MAX_LENGTH = 100
+# Ký tự escape trong LIKE: từ khóa "50%" phải tìm đúng chuỗi "50%", không phải "50" + bất kỳ.
+LIKE_ESCAPE_CHAR = "\\"
 
 # Health check
 HEALTH_CHECK_TIMEOUT_SECONDS = 3
