@@ -156,7 +156,7 @@ Hồ sơ cá nhân:
 
 Bộ phận (A2):
 
-- `code` 1 đến 20 ký tự, chỉ chữ cái không dấu, chữ số, `-`, `_`; trim và lưu chữ hoa (`qa` thành `QA`). Không trùng với bộ phận chưa bị xóa, không phân biệt hoa thường: trùng trả 409 `DEPARTMENT_CODE_ALREADY_EXISTS`. Mã của bộ phận đã xóa dùng lại được.
+- `code` 1 đến 20 ký tự, chỉ chữ cái không dấu, chữ số, `-`, `_`; trim và lưu chữ hoa (`qa` thành `QA`). Không trùng với bộ phận chưa bị xóa, không phân biệt hoa thường: trùng trả 409 `DEPARTMENT_CODE_ALREADY_EXISTS`, `details` là `{"field": "code"}`. Mã của bộ phận đã xóa dùng lại được.
 - `name` 1 đến 100 ký tự, `description` tối đa 1000 ký tự, cả hai được trim.
 - `GET /admin/departments`: `keyword` tìm trong mã hoặc tên, không phân biệt hoa thường, không dấu (`ky thuat` khớp `Kỹ thuật`); sắp theo mã. Bộ phận đã xóa không hiện ở danh sách, xem, sửa, xóa (404, `details` là `{"field": "department_id"}`).
 - `department_id` trên URL phải từ 1 đến 2^63 − 1 (phạm vi khóa chính bigint), ngoài phạm vi trả 422 ở field `path.department_id`.

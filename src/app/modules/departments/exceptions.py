@@ -12,6 +12,9 @@ class DepartmentCodeExistsError(ConflictError):
     code = ErrorCode.DEPARTMENT_CODE_ALREADY_EXISTS
     message = "Mã bộ phận đã được dùng cho một bộ phận khác."
 
+    def __init__(self) -> None:
+        super().__init__(details={"field": "code"})
+
 
 class DepartmentNotEmptyError(ConflictError):
     code = ErrorCode.DEPARTMENT_NOT_EMPTY

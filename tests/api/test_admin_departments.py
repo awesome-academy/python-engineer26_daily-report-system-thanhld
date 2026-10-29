@@ -113,6 +113,7 @@ async def test_create_department_rejects_code_differing_only_in_case(
 
     assert response.status_code == 409
     assert error_code(response.json()) == "DEPARTMENT_CODE_ALREADY_EXISTS"
+    assert response.json()["error"]["details"] == {"field": "code"}
 
 
 async def test_create_department_reuses_code_of_deleted_department(
@@ -345,6 +346,7 @@ async def test_patch_department_rejects_code_of_other_department(
 
     assert response.status_code == 409
     assert error_code(response.json()) == "DEPARTMENT_CODE_ALREADY_EXISTS"
+    assert response.json()["error"]["details"] == {"field": "code"}
 
 
 @pytest.mark.parametrize(
