@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import Query
 from pydantic import AfterValidator, BaseModel, ConfigDict, StringConstraints, field_validator
 
+from app.core import messages
 from app.core.constants import (
     DEPARTMENT_CODE_MAX_LENGTH,
     DEPARTMENT_CODE_MIN_LENGTH,
@@ -15,13 +16,13 @@ from app.core.constants import (
     KEYWORD_MAX_LENGTH,
 )
 from app.core.pagination import PageParams
+from app.core.validators import reject_null
 
 
 def _check_department_code(code: str) -> str:
     # Kiểm tra sau khi trim, upper: pattern của StringConstraints chạy trên chuỗi gốc.
     if not re.fullmatch(DEPARTMENT_CODE_PATTERN, code):
-        msg = "Mã bộ phận chỉ gồm chữ cái không dấu, chữ số, dấu gạch ngang và dấu gạch dưới."
-        raise ValueError(msg)
+        raise ValueError(messages.DEPARTMENT_CODE_INVALID)
     return code
 
 
@@ -79,14 +80,7 @@ class DepartmentUpdate(BaseModel):
     name: DepartmentName | None = None
     description: DepartmentDescription | None = None
 
-    @field_validator("code", "name")
-    @classmethod
-    def _not_null(cls, value: str | None) -> str | None:
-        # Chỉ chạy khi client gửi field này: mã, tên bắt buộc nên không được xóa bằng null.
-        if value is None:
-            msg = "Không được để trống."
-            raise ValueError(msg)
-        return value
+    _not_null = field_validator("code", "name")(reject_null)
 
 
 class DepartmentListParams(PageParams):
