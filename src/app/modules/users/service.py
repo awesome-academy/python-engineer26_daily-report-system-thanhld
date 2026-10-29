@@ -5,7 +5,7 @@ from app.core.security import hash_password
 from app.modules.users.exceptions import EmailAlreadyExistsError
 from app.modules.users.models import USER_EMAIL_UNIQUE_INDEX, User
 from app.modules.users.repository import UserRepository
-from app.modules.users.schemas import UserCreate
+from app.modules.users.schemas import UserCreate, UserProfileUpdate
 
 
 class UserService:
@@ -29,5 +29,11 @@ class UserService:
             if USER_EMAIL_UNIQUE_INDEX in str(exc.orig):
                 raise EmailAlreadyExistsError from exc
             raise
+        await self.session.commit()
+        return user
+
+    async def update_profile(self, user: User, data: UserProfileUpdate) -> User:
+        for field, value in data.model_dump(exclude_unset=True).items():
+            setattr(user, field, value)
         await self.session.commit()
         return user

@@ -12,17 +12,19 @@ from app.core.security import (
     create_access_token,
     create_refresh_token,
     decode_refresh_token,
+    hash_password,
     verify_dummy_password,
     verify_password,
 )
 from app.modules.auth.blacklist import blacklist_session
-from app.modules.auth.exceptions import InvalidCredentialsError
+from app.modules.auth.exceptions import CurrentPasswordIncorrectError, InvalidCredentialsError
 from app.modules.auth.login_attempts import LoginAttempts
 from app.modules.auth.models import RefreshToken
 from app.modules.auth.repository import RefreshTokenRepository
 from app.modules.auth.schemas import TokenResponse
 from app.modules.users.models import User
 from app.modules.users.repository import UserRepository
+from app.modules.users.schemas import PasswordChange
 
 logger = structlog.get_logger(__name__)
 
@@ -89,6 +91,38 @@ class AuthService:
         )
         await self.session.commit()
         await blacklist_session(self.redis, claims.session_id)
+
+    async def change_password(
+        self, user: User, session_id: str, data: PasswordChange
+    ) -> TokenResponse:
+        """Đổi mật khẩu, mọi phiên khác hết hiệu lực; phiên hiện tại nhận cặp token mới.
+
+        Cặp token mới giữ `session_id` của phiên hiện tại, nên đăng xuất sau đó vẫn thu hồi đúng
+        phiên này.
+
+        Tăng token_version là đủ chặn mọi access token và refresh token cũ. Không đánh dấu thu hồi
+        refresh token: thiết bị khác gửi token đã thu hồi sẽ bị coi là token bị lộ, và phiên vừa
+        đổi mật khẩu cũng bị đăng xuất theo.
+        """
+        # Dùng chung bộ đếm với đăng nhập: người cầm access token bị lộ không dò được mật khẩu.
+        await self.login_attempts.register(user.email)
+        token_version = user.token_version
+        # Khóa dòng rồi kiểm tra lại phiên: trong lúc chờ khóa, request khác có thể đã đổi mật khẩu,
+        # khóa tài khoản hoặc thu hồi mọi phiên. Khi đó phiên này đã hết hiệu lực, trả 401.
+        locked = await self.users.get_by_id_for_update(user.id)
+        if locked is None or not locked.can_log_in or locked.token_version != token_version:
+            await self.session.rollback()
+            raise UnauthorizedError
+        if locked.password_hash is None or not await verify_password(
+            data.current_password, locked.password_hash
+        ):
+            await self.session.rollback()
+            raise CurrentPasswordIncorrectError
+
+        await self.login_attempts.reset(user.email)
+        locked.password_hash = await hash_password(data.new_password)
+        locked.token_version += 1
+        return await self._issue_tokens(locked, session_id=session_id)
 
     async def _revoke_all_sessions(self, user_id: int, now: datetime) -> None:
         """Refresh token đã thu hồi quá khoảng ân hạn bị gửi lại: token có thể đã lộ.

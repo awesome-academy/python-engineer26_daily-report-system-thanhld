@@ -50,7 +50,11 @@ async def test_create_admin_rejects_duplicate_email(admin_email: str) -> None:
 
 @pytest.mark.parametrize(
     ("email", "password", "field"),
-    [("khong-phai-email", "Matkhau@123", "email"), ("ok@example.com", "ngan", "password")],
+    [
+        ("khong-phai-email", "Matkhau@123", "email"),
+        ("ok@example.com", "ngan", "password"),
+        ("ok@example.com", "matkhaudai123", "password"),
+    ],
 )
 async def test_create_admin_validates_input(email: str, password: str, field: str) -> None:
     result = await invoke(

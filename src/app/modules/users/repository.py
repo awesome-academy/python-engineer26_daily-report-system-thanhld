@@ -15,6 +15,16 @@ class UserRepository:
             select(User).where(User.id == user_id, User.deleted_at.is_(None))
         )
 
+    async def get_by_id_for_update(self, user_id: int) -> User | None:
+        # populate_existing: user đã có trong session (CurrentUser) được nạp lại dữ liệu mới nhất
+        # sau khi chờ khóa, không giữ bản đọc trước đó.
+        return await self.session.scalar(
+            select(User)
+            .where(User.id == user_id, User.deleted_at.is_(None))
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+
     async def get_by_email(self, email: str) -> User | None:
         return await self.session.scalar(
             select(User).where(func.lower(User.email) == email.lower(), User.deleted_at.is_(None))
