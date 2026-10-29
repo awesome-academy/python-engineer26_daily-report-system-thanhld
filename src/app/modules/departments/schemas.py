@@ -7,6 +7,7 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, StringConstraints, f
 
 from app.core.constants import (
     DEPARTMENT_CODE_MAX_LENGTH,
+    DEPARTMENT_CODE_MIN_LENGTH,
     DEPARTMENT_CODE_PATTERN,
     DEPARTMENT_DESCRIPTION_MAX_LENGTH,
     DEPARTMENT_NAME_MAX_LENGTH,
@@ -27,7 +28,12 @@ def _check_department_code(code: str) -> str:
 # Mã chuẩn hóa về chữ hoa, nên " dev " và "DEV" là một mã.
 DepartmentCode = Annotated[
     str,
-    StringConstraints(strip_whitespace=True, to_upper=True, max_length=DEPARTMENT_CODE_MAX_LENGTH),
+    StringConstraints(
+        strip_whitespace=True,
+        to_upper=True,
+        min_length=DEPARTMENT_CODE_MIN_LENGTH,
+        max_length=DEPARTMENT_CODE_MAX_LENGTH,
+    ),
     AfterValidator(_check_department_code),
 ]
 DepartmentName = Annotated[

@@ -30,6 +30,7 @@ FULL_NAME_MAX_LENGTH = 100
 PHONE_MAX_LENGTH = 20
 # Số điện thoại: chỉ chữ số, có thể có dấu + đầu, từ 9 đến 15 chữ số (E.164 tối đa 15).
 PHONE_PATTERN = r"^\+?[0-9]{9,15}$"
+DEPARTMENT_CODE_MIN_LENGTH = 1
 DEPARTMENT_CODE_MAX_LENGTH = 20
 # Mã bộ phận lưu chữ hoa; chỉ chữ cái không dấu, chữ số, gạch ngang, gạch dưới để dùng được
 # trong file import Excel và URL.
