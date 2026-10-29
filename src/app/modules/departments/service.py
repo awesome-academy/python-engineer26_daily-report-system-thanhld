@@ -43,11 +43,17 @@ class DepartmentService:
         return department
 
     async def update_department(self, department_id: int, data: DepartmentUpdate) -> Department:
-        department = await self.get_department(department_id)
+        # Khóa dòng như khi xóa: lệnh xóa commit chen giữa thì lệnh sửa chờ xong, đọc lại thấy bộ
+        # phận đã xóa và trả 404, thay vì ghi vào bộ phận đã xóa rồi trả 200.
+        department = await self.departments.get_by_id_for_update(department_id)
+        if department is None:
+            raise DepartmentNotFoundError
         changes = data.model_dump(exclude_unset=True)
         if "code" in changes:
             other = await self.departments.get_by_code(changes["code"])
             if other is not None and other.id != department.id:
+                # Nhả khóa dòng ngay, không giữ đến khi session đóng.
+                await self.session.rollback()
                 raise DepartmentCodeExistsError
         for field, value in changes.items():
             setattr(department, field, value)
