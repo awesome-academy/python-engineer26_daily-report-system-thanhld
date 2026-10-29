@@ -151,6 +151,8 @@ async def test_create_department_reuses_code_of_deleted_department(
         ({"code": "ß", "name": "Phòng"}, "body.code"),
         # Chữ i không chấm (U+0131), upper() thành "I".
         ({"code": "\u0131" * 3, "name": "Phòng"}, "body.code"),
+        ({"code": "DEV", "name": "Phòng\x00"}, "body.name"),
+        ({"code": "DEV", "name": "Phòng", "description": "Mô tả\x00"}, "body.description"),
     ],
     ids=[
         "missing-code",
@@ -165,6 +167,8 @@ async def test_create_department_reuses_code_of_deleted_department(
         "code-longer-after-upper",
         "code-sharp-s",
         "code-dotless-i",
+        "name-with-nul",
+        "description-with-nul",
     ],
 )
 async def test_create_department_rejects_invalid_data(
@@ -238,8 +242,9 @@ async def test_list_departments_searches_by_code_or_name(
         ({"page": 0}, "query.page"),
         ({"page_size": 0}, "query.page_size"),
         ({"keyword": "k" * (KEYWORD_MAX_LENGTH + 1)}, "query.keyword"),
+        ({"keyword": "k\x00"}, "query.keyword"),
     ],
-    ids=["page-zero", "page-size-zero", "keyword-too-long"],
+    ids=["page-zero", "page-size-zero", "keyword-too-long", "keyword-with-nul"],
 )
 async def test_list_departments_rejects_invalid_query(
     client: AsyncClient, headers: dict[str, str], params: dict[str, Any], field: str
@@ -363,8 +368,9 @@ async def test_patch_department_rejects_code_of_other_department(
         ({"name": None}, "body.name"),
         ({"code": "KỸ"}, "body.code"),
         ({"manager_id": 1}, "body.manager_id"),
+        ({"name": "Phòng\x00"}, "body.name"),
     ],
-    ids=["null-code", "null-name", "invalid-code", "unknown-field"],
+    ids=["null-code", "null-name", "invalid-code", "unknown-field", "name-with-nul"],
 )
 async def test_patch_department_rejects_invalid_data(
     client: AsyncClient,

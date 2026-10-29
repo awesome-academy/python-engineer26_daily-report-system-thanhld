@@ -23,7 +23,7 @@ from app.core.constants import (
     PHONE_MAX_LENGTH,
     PHONE_PATTERN,
 )
-from app.core.validators import reject_null
+from app.core.validators import NoNul, reject_null
 from app.modules.users.models import UserRole
 
 
@@ -47,6 +47,7 @@ FullName = Annotated[
     StringConstraints(
         strip_whitespace=True, min_length=FULL_NAME_MIN_LENGTH, max_length=FULL_NAME_MAX_LENGTH
     ),
+    NoNul,
 ]
 Phone = Annotated[
     str,
