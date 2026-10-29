@@ -224,6 +224,9 @@ async def test_list_departments_paginates_active_departments_sorted_by_code(
         ("qa", ["QA"]),
         ("phòng", ["KT", "QA", "SALE"]),
         ("50%", ["SALE"]),
+        # % và _ full-width: unaccent đổi thành % và _ thường.
+        ("\uff05", ["SALE"]),
+        ("\uff3f", []),
         ("   ", ["KT", "QA", "SALE"]),
     ],
     ids=[
@@ -232,6 +235,8 @@ async def test_list_departments_paginates_active_departments_sorted_by_code(
         "code",
         "common-word",
         "like-wildcard",
+        "fullwidth-percent",
+        "fullwidth-underscore",
         "blank",
     ],
 )
