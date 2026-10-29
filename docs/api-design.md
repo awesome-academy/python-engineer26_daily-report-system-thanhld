@@ -72,6 +72,7 @@ Lỗi validate (422) có `details` là danh sách `{ "field": "body.report_date"
 | `EMAIL_ALREADY_EXISTS` | 409 | 4 |
 | `CANNOT_MODIFY_OWN_ACCOUNT` | 400 | 4 |
 | `USER_MANAGES_DEPARTMENTS` | 409 | 4 |
+| `LAST_ACTIVE_ADMIN` | 409 | 4 |
 | `DEPARTMENT_CODE_ALREADY_EXISTS` | 409 | 4 |
 | `DEPARTMENT_NOT_EMPTY` | 409 | 4 |
 | `REPORT_ALREADY_EXISTS` | 409 | 5 |
@@ -175,6 +176,7 @@ Quản lý user (A1):
 - Khóa (`is_active: false`) và xóa tăng `token_version`: mọi access token, refresh token đã cấp hết hiệu lực ngay. Không ghi `revoked_at` cho refresh token, để thiết bị của user refresh chỉ nhận 401, không bị coi là token bị lộ.
 - `DELETE` là xóa mềm (`deleted_at`), giữ `department_id` và báo cáo của user. Xóa lại user đã xóa trả 404.
 - Admin không tự khóa, tự xóa, tự đổi role của mình: 400 `CANNOT_MODIFY_OWN_ACCOUNT` (tránh mất quyền quản trị).
+- Luôn còn ít nhất một admin đăng nhập được: khóa, hạ role, xóa admin cuối cùng trả 409 `LAST_ACTIVE_ADMIN`. Chỉ chặn tự sửa mình là chưa đủ, vì hai admin có thể khóa nhau cùng lúc. Các lệnh này khóa dòng mọi admin đang hoạt động (theo thứ tự id) trước khi kiểm tra, nên chạy lần lượt: lệnh sau đếm theo kết quả của lệnh trước.
 - Manager đang quản lý bộ phận chưa xóa không đổi role, không khóa, không xóa được: 409 `USER_MANAGES_DEPARTMENTS`. Gỡ khỏi bộ phận (A3) trước, để bộ phận không còn liên kết tới người không còn là manager.
 
 ### Hệ thống (1 endpoint, 3 tác vụ nền)

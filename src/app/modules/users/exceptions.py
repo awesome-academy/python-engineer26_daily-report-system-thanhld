@@ -28,3 +28,10 @@ class UserManagesDepartmentsError(ConflictError):
         "Người dùng đang là manager của bộ phận. Gỡ khỏi các bộ phận đó trước khi đổi role, "
         "khóa hoặc xóa."
     )
+
+
+class LastActiveAdminError(ConflictError):
+    code = ErrorCode.LAST_ACTIVE_ADMIN
+    message = (
+        "Phải còn ít nhất một admin đang hoạt động; không thể khóa, hạ role hoặc xóa admin này."
+    )

@@ -429,6 +429,25 @@ async def test_admin_cannot_lock_or_demote_self(
     assert (row.role, row.is_active) == (UserRole.ADMIN, True)
 
 
+@pytest.mark.parametrize(
+    ("method", "payload"),
+    [("PATCH", {"is_active": False}), ("PATCH", {"role": "USER"}), ("DELETE", None)],
+    ids=["lock", "demote", "delete"],
+)
+async def test_admin_can_remove_another_admin_while_staying_active(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    headers: dict[str, str],
+    method: str,
+    payload: dict[str, Any] | None,
+) -> None:
+    other = await create_user(db_session, role=UserRole.ADMIN)
+
+    response = await client.request(method, user_url(other.id), json=payload, headers=headers)
+
+    assert response.status_code in {200, 204}
+
+
 async def test_admin_can_update_own_profile_fields(
     client: AsyncClient, admin: User, headers: dict[str, str]
 ) -> None:

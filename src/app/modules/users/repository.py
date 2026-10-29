@@ -30,6 +30,26 @@ class UserRepository:
             .execution_options(populate_existing=True)
         )
 
+    async def lock_active_admin_ids(self) -> list[int]:
+        """Khóa dòng mọi admin đăng nhập được, theo thứ tự id, trả về id của họ.
+
+        Hai request cùng gỡ quyền admin (khóa, hạ role, xóa) đều phải đi qua đây trước, nên chạy
+        lần lượt: request sau chờ request trước commit rồi mới đếm. Khóa theo thứ tự id để hai
+        request không giữ khóa chéo nhau (deadlock).
+        """
+        rows = await self.session.scalars(
+            select(User.id)
+            .where(
+                User.role == UserRole.ADMIN,
+                User.is_active.is_(True),
+                User.password_hash.is_not(None),
+                User.deleted_at.is_(None),
+            )
+            .order_by(User.id)
+            .with_for_update()
+        )
+        return list(rows)
+
     async def get_by_email(self, email: str) -> User | None:
         return await self.session.scalar(
             select(User).where(func.lower(User.email) == email.lower(), User.deleted_at.is_(None))

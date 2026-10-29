@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import Callable, Coroutine
+from collections.abc import Awaitable, Callable, Coroutine
 from datetime import UTC, datetime
 from typing import Any
 
@@ -11,7 +11,7 @@ from app.modules.departments.exceptions import DepartmentNotEmptyError, Departme
 from app.modules.departments.models import Department
 from app.modules.departments.repository import DepartmentRepository
 from app.modules.departments.service import DepartmentService
-from app.modules.users.exceptions import EmailAlreadyExistsError
+from app.modules.users.exceptions import EmailAlreadyExistsError, LastActiveAdminError
 from app.modules.users.models import User, UserRole
 from app.modules.users.repository import UserRepository
 from app.modules.users.schemas import AdminUserCreate, AdminUserUpdate, UserCreate
@@ -147,3 +147,47 @@ async def test_delete_department_waits_for_assignment_holding_share_lock(
         async with engine.begin() as connection:
             await connection.execute(delete(User).where(User.id == user.id))
             await connection.execute(delete(Department).where(Department.id == department.id))
+
+
+RemoveAdmin = Callable[[AsyncSession, User, int], Awaitable[object]]
+
+
+async def lock_admin(session: AsyncSession, actor: User, target_id: int) -> object:
+    return await UserService(session).update_by_admin(
+        actor, target_id, AdminUserUpdate(is_active=False)
+    )
+
+
+async def demote_admin(session: AsyncSession, actor: User, target_id: int) -> object:
+    return await UserService(session).update_by_admin(
+        actor, target_id, AdminUserUpdate(role=UserRole.USER)
+    )
+
+
+async def delete_admin(session: AsyncSession, actor: User, target_id: int) -> None:
+    await UserService(session).delete_by_admin(actor, target_id)
+
+
+@pytest.mark.parametrize(
+    "remove", [lock_admin, demote_admin, delete_admin], ids=["lock", "demote", "delete"]
+)
+async def test_two_admins_removing_each_other_concurrently_keep_one_active_admin(
+    engine: AsyncEngine, remove: RemoveAdmin
+) -> None:
+    async with AsyncSession(engine, expire_on_commit=False) as setup:
+        first = await create_user(setup, email="admin1@example.com", role=UserRole.ADMIN)
+        second = await create_user(setup, email="admin2@example.com", role=UserRole.ADMIN)
+        await setup.commit()
+    try:
+        async with AsyncSession(engine) as one, AsyncSession(engine) as two:
+            # Mỗi admin đã qua xác thực, cùng lúc khóa (hạ role, xóa) người kia.
+            results = await asyncio.gather(
+                remove(one, first, second.id), remove(two, second, first.id), return_exceptions=True
+            )
+
+        errors = [r for r in results if isinstance(r, BaseException)]
+        assert len(errors) == 1
+        assert isinstance(errors[0], LastActiveAdminError)
+    finally:
+        async with engine.begin() as connection:
+            await connection.execute(delete(User).where(User.id.in_([first.id, second.id])))

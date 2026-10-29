@@ -12,6 +12,7 @@ from app.modules.departments.repository import DepartmentRepository
 from app.modules.users.exceptions import (
     CannotModifyOwnAccountError,
     EmailAlreadyExistsError,
+    LastActiveAdminError,
     UserManagesDepartmentsError,
     UserNotFoundError,
 )
@@ -71,12 +72,15 @@ class UserService:
 
     async def update_by_admin(self, admin: User, user_id: int, data: AdminUserUpdate) -> User:
         changes = data.model_dump(exclude_unset=True)
+        # Khóa, đổi role có thể gỡ quyền của một admin: khóa tập admin trước khi khóa user đích.
+        may_remove_admin = changes.get("is_active") is False or "role" in changes
+        admin_ids = await self.users.lock_active_admin_ids() if may_remove_admin else []
         # Khóa dòng: đổi role, khóa tài khoản không chạy xen với một lần sửa khác của cùng user.
         user = await self.users.get_by_id_for_update(user_id)
         try:
             if user is None:
                 raise UserNotFoundError
-            await self._check_admin_update(admin, user, changes)
+            await self._check_admin_update(admin, user, changes, admin_ids)
         except AppError:
             await self.session.rollback()
             raise
@@ -91,12 +95,15 @@ class UserService:
 
     async def delete_by_admin(self, admin: User, user_id: int) -> None:
         """Xóa mềm, thu hồi mọi phiên. Báo cáo của user vẫn giữ để tra cứu, thống kê."""
+        # Chưa biết user đích có phải admin không, nên luôn khóa tập admin trước (số admin ít).
+        admin_ids = await self.users.lock_active_admin_ids()
         user = await self.users.get_by_id_for_update(user_id)
         try:
             if user is None:
                 raise UserNotFoundError
             if user.id == admin.id:
                 raise CannotModifyOwnAccountError
+            self._ensure_other_active_admin(user, admin_ids)
             if await self.departments.has_managed_department(user.id):
                 raise UserManagesDepartmentsError
         except AppError:
@@ -109,7 +116,9 @@ class UserService:
         user.token_version += 1
         await self.session.commit()
 
-    async def _check_admin_update(self, admin: User, user: User, changes: dict[str, Any]) -> None:
+    async def _check_admin_update(
+        self, admin: User, user: User, changes: dict[str, Any], admin_ids: list[int]
+    ) -> None:
         role_changed = "role" in changes and changes["role"] is not user.role
         locking = user.is_active and changes.get("is_active") is False
         if user.id == admin.id:
@@ -117,6 +126,8 @@ class UserService:
                 raise CannotModifyOwnAccountError("role")
             if locking:
                 raise CannotModifyOwnAccountError("is_active")
+        if role_changed or locking:
+            self._ensure_other_active_admin(user, admin_ids)
         # Manager bị hạ role hay bị khóa thì bộ phận còn liên kết tới người không làm manager được
         # nữa (A3 cũng không cho gán user bị khóa làm manager).
         demoting_manager = role_changed and user.role is UserRole.MANAGER
@@ -128,6 +139,13 @@ class UserService:
             existing = await self.users.get_by_email(changes["email"])
             if existing is not None and existing.id != user.id:
                 raise EmailAlreadyExistsError
+
+    @staticmethod
+    def _ensure_other_active_admin(user: User, admin_ids: list[int]) -> None:
+        # Chặn tự gỡ quyền mình chưa đủ: hai admin gỡ quyền nhau cùng lúc thì không còn ai.
+        # admin_ids đã khóa nên request chạy sau đếm theo kết quả của request trước.
+        if user.id in admin_ids and len(admin_ids) == 1:
+            raise LastActiveAdminError
 
     async def _ensure_email_available(self, email: str) -> None:
         if await self.users.get_by_email(email) is not None:
