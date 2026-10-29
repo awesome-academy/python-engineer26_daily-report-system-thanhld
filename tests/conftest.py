@@ -54,6 +54,7 @@ if _redis_target(TEST_REDIS_URL) == _redis_target(_settings.redis_url):
 # Chỉ import sau khi đặt biến môi trường: app.models kéo theo app.core.database, nơi engine được
 # tạo từ DATABASE_URL. Import sớm hơn thì engine trỏ vào database dev.
 from app import models as _models  # noqa: E402, F401
+from app.core.database import Base  # noqa: E402
 from app.core.database import engine as app_engine  # noqa: E402
 from app.core.redis import redis_client  # noqa: E402
 
@@ -120,6 +121,15 @@ async def db_session(engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
         finally:
             await session.close()
             await transaction.rollback()
+
+
+@pytest.fixture
+async def clean_after(engine: AsyncEngine) -> AsyncIterator[None]:
+    """Test commit thật vào DB test (lệnh CLI, nhiều kết nối song song): xóa sạch sau test."""
+    yield
+    tables = ", ".join(table.name for table in Base.metadata.sorted_tables)
+    async with engine.begin() as connection:
+        await connection.execute(text(f"TRUNCATE TABLE {tables} RESTART IDENTITY CASCADE"))
 
 
 @pytest.fixture
