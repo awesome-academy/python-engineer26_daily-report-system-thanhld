@@ -1,7 +1,8 @@
 """Phân quyền theo role: require_roles và nhóm router /admin, /manager.
 
-Hai nhóm chưa có endpoint (Ngày 4, 6), nên test gắn route thăm dò vào app với đúng dependency
-và response lỗi của nhóm, giống cách nhóm áp dụng cho route của module khi include.
+Test gắn route thăm dò vào app với đúng dependency và response lỗi của nhóm, giống cách nhóm
+áp dụng cho route của module khi include, nên không phụ thuộc endpoint cụ thể nào của nhóm.
+Endpoint thật của /admin kiểm tra 401, 403 trong test của module (test_admin_departments.py).
 """
 
 from collections.abc import AsyncIterator
