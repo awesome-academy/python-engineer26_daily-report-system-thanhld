@@ -32,9 +32,9 @@ PHONE_MAX_LENGTH = 20
 PHONE_PATTERN = r"^\+?[0-9]{9,15}$"
 DEPARTMENT_CODE_MIN_LENGTH = 1
 DEPARTMENT_CODE_MAX_LENGTH = 20
-# Mã bộ phận lưu chữ hoa; chỉ chữ cái không dấu, chữ số, gạch ngang, gạch dưới để dùng được
-# trong file import Excel và URL.
-DEPARTMENT_CODE_PATTERN = r"^[A-Z0-9_-]+$"
+# Mã bộ phận chỉ gồm chữ cái không dấu (ASCII), chữ số, gạch ngang, gạch dưới để dùng được
+# trong file import Excel và URL; lưu chữ hoa.
+DEPARTMENT_CODE_PATTERN = r"^[A-Za-z0-9_-]+$"
 DEPARTMENT_NAME_MIN_LENGTH = 1
 DEPARTMENT_NAME_MAX_LENGTH = 100
 # Cột description là text, giới hạn ở schema để request không gửi nội dung quá dài.

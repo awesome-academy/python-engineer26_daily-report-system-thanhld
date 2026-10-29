@@ -20,22 +20,24 @@ from app.core.validators import reject_null
 
 
 def _check_department_code(code: str) -> str:
-    # Kiểm tra sau khi trim, upper: pattern của StringConstraints chạy trên chuỗi gốc.
+    # Kiểm tra trước khi chuyển chữ hoa: upper() đổi ngầm ký tự Unicode ("ß" thành "SS", chữ i
+    # không chấm U+0131 thành "I"), vừa lách quy tắc chữ không dấu, vừa làm mã dài hơn max_length
+    # đã kiểm tra (DB báo lỗi, API trả 500).
     if not re.fullmatch(DEPARTMENT_CODE_PATTERN, code):
         raise ValueError(messages.DEPARTMENT_CODE_INVALID)
     return code
 
 
-# Mã chuẩn hóa về chữ hoa, nên " dev " và "DEV" là một mã.
+# Mã chuẩn hóa về chữ hoa, nên " dev " và "DEV" là một mã. Chỉ ASCII nên upper() không đổi độ dài.
 DepartmentCode = Annotated[
     str,
     StringConstraints(
         strip_whitespace=True,
-        to_upper=True,
         min_length=DEPARTMENT_CODE_MIN_LENGTH,
         max_length=DEPARTMENT_CODE_MAX_LENGTH,
     ),
     AfterValidator(_check_department_code),
+    AfterValidator(str.upper),
 ]
 DepartmentName = Annotated[
     str,

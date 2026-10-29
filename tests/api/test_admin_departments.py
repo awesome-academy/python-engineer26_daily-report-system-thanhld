@@ -147,6 +147,10 @@ async def test_create_department_reuses_code_of_deleted_department(
             },
             "body.description",
         ),
+        ({"code": "ß" * 11, "name": "Phòng"}, "body.code"),
+        ({"code": "ß", "name": "Phòng"}, "body.code"),
+        # Chữ i không chấm (U+0131), upper() thành "I".
+        ({"code": "\u0131" * 3, "name": "Phòng"}, "body.code"),
     ],
     ids=[
         "missing-code",
@@ -158,6 +162,9 @@ async def test_create_department_reuses_code_of_deleted_department(
         "blank-name",
         "name-too-long",
         "description-too-long",
+        "code-longer-after-upper",
+        "code-sharp-s",
+        "code-dotless-i",
     ],
 )
 async def test_create_department_rejects_invalid_data(
