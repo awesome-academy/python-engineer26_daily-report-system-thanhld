@@ -264,8 +264,9 @@ async def test_list_departments_searches_by_code_or_name(
         ({"page_size": 0}, "query.page_size"),
         ({"keyword": "k" * (KEYWORD_MAX_LENGTH + 1)}, "query.keyword"),
         ({"keyword": "k\x00"}, "query.keyword"),
+        ({"page": 10**18}, "query.page"),
     ],
-    ids=["page-zero", "page-size-zero", "keyword-too-long", "keyword-with-nul"],
+    ids=["page-zero", "page-size-zero", "keyword-too-long", "keyword-with-nul", "page-too-large"],
 )
 async def test_list_departments_rejects_invalid_query(
     client: AsyncClient, headers: dict[str, str], params: dict[str, Any], field: str

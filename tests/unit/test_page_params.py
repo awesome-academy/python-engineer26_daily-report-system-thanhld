@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.core.constants import MAX_PAGE_SIZE
+from app.core.constants import MAX_PAGE, MAX_PAGE_SIZE
 from app.core.pagination import Page, PageParams
 
 
@@ -16,7 +16,8 @@ def test_offset_skips_previous_pages() -> None:
 
 
 @pytest.mark.parametrize(
-    "values", [{"page": 0}, {"page_size": 0}, {"page_size": MAX_PAGE_SIZE + 1}]
+    "values",
+    [{"page": 0}, {"page": MAX_PAGE + 1}, {"page_size": 0}, {"page_size": MAX_PAGE_SIZE + 1}],
 )
 def test_rejects_out_of_range_values(values: dict[str, int]) -> None:
     with pytest.raises(ValidationError):

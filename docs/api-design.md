@@ -20,7 +20,7 @@
 
 ### Danh sách có phân trang
 
-Query: `page` (từ 1), `page_size` (mặc định 20, tối đa 100), `sort` (ví dụ `-report_date`), `keyword`.
+Query: `page` (từ 1 đến 1.000.000), `page_size` (mặc định 20, tối đa 100), `sort` (ví dụ `-report_date`), `keyword`.
 
 ```json
 {

@@ -8,11 +8,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
+from app.core.constants import DEFAULT_PAGE_SIZE, MAX_PAGE, MAX_PAGE_SIZE
 
 
 class PageParams(BaseModel):
-    page: int = Field(default=1, ge=1, description="Trang, bắt đầu từ 1")
+    page: int = Field(default=1, ge=1, le=MAX_PAGE, description="Trang, bắt đầu từ 1")
     page_size: int = Field(
         default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE, description="Số bản ghi mỗi trang"
     )

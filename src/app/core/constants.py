@@ -12,6 +12,9 @@ class Environment(StrEnum):
 # Phân trang
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
+# OFFSET = (page - 1) * page_size phải nằm trong bigint, nếu không PostgreSQL báo lỗi (500).
+# Một triệu trang, mỗi trang 100 bản ghi, vẫn dư xa so với dữ liệu thật.
+MAX_PAGE = 1_000_000
 # Từ khóa tìm kiếm trong danh sách
 KEYWORD_MAX_LENGTH = 100
 
