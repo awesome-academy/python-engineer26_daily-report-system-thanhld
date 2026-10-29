@@ -116,7 +116,7 @@ async def get_user(user_id: IdPath, user_service: UserServiceDep) -> AdminUserOu
     description=(
         "Cập nhật từng phần. `department_id: null` gỡ user khỏi bộ phận. `is_active: false` khóa "
         "tài khoản, mọi phiên đăng nhập hết hiệu lực ngay. Không tự khóa, tự đổi role của mình "
-        "(400). Không đổi role của manager đang quản lý bộ phận (409)."
+        "(400). Không đổi role, không khóa manager đang quản lý bộ phận (409)."
     ),
     responses=error_responses(
         status.HTTP_400_BAD_REQUEST,

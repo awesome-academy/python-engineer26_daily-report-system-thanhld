@@ -111,16 +111,16 @@ class UserService:
 
     async def _check_admin_update(self, admin: User, user: User, changes: dict[str, Any]) -> None:
         role_changed = "role" in changes and changes["role"] is not user.role
+        locking = user.is_active and changes.get("is_active") is False
         if user.id == admin.id:
             if role_changed:
                 raise CannotModifyOwnAccountError("role")
-            if changes.get("is_active") is False:
+            if locking:
                 raise CannotModifyOwnAccountError("is_active")
-        if (
-            role_changed
-            and user.role is UserRole.MANAGER
-            and await self.departments.has_managed_department(user.id)
-        ):
+        # Manager bị hạ role hay bị khóa thì bộ phận còn liên kết tới người không làm manager được
+        # nữa (A3 cũng không cho gán user bị khóa làm manager).
+        demoting_manager = role_changed and user.role is UserRole.MANAGER
+        if (demoting_manager or locking) and await self.departments.has_managed_department(user.id):
             raise UserManagesDepartmentsError
         if changes.get("department_id") is not None:
             await self._ensure_department_exists(changes["department_id"])

@@ -454,6 +454,22 @@ async def test_update_user_rejects_role_change_of_manager_with_departments(
     assert response.json()["error"]["code"] == "USER_MANAGES_DEPARTMENTS"
 
 
+async def test_lock_user_rejects_manager_with_departments(
+    client: AsyncClient, db_session: AsyncSession, headers: dict[str, str]
+) -> None:
+    # Cùng quy tắc với đổi role, xóa: A3 cũng không cho gán user bị khóa làm manager.
+    manager = await create_user(db_session, role=UserRole.MANAGER)
+    await create_department(db_session, managers=[manager])
+    await db_session.commit()
+    manager_id = manager.id
+
+    response = await client.patch(user_url(manager_id), json={"is_active": False}, headers=headers)
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "USER_MANAGES_DEPARTMENTS"
+    assert (await get_user_row(db_session, manager_id)).is_active is True
+
+
 async def test_update_user_allows_role_change_of_manager_of_deleted_department(
     client: AsyncClient, db_session: AsyncSession, headers: dict[str, str]
 ) -> None:

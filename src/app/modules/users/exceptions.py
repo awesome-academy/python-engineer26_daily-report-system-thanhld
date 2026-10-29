@@ -25,6 +25,6 @@ class CannotModifyOwnAccountError(AppError):
 class UserManagesDepartmentsError(ConflictError):
     code = ErrorCode.USER_MANAGES_DEPARTMENTS
     message = (
-        "Người dùng đang là manager của bộ phận. Gỡ khỏi các bộ phận đó trước khi đổi role "
-        "hoặc xóa."
+        "Người dùng đang là manager của bộ phận. Gỡ khỏi các bộ phận đó trước khi đổi role, "
+        "khóa hoặc xóa."
     )
