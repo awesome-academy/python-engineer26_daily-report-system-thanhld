@@ -154,6 +154,14 @@ Hồ sơ cá nhân:
 | POST | `/admin/departments/{id}/managers` | A3 | Body `user_id`, user phải có role MANAGER |
 | DELETE | `/admin/departments/{id}/managers/{user_id}` | A3 | |
 
+Bộ phận (A2):
+
+- `code` 1 đến 20 ký tự, chỉ chữ cái không dấu, chữ số, `-`, `_`; trim và lưu chữ hoa (`qa` thành `QA`). Không trùng với bộ phận chưa bị xóa, không phân biệt hoa thường: trùng trả 409 `DEPARTMENT_CODE_ALREADY_EXISTS`. Mã của bộ phận đã xóa dùng lại được.
+- `name` 1 đến 100 ký tự, `description` tối đa 1000 ký tự, cả hai được trim.
+- `GET /admin/departments`: `keyword` tìm trong mã hoặc tên, không phân biệt hoa thường, không dấu (`ky thuat` khớp `Kỹ thuật`); sắp theo mã. Bộ phận đã xóa không hiện ở danh sách, xem, sửa, xóa (404, `details` là `{"field": "department_id"}`).
+- `PATCH` cập nhật từng phần như `PATCH /me`: `null` xóa `description`; `code`, `name` không nhận `null`; field lạ trả 422.
+- `DELETE` xóa mềm, trả 204. Còn thành viên (user chưa bị xóa có `department_id` là bộ phận này, kể cả user bị khóa) thì trả 409 `DEPARTMENT_NOT_EMPTY`, `details` là `{"member_count": n}`. Xóa được thì liên kết manager của bộ phận bị gỡ luôn, giống ON DELETE CASCADE khi xóa cứng.
+
 ### Hệ thống (1 endpoint, 3 tác vụ nền)
 
 | Loại | Tên | Mã | Ghi chú |
