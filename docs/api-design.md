@@ -16,6 +16,8 @@
 - Nhóm `/admin` chỉ cho role ADMIN, nhóm `/manager` chỉ cho role MANAGER. Role được kiểm tra một lần ở cấp nhóm router bằng dependency `require_roles` (`app/api/deps.py`), endpoint trong nhóm không tự kiểm tra lại.
 - Không có thứ bậc role: ADMIN gọi `/manager` cũng nhận 403, vì chức năng manager gắn với bộ phận mình quản lý.
 - Thứ tự kiểm tra: token (401) → role (403) → phạm vi dữ liệu trong service (404).
+- Phạm vi của manager là các bộ phận admin đã gán cho manager đó (bảng `department_managers`), không phải bộ phận manager là thành viên. Một chỗ duy nhất định nghĩa phạm vi: `DepartmentService.get_managed_department` kiểm tra một bộ phận, `DepartmentRepository.managed_department_ids` lọc danh sách. Endpoint `/manager` có `{department_id}` trên URL nhận bộ phận qua dependency `ManagedDepartment`.
+- Ngoài phạm vi trả 404 giống hệt bộ phận không tồn tại hoặc đã xóa (`NOT_FOUND`, `details.field = "department_id"`), để không dò được id nào là bộ phận có thật. Phạm vi đọc từ DB ở mỗi request: bị gỡ khỏi bộ phận thì mất quyền ngay.
 - Role đọc từ user trong DB ở mỗi request, không từ claim `role` của token, nên đổi role có hiệu lực ngay.
 
 ### Danh sách có phân trang
