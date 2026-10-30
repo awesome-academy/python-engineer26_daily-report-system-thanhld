@@ -88,11 +88,20 @@ class ConflictError(AppError):
 
 
 class UnprocessableError(AppError):
-    """Dữ liệu đúng định dạng nhưng vi phạm quy tắc nghiệp vụ (ví dụ gán manager sai role)."""
+    """Dữ liệu đúng định dạng nhưng vi phạm quy tắc nghiệp vụ (ví dụ gán manager sai role).
+
+    Không có mã mặc định, lớp con phải tự đặt `code`: VALIDATION_ERROR có `details` là danh sách
+    lỗi theo field, còn lỗi nghiệp vụ có `details` là dict, client cần mã riêng để phân biệt.
+    """
 
     status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
-    code = ErrorCode.VALIDATION_ERROR
     message = "Dữ liệu không hợp lệ."
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        if cls.code in {AppError.code, ErrorCode.VALIDATION_ERROR}:
+            msg = f"{cls.__name__} phải khai báo code riêng cho lỗi nghiệp vụ 422."
+            raise TypeError(msg)
 
 
 _HTTP_ERRORS: dict[int, tuple[ErrorCode, str]] = {
