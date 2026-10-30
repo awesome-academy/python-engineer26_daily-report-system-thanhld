@@ -1,12 +1,26 @@
-import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
+import asyncio
+from collections.abc import Awaitable, Callable, Coroutine
+from datetime import UTC, datetime
+from typing import Any
 
-from app.modules.users.exceptions import EmailAlreadyExistsError
-from app.modules.users.models import User
+import pytest
+from sqlalchemy import delete
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
+
+from app.modules.departments.exceptions import DepartmentNotEmptyError, DepartmentNotFoundError
+from app.modules.departments.models import Department
+from app.modules.departments.repository import DepartmentRepository
+from app.modules.departments.service import DepartmentService
+from app.modules.users.exceptions import EmailAlreadyExistsError, LastActiveAdminError
+from app.modules.users.models import User, UserRole
 from app.modules.users.repository import UserRepository
-from app.modules.users.schemas import UserCreate
+from app.modules.users.schemas import AdminUserCreate, AdminUserUpdate, UserCreate
 from app.modules.users.service import UserService
 from tests.factories import DEFAULT_PASSWORD, create_user
+
+
+async def no_user_with_email(_: UserRepository, __: str) -> User | None:
+    return None
 
 
 def new_user(email: str) -> UserCreate:
@@ -26,10 +40,154 @@ async def test_create_user_maps_concurrent_duplicate_to_email_already_exists(
     await create_user(db_session, email="an@example.com")
 
     # Giả lập lệnh tạo song song: lúc kiểm tra, user kia chưa được insert.
-    async def not_found(_: UserRepository, __: str) -> User | None:
-        return None
-
-    monkeypatch.setattr(UserRepository, "get_by_email", not_found)
+    monkeypatch.setattr(UserRepository, "get_by_email", no_user_with_email)
 
     with pytest.raises(EmailAlreadyExistsError):
         await UserService(db_session).create_user(new_user("an@example.com"))
+
+
+async def test_update_by_admin_maps_concurrent_duplicate_email_to_email_already_exists(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    admin = await create_user(db_session, role=UserRole.ADMIN)
+    await create_user(db_session, email="binh@example.com")
+    user = await create_user(db_session, email="an@example.com")
+    # Giả lập request khác đổi sang cùng email: lúc kiểm tra, email đó chưa có ai dùng.
+    monkeypatch.setattr(UserRepository, "get_by_email", no_user_with_email)
+
+    with pytest.raises(EmailAlreadyExistsError):
+        await UserService(db_session).update_by_admin(
+            admin, user.id, AdminUserUpdate(email="binh@example.com")
+        )
+
+
+AssignDepartment = Callable[[AsyncSession, User, int], Coroutine[Any, Any, User]]
+
+
+async def assign_by_update(session: AsyncSession, admin: User, department_id: int) -> User:
+    target = User(email="an@example.com", full_name="Nguyễn Văn An")
+    session.add(target)
+    await session.flush()
+    target_id = target.id
+    await session.commit()
+    return await UserService(session).update_by_admin(
+        admin, target_id, AdminUserUpdate(department_id=department_id)
+    )
+
+
+async def assign_by_create(session: AsyncSession, admin: User, department_id: int) -> User:
+    return await UserService(session).create_by_admin(
+        AdminUserCreate(
+            email="an@example.com", full_name="Nguyễn Văn An", department_id=department_id
+        )
+    )
+
+
+@pytest.mark.parametrize("assign", [assign_by_update, assign_by_create], ids=["update", "create"])
+async def test_assign_department_waits_for_concurrent_delete_and_returns_not_found(
+    engine: AsyncEngine, assign: AssignDepartment
+) -> None:
+    # Hai session thật, commit thật: khóa dòng chỉ có tác dụng giữa các transaction khác nhau.
+    async with AsyncSession(engine, expire_on_commit=False) as setup:
+        department = Department(code="RACE", name="Phòng")
+        admin = User(email="admin@example.com", full_name="Quản trị viên", role=UserRole.ADMIN)
+        setup.add_all([department, admin])
+        await setup.commit()
+    try:
+        async with AsyncSession(engine) as deleting, AsyncSession(engine) as assigning:
+            # Lệnh xóa bộ phận đang giữ khóa dòng (đã đếm 0 thành viên), chưa commit.
+            locked = await DepartmentRepository(deleting).get_by_id_for_update(department.id)
+            assert locked is not None
+            locked.deleted_at = datetime.now(UTC)
+            await deleting.flush()
+
+            assignment = asyncio.create_task(assign(assigning, admin, department.id))
+            await asyncio.sleep(0.3)
+            await deleting.commit()
+
+            # Không chờ khóa thì lệnh gán đọc bộ phận chưa xóa, user vào bộ phận vừa bị xóa.
+            with pytest.raises(DepartmentNotFoundError):
+                await assignment
+    finally:
+        async with engine.begin() as connection:
+            await connection.execute(
+                delete(User).where(User.email.in_(["an@example.com", "admin@example.com"]))
+            )
+            await connection.execute(delete(Department).where(Department.id == department.id))
+
+
+async def test_delete_department_waits_for_assignment_holding_share_lock(
+    engine: AsyncEngine,
+) -> None:
+    async with AsyncSession(engine, expire_on_commit=False) as setup:
+        department = Department(code="RACE", name="Phòng")
+        user = User(email="an@example.com", full_name="Nguyễn Văn An")
+        setup.add_all([department, user])
+        await setup.commit()
+    try:
+        async with AsyncSession(engine) as assigning, AsyncSession(engine) as deleting:
+            # Lệnh gán đã khóa FOR SHARE và ghi department_id như update_by_admin, chưa commit.
+            locked = await DepartmentRepository(assigning).get_by_id_for_share(department.id)
+            assert locked is not None
+            target = await assigning.get(User, user.id)
+            assert target is not None
+            target.department_id = department.id
+            await assigning.flush()
+
+            deletion = asyncio.create_task(
+                DepartmentService(deleting).delete_department(department.id)
+            )
+            await asyncio.sleep(0.3)
+            await assigning.commit()
+
+            # Lệnh xóa chờ khóa, đếm thành viên sau khi lệnh gán commit nên thấy user vừa gán.
+            with pytest.raises(DepartmentNotEmptyError):
+                await deletion
+    finally:
+        async with engine.begin() as connection:
+            await connection.execute(delete(User).where(User.id == user.id))
+            await connection.execute(delete(Department).where(Department.id == department.id))
+
+
+RemoveAdmin = Callable[[AsyncSession, User, int], Awaitable[object]]
+
+
+async def lock_admin(session: AsyncSession, actor: User, target_id: int) -> object:
+    return await UserService(session).update_by_admin(
+        actor, target_id, AdminUserUpdate(is_active=False)
+    )
+
+
+async def demote_admin(session: AsyncSession, actor: User, target_id: int) -> object:
+    return await UserService(session).update_by_admin(
+        actor, target_id, AdminUserUpdate(role=UserRole.USER)
+    )
+
+
+async def delete_admin(session: AsyncSession, actor: User, target_id: int) -> None:
+    await UserService(session).delete_by_admin(actor, target_id)
+
+
+@pytest.mark.parametrize(
+    "remove", [lock_admin, demote_admin, delete_admin], ids=["lock", "demote", "delete"]
+)
+async def test_two_admins_removing_each_other_concurrently_keep_one_active_admin(
+    engine: AsyncEngine, remove: RemoveAdmin
+) -> None:
+    async with AsyncSession(engine, expire_on_commit=False) as setup:
+        first = await create_user(setup, email="admin1@example.com", role=UserRole.ADMIN)
+        second = await create_user(setup, email="admin2@example.com", role=UserRole.ADMIN)
+        await setup.commit()
+    try:
+        async with AsyncSession(engine) as one, AsyncSession(engine) as two:
+            # Mỗi admin đã qua xác thực, cùng lúc khóa (hạ role, xóa) người kia.
+            results = await asyncio.gather(
+                remove(one, first, second.id), remove(two, second, first.id), return_exceptions=True
+            )
+
+        errors = [r for r in results if isinstance(r, BaseException)]
+        assert len(errors) == 1
+        assert isinstance(errors[0], LastActiveAdminError)
+    finally:
+        async with engine.begin() as connection:
+            await connection.execute(delete(User).where(User.id.in_([first.id, second.id])))
