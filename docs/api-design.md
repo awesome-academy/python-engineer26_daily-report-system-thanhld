@@ -187,7 +187,7 @@ Manager của bộ phận (A3):
 - Thành viên là user có `department_id` là bộ phận đó (không gồm user đã xóa mềm), sắp theo họ tên, mỗi người có `is_manager` cho biết đang là manager của bộ phận này.
 - `POST .../managers` trả 200 với `id`, `email`, `full_name` của manager và `assigned_at`. Chỉ gán được tài khoản role MANAGER (khác thì 422 `MANAGER_ROLE_REQUIRED`) đang hoạt động (bị khóa thì 422 `USER_INACTIVE`). Gán lại người đã là manager không lỗi, `assigned_at` giữ thời điểm gán lần đầu, nên client gửi lại khi timeout cũng an toàn.
 - `DELETE .../managers/{user_id}` chỉ gỡ liên kết, tài khoản giữ nguyên. Người không phải manager của bộ phận thì không có gì để gỡ, vẫn trả 204.
-- Bộ phận không tồn tại hoặc đã xóa mềm: 404 `details.field` là `department_id`. User không tồn tại hoặc đã xóa mềm: 404 `details.field` là `user_id`.
+- Cả ba endpoint: bộ phận không tồn tại hoặc đã xóa mềm trả 404, `details.field` là `department_id`. Gán và gỡ: user không tồn tại hoặc đã xóa mềm trả 404, `details.field` là `user_id` (id gõ nhầm không bị coi là gỡ xong).
 - `user_id` (trong body hay trên URL) cùng khoảng 1 đến 2^63 − 1 như `department_id`, ngoài khoảng trả 422.
 
 ### Hệ thống (1 endpoint, 3 tác vụ nền)

@@ -121,7 +121,10 @@ async def assign_department_manager(
     "/{department_id}/managers/{user_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Gỡ manager khỏi bộ phận",
-    description="Chỉ gỡ liên kết, tài khoản giữ nguyên. Người không phải manager thì vẫn trả 204.",
+    description=(
+        "Chỉ gỡ liên kết, tài khoản giữ nguyên. Người không phải manager của bộ phận thì vẫn trả "
+        "204; user không tồn tại hoặc đã xóa thì 404."
+    ),
     responses=error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
 )
 async def remove_department_manager(

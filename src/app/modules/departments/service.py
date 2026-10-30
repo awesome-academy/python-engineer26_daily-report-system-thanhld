@@ -140,7 +140,12 @@ class DepartmentService:
         )
 
     async def remove_manager(self, department_id: int, user_id: int) -> None:
-        """Gỡ manager khỏi bộ phận. Người không phải manager của bộ phận thì không có gì để gỡ."""
+        """Gỡ manager khỏi bộ phận. Người không phải manager của bộ phận thì không có gì để gỡ.
+
+        User không tồn tại thì 404 như khi gán: id gõ nhầm không được trả 204 như đã gỡ xong.
+        """
         await self.get_department(department_id)
+        if await self.users.get_by_id(user_id) is None:
+            raise UserNotFoundError
         await self.departments.remove_manager(department_id, user_id)
         await self.session.commit()

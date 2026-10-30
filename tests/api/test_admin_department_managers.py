@@ -286,20 +286,41 @@ async def test_admin_removes_manager_from_department(
     assert manager.deleted_at is None
 
 
-@pytest.mark.parametrize("user_id", [None, MISSING_ID], ids=["not-manager", "missing-user"])
 async def test_removing_non_manager_is_no_op(
-    client: AsyncClient, db_session: AsyncSession, admin: User, user_id: int | None
+    client: AsyncClient, db_session: AsyncSession, admin: User
 ) -> None:
     manager = await create_user(db_session, role=UserRole.MANAGER)
     department = await create_department(db_session, managers=[manager])
     member = await create_user(db_session, department=department)
 
     response = await client.delete(
-        manager_url(department.id, user_id or member.id), headers=auth_headers(admin)
+        manager_url(department.id, member.id), headers=auth_headers(admin)
     )
 
     assert response.status_code == 204
     assert await manager_ids(db_session, department.id) == {manager.id}
+
+
+@pytest.mark.parametrize("deleted", [False, True], ids=["missing", "soft-deleted"])
+async def test_removing_unknown_user_returns_not_found(
+    client: AsyncClient, db_session: AsyncSession, admin: User, deleted: bool
+) -> None:
+    # Id gõ nhầm không được trả 204 như đã gỡ xong.
+    department = await create_department(db_session)
+    user_id = (
+        (await create_user(db_session, role=UserRole.MANAGER, deleted=True)).id
+        if deleted
+        else MISSING_ID
+    )
+
+    response = await client.delete(manager_url(department.id, user_id), headers=auth_headers(admin))
+
+    assert response.status_code == 404
+    assert response.json()["error"] == {
+        "code": "NOT_FOUND",
+        "message": "Người dùng không tồn tại hoặc đã bị xóa.",
+        "details": {"field": "user_id"},
+    }
 
 
 async def test_removing_manager_validates_user_id(
