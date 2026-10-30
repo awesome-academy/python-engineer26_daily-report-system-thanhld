@@ -96,18 +96,19 @@ class DepartmentRepository:
         return set(rows)
 
     async def add_manager(self, department_id: int, user_id: int) -> datetime:
-        """Gán manager, trả thời điểm gán. Đã là manager thì giữ nguyên dòng cũ."""
+        """Gán manager, trả thời điểm gán. Đã là manager thì giữ thời điểm gán lần đầu."""
         # ON CONFLICT: hai request gán cùng một người chạy song song không thành lỗi trùng khóa.
-        await self.session.execute(
+        # DO UPDATE ghi lại chính giá trị cũ, không dùng DO NOTHING: dòng đã có bị khóa đến khi
+        # commit và RETURNING luôn có một dòng. DO NOTHING không khóa, lệnh gỡ manager commit chen
+        # giữa lúc ghi và lúc đọc lại thì không còn dòng để trả về.
+        result = await self.session.execute(
             insert(DepartmentManager)
             .values(department_id=department_id, user_id=user_id)
-            .on_conflict_do_nothing()
-        )
-        result = await self.session.execute(
-            select(DepartmentManager.assigned_at).where(
-                DepartmentManager.department_id == department_id,
-                DepartmentManager.user_id == user_id,
+            .on_conflict_do_update(
+                index_elements=[DepartmentManager.department_id, DepartmentManager.user_id],
+                set_={"assigned_at": DepartmentManager.assigned_at},
             )
+            .returning(DepartmentManager.assigned_at)
         )
         return result.scalar_one()
 

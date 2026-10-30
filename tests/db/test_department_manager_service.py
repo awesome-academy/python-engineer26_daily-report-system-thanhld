@@ -1,8 +1,9 @@
 import asyncio
 from collections.abc import Callable
+from typing import Any
 
 import pytest
-from sqlalchemy import Update, func, select, update
+from sqlalchemy import Executable, Insert, Result, Update, func, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.core.constants import BIGINT_MAX
@@ -112,3 +113,46 @@ async def test_assign_manager_waits_for_concurrent_change(
     result = await _assign_while_other_transaction_commits(engine, change)
 
     assert isinstance(result, error)
+
+
+async def _remove_manager(engine: AsyncEngine, department_id: int, user_id: int) -> None:
+    async with AsyncSession(engine) as session:
+        await DepartmentService(session).remove_manager(department_id, user_id)
+
+
+@pytest.mark.usefixtures("clean_after")
+async def test_reassign_manager_while_other_admin_removes_it(
+    engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Gán lại người đã là manager, đúng lúc admin khác gỡ người đó. Dòng liên kết đã có không bị
+    # khóa thì lệnh gỡ commit chen giữa lúc ghi và lúc đọc lại thời điểm gán: lệnh gán không còn
+    # dòng để trả về (500).
+    async with AsyncSession(engine) as setup:
+        manager = await create_user(setup, role=UserRole.MANAGER)
+        department = await create_department(setup, managers=[manager])
+        department_id, user_id = department.id, manager.id
+        await setup.commit()
+
+    # Như SessionFactory của app: commit xong vẫn đọc được user để trả response.
+    async with AsyncSession(engine, expire_on_commit=False) as session:
+        execute = session.execute
+        removal: asyncio.Task[None] | None = None
+
+        async def execute_then_remove(
+            statement: Executable, *args: Any, **kwargs: Any
+        ) -> Result[Any]:
+            nonlocal removal
+            result = await execute(statement, *args, **kwargs)
+            if removal is None and isinstance(statement, Insert):
+                removal = asyncio.create_task(_remove_manager(engine, department_id, user_id))
+                # Dòng không bị khóa thì lệnh gỡ commit xong trong lúc này; bị khóa thì lệnh gỡ
+                # chờ lệnh gán commit.
+                await asyncio.wait({removal}, timeout=LOCK_WAIT_SECONDS)
+            return result
+
+        monkeypatch.setattr(session, "execute", execute_then_remove)
+        assigned = await DepartmentService(session).assign_manager(department_id, user_id)
+
+    assert removal is not None
+    await removal
+    assert assigned.id == user_id
