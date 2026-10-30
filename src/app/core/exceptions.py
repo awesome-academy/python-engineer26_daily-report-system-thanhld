@@ -36,6 +36,8 @@ class ErrorCode(StrEnum):
     CANNOT_MODIFY_OWN_ACCOUNT = "CANNOT_MODIFY_OWN_ACCOUNT"
     USER_MANAGES_DEPARTMENTS = "USER_MANAGES_DEPARTMENTS"
     LAST_ACTIVE_ADMIN = "LAST_ACTIVE_ADMIN"
+    USER_INACTIVE = "USER_INACTIVE"
+    MANAGER_ROLE_REQUIRED = "MANAGER_ROLE_REQUIRED"
 
 
 class AppError(Exception):
@@ -83,6 +85,14 @@ class ConflictError(AppError):
     status_code = status.HTTP_409_CONFLICT
     code = ErrorCode.CONFLICT
     message = "Dữ liệu bị trùng."
+
+
+class UnprocessableError(AppError):
+    """Dữ liệu đúng định dạng nhưng vi phạm quy tắc nghiệp vụ (ví dụ gán manager sai role)."""
+
+    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+    code = ErrorCode.VALIDATION_ERROR
+    message = "Dữ liệu không hợp lệ."
 
 
 _HTTP_ERRORS: dict[int, tuple[ErrorCode, str]] = {
