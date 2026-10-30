@@ -109,6 +109,9 @@ class DepartmentMemberOut(BaseModel):
 
 
 class ManagerAssign(BaseModel):
+    # Field lạ trả 422 như DepartmentCreate, DepartmentUpdate.
+    model_config = ConfigDict(extra="forbid")
+
     user_id: Id
 
 

@@ -341,6 +341,24 @@ async def test_assigning_manager_validates_body(
     assert [d["field"] for d in response.json()["error"]["details"]] == ["body.user_id"]
 
 
+async def test_assigning_manager_rejects_unknown_field(
+    client: AsyncClient, db_session: AsyncSession, admin: User
+) -> None:
+    # Như schema tạo, sửa bộ phận: field lạ trả 422 để client biết dữ liệu đó không được dùng.
+    department = await create_department(db_session)
+    manager = await create_user(db_session, role=UserRole.MANAGER)
+
+    response = await client.post(
+        managers_url(department.id),
+        json={"user_id": manager.id, "note": "trưởng nhóm"},
+        headers=auth_headers(admin),
+    )
+
+    assert response.status_code == 422
+    assert [d["field"] for d in response.json()["error"]["details"]] == ["body.note"]
+    assert await manager_ids(db_session, department.id) == set()
+
+
 # Gỡ manager
 
 
