@@ -15,6 +15,8 @@ Thứ tự tạo bảng (xem `docs/progress/10-day-plan.md`):
 | 0001 | 1 | Bật `unaccent`, `pg_trgm`, hàm `immutable_unaccent()` |
 | 0002 | 1 | Bảng `users` (cho API đăng nhập ở bước B4) |
 | 0003 | 2 | Các bảng còn lại và `users.department_id` (bước B5) |
+| 0004 | 3 | `refresh_tokens.session_id` (phiên đăng nhập) |
+| 0005 | 4 | GIN trigram cho `lower(email)` (admin tìm user theo email) |
 
 ## Quan hệ
 
@@ -136,6 +138,7 @@ Mỗi lần refresh tạo một dòng mới cùng `session_id`, dòng cũ đư�
 | --- | --- | --- |
 | users | `UNIQUE (lower(email)) WHERE deleted_at IS NULL` | email không trùng, không phân biệt hoa thường, cho phép tạo lại sau khi xóa mềm |
 | users | `GIN (immutable_unaccent(lower(full_name)) gin_trgm_ops)` | tìm tên không dấu: "nguyen van a" khớp "Nguyễn Văn A" |
+| users | `GIN (lower(email) gin_trgm_ops)` | tìm một phần email; cùng index tên ở trên, điều kiện "tên hoặc email" dùng được index (BitmapOr) thay vì quét cả bảng |
 | users | `(department_id)` | lấy thành viên bộ phận |
 | departments | `UNIQUE (lower(code)) WHERE deleted_at IS NULL` | mã bộ phận không trùng, không phân biệt hoa thường (như email) |
 | department_managers | `(user_id)` | lấy các bộ phận một manager quản lý, dùng khi kiểm tra quyền |

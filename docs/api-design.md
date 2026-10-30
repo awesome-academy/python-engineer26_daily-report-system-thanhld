@@ -20,7 +20,7 @@
 
 ### Danh sách có phân trang
 
-Query: `page` (từ 1), `page_size` (mặc định 20, tối đa 100), `sort` (ví dụ `-report_date`), `keyword`.
+Query: `page` (từ 1 đến 1.000.000), `page_size` (mặc định 20, tối đa 100), `sort` (ví dụ `-report_date`), `keyword`.
 
 ```json
 {
@@ -70,6 +70,9 @@ Lỗi validate (422) có `details` là danh sách `{ "field": "body.report_date"
 | `TOO_MANY_ATTEMPTS` | 429 | 3 |
 | `CURRENT_PASSWORD_INCORRECT` | 400 | 3 |
 | `EMAIL_ALREADY_EXISTS` | 409 | 4 |
+| `CANNOT_MODIFY_OWN_ACCOUNT` | 400 | 4 |
+| `USER_MANAGES_DEPARTMENTS` | 409 | 4 |
+| `LAST_ACTIVE_ADMIN` | 409 | 4 |
 | `DEPARTMENT_CODE_ALREADY_EXISTS` | 409 | 4 |
 | `DEPARTMENT_NOT_EMPTY` | 409 | 4 |
 | `REPORT_ALREADY_EXISTS` | 409 | 5 |
@@ -153,6 +156,28 @@ Hồ sơ cá nhân:
 | GET | `/admin/departments/{id}/members` | A3 | Xem thành viên để chọn manager |
 | POST | `/admin/departments/{id}/managers` | A3 | Body `user_id`, user phải có role MANAGER |
 | DELETE | `/admin/departments/{id}/managers/{user_id}` | A3 | |
+
+Bộ phận (A2):
+
+- `code` 1 đến 20 ký tự, chỉ chữ cái không dấu (ASCII), chữ số, `-`, `_`; trim và lưu chữ hoa (`qa` thành `QA`). Ký tự như `ß`, `ı` bị từ chối (422), không bị đổi ngầm thành `SS`, `I`. Không trùng với bộ phận chưa bị xóa, không phân biệt hoa thường: trùng trả 409 `DEPARTMENT_CODE_ALREADY_EXISTS`, `details` là `{"field": "code"}`. Mã của bộ phận đã xóa dùng lại được.
+- `name` 1 đến 100 ký tự, `description` tối đa 1000 ký tự, cả hai được trim; `description` rỗng sau khi trim lưu thành `null`. `name`, `description`, `keyword` chứa ký tự NUL (`\x00`) trả 422 (PostgreSQL không lưu được ký tự này).
+- `GET /admin/departments`: `keyword` tìm trong mã hoặc tên, không phân biệt hoa thường, không dấu (`ky thuat` khớp `Kỹ thuật`); sắp theo mã. Bộ phận đã xóa không hiện ở danh sách, xem, sửa, xóa (404, `details` là `{"field": "department_id"}`).
+- `department_id` trên URL phải từ 1 đến 2^63 − 1 (phạm vi khóa chính bigint), ngoài phạm vi trả 422 ở field `path.department_id`.
+- `POST`, `PATCH` gửi field lạ trả 422, không bỏ qua âm thầm. `PATCH` cập nhật từng phần như `PATCH /me`: `null` xóa `description`; `code`, `name` không nhận `null`. `PATCH` và `DELETE` khóa dòng bộ phận: sửa đúng lúc bộ phận đang bị xóa thì chờ lệnh xóa xong rồi nhận 404.
+- `DELETE` xóa mềm, trả 204. Còn thành viên (user chưa bị xóa có `department_id` là bộ phận này, kể cả user bị khóa) thì trả 409 `DEPARTMENT_NOT_EMPTY`, `details` là `{"member_count": n}`. Xóa được thì liên kết manager của bộ phận bị gỡ luôn, giống ON DELETE CASCADE khi xóa cứng.
+
+Quản lý user (A1):
+
+- Danh sách chỉ gồm user chưa bị xóa, sắp theo `id`. `keyword` tìm trong họ tên (không phân biệt dấu, hoa thường: "nguyen van" khớp "Nguyễn Văn An") hoặc email; `%`, `_` trong từ khóa là ký tự thường. Lọc thêm `role`, `department_id`.
+- `POST` nhận `email`, `full_name`, `phone`, `date_of_birth`, `role` (mặc định `USER`), `department_id`; không nhận mật khẩu. User mới có `password_hash` null nên chưa đăng nhập được đến khi tự đặt mật khẩu qua link (S2, Ngày 7).
+- Email không phân biệt hoa thường, trùng với user chưa bị xóa trả 409 `EMAIL_ALREADY_EXISTS` (tạo và sửa). Email của user đã xóa mềm dùng lại được.
+- `PATCH` cập nhật từng phần, sửa được mọi field của `POST` và `is_active`. `null` xóa `phone`, `date_of_birth`, `department_id` (gỡ khỏi bộ phận); `email`, `full_name`, `role`, `is_active` không nhận `null`. Field lạ trả 422.
+- `department_id` không tồn tại hoặc bộ phận đã xóa: 404 `NOT_FOUND`, `details` là `{"field": "department_id"}`. Gán bộ phận khóa dòng bộ phận (`FOR SHARE`) đến khi lưu xong, nên không chạy xen được với lệnh xóa bộ phận: xóa trước thì lệnh gán nhận 404, gán trước thì lệnh xóa thấy bộ phận còn thành viên. User không tồn tại hoặc đã xóa: 404, `details` là `{"field": "user_id"}`.
+- Khóa (`is_active: false`) và xóa tăng `token_version`: mọi access token, refresh token đã cấp hết hiệu lực ngay. Không ghi `revoked_at` cho refresh token, để thiết bị của user refresh chỉ nhận 401, không bị coi là token bị lộ.
+- `DELETE` là xóa mềm (`deleted_at`), giữ `department_id` và báo cáo của user. Xóa lại user đã xóa trả 404.
+- Admin không tự khóa, tự xóa, tự đổi role của mình: 400 `CANNOT_MODIFY_OWN_ACCOUNT` (tránh mất quyền quản trị).
+- Luôn còn ít nhất một admin đăng nhập được: khóa, hạ role, xóa admin cuối cùng trả 409 `LAST_ACTIVE_ADMIN`. Chỉ chặn tự sửa mình là chưa đủ, vì hai admin có thể khóa nhau cùng lúc. Các lệnh này khóa dòng mọi admin đang hoạt động (theo thứ tự id) trước khi kiểm tra, nên chạy lần lượt: lệnh sau đếm theo kết quả của lệnh trước.
+- Manager đang quản lý bộ phận chưa xóa không đổi role, không khóa, không xóa được: 409 `USER_MANAGES_DEPARTMENTS`. Gỡ khỏi bộ phận (A3) trước, để bộ phận không còn liên kết tới người không còn là manager.
 
 ### Hệ thống (1 endpoint, 3 tác vụ nền)
 

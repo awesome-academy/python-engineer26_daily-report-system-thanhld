@@ -10,8 +10,9 @@ from app.api.deps import require_roles
 from app.core.config import get_settings
 from app.core.exceptions import error_responses
 from app.modules.auth.router import router as auth_router
+from app.modules.departments.router import admin_department_router
 from app.modules.users.models import UserRole
-from app.modules.users.router import me_router
+from app.modules.users.router import admin_users_router, me_router
 
 # Nhóm theo role: kiểm tra role một lần ở nhóm, endpoint bên trong không tự kiểm tra lại.
 # Router của module phải include vào nhóm trước khi nhóm được include vào api_router,
@@ -25,6 +26,8 @@ manager_router = APIRouter(
     dependencies=[Depends(require_roles(UserRole.MANAGER))],
     responses=_ROLE_ERRORS,
 )
+admin_router.include_router(admin_department_router)
+admin_router.include_router(admin_users_router)
 
 api_router = APIRouter(prefix=get_settings().api_v1_prefix)
 api_router.include_router(auth_router)

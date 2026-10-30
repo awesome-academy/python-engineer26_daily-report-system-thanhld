@@ -55,12 +55,14 @@ async def create_department(
     *,
     code: str | None = None,
     name: str = "Phòng Kỹ thuật",
+    description: str | None = None,
     managers: Sequence[User] = (),
     deleted: bool = False,
 ) -> Department:
     department = Department(
         code=code or f"D{next(_sequence):03d}",
         name=name,
+        description=description,
         deleted_at=datetime.now(UTC) if deleted else None,
     )
     session.add(department)
