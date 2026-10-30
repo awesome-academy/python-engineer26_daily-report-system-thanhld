@@ -13,6 +13,7 @@ from pydantic import (
     field_validator,
 )
 
+from app.core import messages
 from app.core.constants import (
     EMAIL_MAX_LENGTH,
     FULL_NAME_MAX_LENGTH,
@@ -22,6 +23,7 @@ from app.core.constants import (
     PHONE_MAX_LENGTH,
     PHONE_PATTERN,
 )
+from app.core.validators import NoNul, reject_null
 from app.modules.users.models import UserRole
 
 
@@ -34,11 +36,7 @@ def _check_password_strength(password: str) -> str:
     }
     missing = [name for name, ok in rules.items() if not ok]
     if missing:
-        msg = (
-            "Mật khẩu phải có chữ thường, chữ hoa, chữ số và ký tự đặc biệt; "
-            f"còn thiếu: {', '.join(missing)}."
-        )
-        raise ValueError(msg)
+        raise ValueError(messages.PASSWORD_TOO_WEAK.format(missing=", ".join(missing)))
     return password
 
 
@@ -49,6 +47,7 @@ FullName = Annotated[
     StringConstraints(
         strip_whitespace=True, min_length=FULL_NAME_MIN_LENGTH, max_length=FULL_NAME_MAX_LENGTH
     ),
+    NoNul,
 ]
 Phone = Annotated[
     str,
@@ -97,14 +96,7 @@ class UserProfileUpdate(BaseModel):
     phone: Phone | None = None
     date_of_birth: PastDate | None = None
 
-    @field_validator("full_name")
-    @classmethod
-    def _full_name_not_null(cls, value: str | None) -> str | None:
-        # Chỉ chạy khi client gửi field này: họ tên bắt buộc nên không được xóa bằng null.
-        if value is None:
-            msg = "Họ tên không được để trống."
-            raise ValueError(msg)
-        return value
+    _not_null = field_validator("full_name")(reject_null)
 
 
 class PasswordChange(BaseModel):
@@ -115,6 +107,5 @@ class PasswordChange(BaseModel):
     @classmethod
     def _differs_from_current(cls, value: str, info: ValidationInfo) -> str:
         if value == info.data.get("current_password"):
-            msg = "Mật khẩu mới phải khác mật khẩu hiện tại."
-            raise ValueError(msg)
+            raise ValueError(messages.NEW_PASSWORD_SAME_AS_CURRENT)
         return value

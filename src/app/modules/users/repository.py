@@ -30,7 +30,5 @@ class UserRepository:
             select(User).where(func.lower(User.email) == email.lower(), User.deleted_at.is_(None))
         )
 
-    async def add(self, user: User) -> User:
+    def add(self, user: User) -> None:
         self.session.add(user)
-        await self.session.flush()
-        return user

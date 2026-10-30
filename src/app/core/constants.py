@@ -12,9 +12,17 @@ class Environment(StrEnum):
 # Phân trang
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
+# OFFSET = (page - 1) * page_size phải nằm trong bigint, nếu không PostgreSQL báo lỗi (500).
+# Một triệu trang, mỗi trang 100 bản ghi, vẫn dư xa so với dữ liệu thật.
+MAX_PAGE = 1_000_000
+# Từ khóa tìm kiếm trong danh sách
+KEYWORD_MAX_LENGTH = 100
 
 # Health check
 HEALTH_CHECK_TIMEOUT_SECONDS = 3
+
+# Khóa chính bigint: id trên URL lớn hơn số này thì trả 422, không gửi xuống DB.
+BIGINT_MAX = 2**63 - 1
 
 # Độ dài cột: model dùng cho String(n), schema dùng cho min_length, max_length để luôn khớp nhau.
 # Migration vẫn ghi số trực tiếp vì migration là bản chụp schema tại thời điểm tạo.
@@ -25,8 +33,15 @@ FULL_NAME_MAX_LENGTH = 100
 PHONE_MAX_LENGTH = 20
 # Số điện thoại: chỉ chữ số, có thể có dấu + đầu, từ 9 đến 15 chữ số (E.164 tối đa 15).
 PHONE_PATTERN = r"^\+?[0-9]{9,15}$"
+DEPARTMENT_CODE_MIN_LENGTH = 1
 DEPARTMENT_CODE_MAX_LENGTH = 20
+# Mã bộ phận chỉ gồm chữ cái không dấu (ASCII), chữ số, gạch ngang, gạch dưới để dùng được
+# trong file import Excel và URL; lưu chữ hoa.
+DEPARTMENT_CODE_PATTERN = r"^[A-Za-z0-9_-]+$"
+DEPARTMENT_NAME_MIN_LENGTH = 1
 DEPARTMENT_NAME_MAX_LENGTH = 100
+# Cột description là text, giới hạn ở schema để request không gửi nội dung quá dài.
+DEPARTMENT_DESCRIPTION_MAX_LENGTH = 1000
 # Đường dẫn file trong kho lưu trữ (local hoặc S3), ví dụ ảnh đại diện.
 STORAGE_KEY_MAX_LENGTH = 255
 TOKEN_JTI_MAX_LENGTH = 64

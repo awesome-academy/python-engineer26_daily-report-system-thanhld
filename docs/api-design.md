@@ -20,7 +20,7 @@
 
 ### Danh sách có phân trang
 
-Query: `page` (từ 1), `page_size` (mặc định 20, tối đa 100), `sort` (ví dụ `-report_date`), `keyword`.
+Query: `page` (từ 1 đến 1.000.000), `page_size` (mặc định 20, tối đa 100), `sort` (ví dụ `-report_date`), `keyword`.
 
 ```json
 {
@@ -153,6 +153,15 @@ Hồ sơ cá nhân:
 | GET | `/admin/departments/{id}/members` | A3 | Xem thành viên để chọn manager |
 | POST | `/admin/departments/{id}/managers` | A3 | Body `user_id`, user phải có role MANAGER |
 | DELETE | `/admin/departments/{id}/managers/{user_id}` | A3 | |
+
+Bộ phận (A2):
+
+- `code` 1 đến 20 ký tự, chỉ chữ cái không dấu (ASCII), chữ số, `-`, `_`; trim và lưu chữ hoa (`qa` thành `QA`). Ký tự như `ß`, `ı` bị từ chối (422), không bị đổi ngầm thành `SS`, `I`. Không trùng với bộ phận chưa bị xóa, không phân biệt hoa thường: trùng trả 409 `DEPARTMENT_CODE_ALREADY_EXISTS`, `details` là `{"field": "code"}`. Mã của bộ phận đã xóa dùng lại được.
+- `name` 1 đến 100 ký tự, `description` tối đa 1000 ký tự, cả hai được trim; `description` rỗng sau khi trim lưu thành `null`. `name`, `description`, `keyword` chứa ký tự NUL (`\x00`) trả 422 (PostgreSQL không lưu được ký tự này).
+- `GET /admin/departments`: `keyword` tìm trong mã hoặc tên, không phân biệt hoa thường, không dấu (`ky thuat` khớp `Kỹ thuật`); sắp theo mã. Bộ phận đã xóa không hiện ở danh sách, xem, sửa, xóa (404, `details` là `{"field": "department_id"}`).
+- `department_id` trên URL phải từ 1 đến 2^63 − 1 (phạm vi khóa chính bigint), ngoài phạm vi trả 422 ở field `path.department_id`.
+- `POST`, `PATCH` gửi field lạ trả 422, không bỏ qua âm thầm. `PATCH` cập nhật từng phần như `PATCH /me`: `null` xóa `description`; `code`, `name` không nhận `null`. `PATCH` và `DELETE` khóa dòng bộ phận: sửa đúng lúc bộ phận đang bị xóa thì chờ lệnh xóa xong rồi nhận 404.
+- `DELETE` xóa mềm, trả 204. Còn thành viên (user chưa bị xóa có `department_id` là bộ phận này, kể cả user bị khóa) thì trả 409 `DEPARTMENT_NOT_EMPTY`, `details` là `{"member_count": n}`. Xóa được thì liên kết manager của bộ phận bị gỡ luôn, giống ON DELETE CASCADE khi xóa cứng.
 
 ### Hệ thống (1 endpoint, 3 tác vụ nền)
 

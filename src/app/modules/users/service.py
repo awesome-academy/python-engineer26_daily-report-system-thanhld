@@ -1,6 +1,6 @@
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import commit_unique
 from app.core.security import hash_password
 from app.modules.users.exceptions import EmailAlreadyExistsError
 from app.modules.users.models import USER_EMAIL_UNIQUE_INDEX, User
@@ -22,14 +22,8 @@ class UserService:
             role=data.role,
             password_hash=await hash_password(data.password),
         )
-        try:
-            await self.users.add(user)
-        except IntegrityError as exc:
-            # Hai lệnh tạo cùng email chạy song song đều qua được bước kiểm tra ở trên.
-            if USER_EMAIL_UNIQUE_INDEX in str(exc.orig):
-                raise EmailAlreadyExistsError from exc
-            raise
-        await self.session.commit()
+        self.users.add(user)
+        await commit_unique(self.session, USER_EMAIL_UNIQUE_INDEX, EmailAlreadyExistsError())
         return user
 
     async def update_profile(self, user: User, data: UserProfileUpdate) -> User:
