@@ -104,6 +104,21 @@ async def list_department_members(
     return await service.list_members(department_id, params)
 
 
+@admin_department_router.get(
+    "/{department_id}/managers",
+    summary="Xem manager của bộ phận",
+    description=(
+        "Manager không cần là thành viên bộ phận nên có thể không hiện ở `/members`; xem ở đây để "
+        "gỡ. Sắp theo họ tên (không phân biệt hoa thường, không dấu)."
+    ),
+    responses=error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
+)
+async def list_department_managers(
+    department_id: IdPath, params: PageQuery, service: DepartmentServiceDep
+) -> Page[DepartmentManagerOut]:
+    return await service.list_managers(department_id, params)
+
+
 @admin_department_router.post(
     "/{department_id}/managers",
     summary="Gán manager cho bộ phận",

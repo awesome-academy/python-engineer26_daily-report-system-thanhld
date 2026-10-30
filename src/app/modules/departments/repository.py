@@ -4,6 +4,7 @@ from datetime import datetime
 from sqlalchemy import Select, delete, exists, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import contains_eager
 
 from app.core.constants import LIKE_ESCAPE_CHAR
 from app.core.pagination import PageParams, paginate
@@ -87,6 +88,16 @@ class DepartmentRepository:
         return (
             select(User)
             .where(User.department_id == department_id, User.deleted_at.is_(None))
+            .order_by(*_BY_NAME)
+        )
+
+    def managers_statement(self, department_id: int) -> Select[DepartmentManager]:
+        """Liên kết manager của bộ phận, kèm user (bỏ user đã xóa mềm), sắp theo họ tên."""
+        return (
+            select(DepartmentManager)
+            .join(DepartmentManager.user)
+            .options(contains_eager(DepartmentManager.user))
+            .where(DepartmentManager.department_id == department_id, User.deleted_at.is_(None))
             .order_by(*_BY_NAME)
         )
 

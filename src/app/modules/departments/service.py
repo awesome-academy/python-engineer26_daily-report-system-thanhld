@@ -112,6 +112,24 @@ class DepartmentService:
         ]
         return Page.build(items, total=total, params=params)
 
+    async def list_managers(
+        self, department_id: int, params: PageParams
+    ) -> Page[DepartmentManagerOut]:
+        await self.get_department(department_id)
+        links, total = await paginate(
+            self.session, self.departments.managers_statement(department_id), params
+        )
+        items = [
+            DepartmentManagerOut(
+                id=link.user.id,
+                email=link.user.email,
+                full_name=link.user.full_name,
+                assigned_at=link.assigned_at,
+            )
+            for link in links
+        ]
+        return Page.build(items, total=total, params=params)
+
     async def assign_manager(self, department_id: int, user_id: int) -> DepartmentManagerOut:
         """Gán manager cho bộ phận. Người đã là manager thì giữ nguyên, không báo lỗi.
 

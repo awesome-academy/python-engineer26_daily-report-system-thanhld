@@ -123,6 +123,63 @@ async def test_admin_lists_members_of_empty_department(
     assert response.json() == {"data": [], "meta": {"page": 1, "page_size": 20, "total": 0}}
 
 
+# Xem manager
+
+
+async def test_admin_lists_department_managers(
+    client: AsyncClient, db_session: AsyncSession, admin: User
+) -> None:
+    # Manager không cần là thành viên: người ngoài bộ phận không hiện ở /members, phải xem được ở
+    # đây để còn gỡ.
+    outsider = await create_user(db_session, full_name="Đặng Văn Bình", role=UserRole.MANAGER)
+    member = await create_user(db_session, full_name="an Thị Hoa", role=UserRole.MANAGER)
+    deleted = await create_user(db_session, role=UserRole.MANAGER, deleted=True)
+    department = await create_department(db_session, managers=[outsider, member, deleted])
+    await create_department(
+        db_session, managers=[await create_user(db_session, role=UserRole.MANAGER)]
+    )
+    member.department_id = department.id
+    await db_session.flush()
+
+    response = await client.get(managers_url(department.id), headers=auth_headers(admin))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["meta"] == {"page": 1, "page_size": 20, "total": 2}
+    assert [(m["id"], m["email"], m["full_name"]) for m in body["data"]] == [
+        (member.id, member.email, "an Thị Hoa"),
+        (outsider.id, outsider.email, "Đặng Văn Bình"),
+    ]
+    assert all(datetime.fromisoformat(m["assigned_at"]) for m in body["data"])
+
+
+async def test_admin_lists_department_managers_paginated(
+    client: AsyncClient, db_session: AsyncSession, admin: User
+) -> None:
+    first = await create_user(db_session, full_name="An", role=UserRole.MANAGER)
+    second = await create_user(db_session, full_name="Bình", role=UserRole.MANAGER)
+    department = await create_department(db_session, managers=[second, first])
+
+    response = await client.get(
+        managers_url(department.id), params={"page": 2, "page_size": 1}, headers=auth_headers(admin)
+    )
+
+    assert response.status_code == 200
+    assert response.json()["meta"] == {"page": 2, "page_size": 1, "total": 2}
+    assert [m["id"] for m in response.json()["data"]] == [second.id]
+
+
+async def test_admin_lists_managers_of_department_without_managers(
+    client: AsyncClient, db_session: AsyncSession, admin: User
+) -> None:
+    department = await create_department(db_session)
+
+    response = await client.get(managers_url(department.id), headers=auth_headers(admin))
+
+    assert response.status_code == 200
+    assert response.json() == {"data": [], "meta": {"page": 1, "page_size": 20, "total": 0}}
+
+
 # Gán manager
 
 
@@ -356,15 +413,16 @@ async def test_removing_manager_validates_user_id(
     assert [d["field"] for d in response.json()["error"]["details"]] == ["path.user_id"]
 
 
-# Chung cho cả ba endpoint
+# Chung cho mọi endpoint
 
 Endpoint = tuple[str, UrlBuilder]
 ENDPOINTS: list[Endpoint] = [
     ("GET", members_url),
+    ("GET", managers_url),
     ("POST", managers_url),
     ("DELETE", lambda department_id: manager_url(department_id, 1)),
 ]
-ENDPOINT_IDS = ["members", "assign", "remove"]
+ENDPOINT_IDS = ["members", "managers", "assign", "remove"]
 
 
 @pytest.mark.parametrize("endpoint", ENDPOINTS, ids=ENDPOINT_IDS)
@@ -441,6 +499,7 @@ async def test_endpoints_reject_non_admin(
     ("method", "path"),
     [
         ("get", "/admin/departments/{department_id}/members"),
+        ("get", "/admin/departments/{department_id}/managers"),
         ("post", "/admin/departments/{department_id}/managers"),
         ("delete", "/admin/departments/{department_id}/managers/{user_id}"),
     ],

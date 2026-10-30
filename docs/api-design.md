@@ -156,6 +156,7 @@ Hồ sơ cá nhân:
 | PATCH | `/admin/departments/{id}` | A2 | |
 | DELETE | `/admin/departments/{id}` | A2 | Xóa mềm, chặn khi còn thành viên |
 | GET | `/admin/departments/{id}/members` | A3 | Xem thành viên để chọn manager, phân trang |
+| GET | `/admin/departments/{id}/managers` | A3 | Xem manager để gỡ, phân trang |
 | POST | `/admin/departments/{id}/managers` | A3 | Body `user_id`, user phải có role MANAGER |
 | DELETE | `/admin/departments/{id}/managers/{user_id}` | A3 | Trả 204 |
 
@@ -185,6 +186,7 @@ Manager của bộ phận (A3):
 
 - Một bộ phận có nhiều manager, một manager quản lý nhiều bộ phận (Q2). Manager không cần là thành viên bộ phận mình quản lý.
 - Thành viên là user có `department_id` là bộ phận đó (không gồm user đã xóa mềm), sắp theo họ tên không phân biệt hoa thường, không dấu (`an, Ánh, Bình, Đặng, Zung`), mỗi người có `is_manager` cho biết đang là manager của bộ phận này.
+- `GET .../managers` liệt kê manager của bộ phận (`id`, `email`, `full_name`, `assigned_at`), cùng thứ tự sắp như thành viên. Manager không là thành viên bộ phận thì không hiện ở `/members`, nên đây là chỗ admin xem để gỡ.
 - `POST .../managers` trả 200 với `id`, `email`, `full_name` của manager và `assigned_at`. Chỉ gán được tài khoản role MANAGER (khác thì 422 `MANAGER_ROLE_REQUIRED`) đang hoạt động (bị khóa thì 422 `USER_INACTIVE`). Gán lại người đã là manager không lỗi, `assigned_at` giữ thời điểm gán lần đầu, nên client gửi lại khi timeout cũng an toàn.
 - `DELETE .../managers/{user_id}` chỉ gỡ liên kết, tài khoản giữ nguyên. Người không phải manager của bộ phận thì không có gì để gỡ, vẫn trả 204.
 - Cả ba endpoint: bộ phận không tồn tại hoặc đã xóa mềm trả 404, `details.field` là `department_id`. Gán và gỡ: user không tồn tại hoặc đã xóa mềm trả 404, `details.field` là `user_id` (id gõ nhầm không bị coi là gỡ xong).
