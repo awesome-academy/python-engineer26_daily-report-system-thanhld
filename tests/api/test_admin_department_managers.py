@@ -76,6 +76,26 @@ async def test_admin_lists_department_members_with_manager_flag(
     assert "password_hash" not in body["data"][0]
 
 
+async def test_admin_lists_department_members_sorted_by_vietnamese_name(
+    client: AsyncClient, db_session: AsyncSession, admin: User
+) -> None:
+    # Sắp theo byte thì chữ thường, chữ có dấu đứng sau "Z": "Bình, Zung, an, Ánh, Đặng".
+    department = await create_department(db_session)
+    for full_name in ["Zung", "Đặng", "an", "Bình", "Ánh"]:
+        await create_user(db_session, full_name=full_name, department=department)
+
+    response = await client.get(members_url(department.id), headers=auth_headers(admin))
+
+    assert response.status_code == 200
+    assert [m["full_name"] for m in response.json()["data"]] == [
+        "an",
+        "Ánh",
+        "Bình",
+        "Đặng",
+        "Zung",
+    ]
+
+
 async def test_admin_lists_department_members_paginated(
     client: AsyncClient, db_session: AsyncSession, admin: User
 ) -> None:

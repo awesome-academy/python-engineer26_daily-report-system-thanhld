@@ -92,7 +92,10 @@ async def delete_department(department_id: IdPath, service: DepartmentServiceDep
 @admin_department_router.get(
     "/{department_id}/members",
     summary="Xem thành viên bộ phận",
-    description="Thành viên là user thuộc bộ phận, kèm `is_manager` để chọn người gán manager.",
+    description=(
+        "Thành viên là user thuộc bộ phận, sắp theo họ tên (không phân biệt hoa thường, không "
+        "dấu), kèm `is_manager` để chọn người gán manager."
+    ),
     responses=error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
 )
 async def list_department_members(
