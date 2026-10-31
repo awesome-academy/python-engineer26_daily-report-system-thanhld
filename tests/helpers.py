@@ -133,10 +133,19 @@ async def _missing_department(session: AsyncSession) -> ScopeTarget:
     return ScopeTarget(auth_headers(manager), BIGINT_MAX)
 
 
-async def _manager_of_department(session: AsyncSession) -> ScopeTarget:
-    manager = await create_user(session, role=UserRole.MANAGER)
-    department = await create_department(session, managers=[manager])
-    return ScopeTarget(auth_headers(manager), department.id)
+def _assigned_caller(**user_fields: Any) -> ArrangeScope:
+    """Người gọi có dòng `department_managers` của bộ phận, tài khoản theo `user_fields`.
+
+    Mặc định là manager đang hoạt động. Khóa, hạ role, xóa mềm tài khoản không gỡ dòng liên kết,
+    nên lớp kiểm tra token (401), role (403) phải chặn trước, không trông vào policy phạm vi.
+    """
+
+    async def arrange(session: AsyncSession) -> ScopeTarget:
+        user = await create_user(session, **{"role": UserRole.MANAGER, **user_fields})
+        department = await create_department(session, managers=[user])
+        return ScopeTarget(auth_headers(user), department.id)
+
+    return arrange
 
 
 async def _one_of_several_managers(session: AsyncSession) -> ScopeTarget:
@@ -160,6 +169,9 @@ DEPARTMENT_SCOPE_DENIED = [
     pytest.param(_caller_with_role(None), UnauthorizedError(), id="anonymous"),
     pytest.param(_caller_with_role(UserRole.USER), ForbiddenError(), id="user"),
     pytest.param(_caller_with_role(UserRole.ADMIN), ForbiddenError(), id="admin"),
+    pytest.param(_assigned_caller(is_active=False), UnauthorizedError(), id="assigned-but-locked"),
+    pytest.param(_assigned_caller(deleted=True), UnauthorizedError(), id="assigned-but-deleted"),
+    pytest.param(_assigned_caller(role=UserRole.USER), ForbiddenError(), id="assigned-but-demoted"),
     pytest.param(
         _caller_with_role(UserRole.MANAGER), DepartmentNotFoundError(), id="manager-no-department"
     ),
@@ -175,7 +187,7 @@ DEPARTMENT_SCOPE_DENIED = [
     pytest.param(_missing_department, DepartmentNotFoundError(), id="missing-department"),
 ]
 DEPARTMENT_SCOPE_ALLOWED = [
-    pytest.param(_manager_of_department, id="manager"),
+    pytest.param(_assigned_caller(), id="manager"),
     pytest.param(_one_of_several_managers, id="one-of-several-managers"),
     pytest.param(_manager_of_several_departments, id="manager-of-several-departments"),
 ]
