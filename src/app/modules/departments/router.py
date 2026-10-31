@@ -2,13 +2,16 @@ from fastapi import APIRouter, status
 
 from app.api.deps import IdPath
 from app.core.exceptions import error_responses
-from app.core.pagination import Page
+from app.core.pagination import Page, PageQuery
 from app.modules.departments.dependencies import DepartmentServiceDep
 from app.modules.departments.schemas import (
     DepartmentCreate,
     DepartmentListQuery,
+    DepartmentManagerOut,
+    DepartmentMemberOut,
     DepartmentOut,
     DepartmentUpdate,
+    ManagerAssign,
 )
 
 # Include vào nhóm /admin (api/v1.py): role ADMIN được kiểm tra ở nhóm, 401, 403 khai ở nhóm.
@@ -84,3 +87,65 @@ async def update_department(
 )
 async def delete_department(department_id: IdPath, service: DepartmentServiceDep) -> None:
     await service.delete_department(department_id)
+
+
+@admin_department_router.get(
+    "/{department_id}/members",
+    summary="Xem thành viên bộ phận",
+    description=(
+        "Thành viên là user thuộc bộ phận, sắp theo họ tên (không phân biệt hoa thường, không "
+        "dấu), kèm `is_manager` để chọn người gán manager."
+    ),
+    responses=error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
+)
+async def list_department_members(
+    department_id: IdPath, params: PageQuery, service: DepartmentServiceDep
+) -> Page[DepartmentMemberOut]:
+    return await service.list_members(department_id, params)
+
+
+@admin_department_router.get(
+    "/{department_id}/managers",
+    summary="Xem manager của bộ phận",
+    description=(
+        "Manager không cần là thành viên bộ phận nên có thể không hiện ở `/members`; xem ở đây để "
+        "gỡ. Sắp theo họ tên (không phân biệt hoa thường, không dấu)."
+    ),
+    responses=error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
+)
+async def list_department_managers(
+    department_id: IdPath, params: PageQuery, service: DepartmentServiceDep
+) -> Page[DepartmentManagerOut]:
+    return await service.list_managers(department_id, params)
+
+
+@admin_department_router.post(
+    "/{department_id}/managers",
+    summary="Gán manager cho bộ phận",
+    description=(
+        "Chỉ gán được tài khoản role MANAGER đang hoạt động. Một bộ phận có nhiều manager, "
+        "một manager quản lý nhiều bộ phận. Gán lại người đã là manager không lỗi, trả về "
+        "thời điểm gán lần đầu."
+    ),
+    responses=error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
+)
+async def assign_department_manager(
+    department_id: IdPath, data: ManagerAssign, service: DepartmentServiceDep
+) -> DepartmentManagerOut:
+    return await service.assign_manager(department_id, data.user_id)
+
+
+@admin_department_router.delete(
+    "/{department_id}/managers/{user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Gỡ manager khỏi bộ phận",
+    description=(
+        "Chỉ gỡ liên kết, tài khoản giữ nguyên. Người không phải manager của bộ phận thì vẫn trả "
+        "204; user không tồn tại hoặc đã xóa thì 404."
+    ),
+    responses=error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
+)
+async def remove_department_manager(
+    department_id: IdPath, user_id: IdPath, service: DepartmentServiceDep
+) -> None:
+    await service.remove_manager(department_id, user_id)

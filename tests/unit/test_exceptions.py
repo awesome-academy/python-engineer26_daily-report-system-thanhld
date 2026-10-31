@@ -12,6 +12,7 @@ from app.core.exceptions import (
     ForbiddenError,
     NotFoundError,
     UnauthorizedError,
+    UnprocessableError,
     register_exception_handlers,
 )
 
@@ -105,3 +106,15 @@ def test_app_error_accepts_custom_code() -> None:
 
     assert error.code == ErrorCode.VALIDATION_ERROR
     assert str(error) == "Sai định dạng file."
+
+
+@pytest.mark.parametrize(
+    "namespace",
+    [{}, {"code": ErrorCode.VALIDATION_ERROR}],
+    ids=["missing-code", "validation-error"],
+)
+def test_unprocessable_error_requires_own_code(namespace: dict[str, object]) -> None:
+    # VALIDATION_ERROR có details là danh sách lỗi theo field; lỗi nghiệp vụ 422 có details là dict
+    # nên phải có mã riêng để client phân biệt.
+    with pytest.raises(TypeError, match="BusinessError"):
+        type("BusinessError", (UnprocessableError,), namespace)

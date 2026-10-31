@@ -1,4 +1,10 @@
-from app.core.exceptions import AppError, ConflictError, ErrorCode, NotFoundError
+from app.core.exceptions import (
+    AppError,
+    ConflictError,
+    ErrorCode,
+    NotFoundError,
+    UnprocessableError,
+)
 
 
 class EmailAlreadyExistsError(ConflictError):
@@ -35,3 +41,11 @@ class LastActiveAdminError(ConflictError):
     message = (
         "Phải còn ít nhất một admin đang hoạt động; không thể khóa, hạ role hoặc xóa admin này."
     )
+
+
+class UserInactiveError(UnprocessableError):
+    code = ErrorCode.USER_INACTIVE
+    message = "Tài khoản đang bị khóa, mở khóa trước khi thực hiện thao tác này."
+
+    def __init__(self) -> None:
+        super().__init__(details={"field": "user_id"})

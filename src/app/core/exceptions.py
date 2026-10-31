@@ -36,6 +36,8 @@ class ErrorCode(StrEnum):
     CANNOT_MODIFY_OWN_ACCOUNT = "CANNOT_MODIFY_OWN_ACCOUNT"
     USER_MANAGES_DEPARTMENTS = "USER_MANAGES_DEPARTMENTS"
     LAST_ACTIVE_ADMIN = "LAST_ACTIVE_ADMIN"
+    USER_INACTIVE = "USER_INACTIVE"
+    MANAGER_ROLE_REQUIRED = "MANAGER_ROLE_REQUIRED"
 
 
 class AppError(Exception):
@@ -83,6 +85,23 @@ class ConflictError(AppError):
     status_code = status.HTTP_409_CONFLICT
     code = ErrorCode.CONFLICT
     message = "Dữ liệu bị trùng."
+
+
+class UnprocessableError(AppError):
+    """Dữ liệu đúng định dạng nhưng vi phạm quy tắc nghiệp vụ (ví dụ gán manager sai role).
+
+    Không có mã mặc định, lớp con phải tự đặt `code`: VALIDATION_ERROR có `details` là danh sách
+    lỗi theo field, còn lỗi nghiệp vụ có `details` là dict, client cần mã riêng để phân biệt.
+    """
+
+    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+    message = "Dữ liệu không hợp lệ."
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        if cls.code in {AppError.code, ErrorCode.VALIDATION_ERROR}:
+            msg = f"{cls.__name__} phải khai báo code riêng cho lỗi nghiệp vụ 422."
+            raise TypeError(msg)
 
 
 _HTTP_ERRORS: dict[int, tuple[ErrorCode, str]] = {

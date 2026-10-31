@@ -1,7 +1,10 @@
 from collections.abc import Sequence
+from datetime import datetime
 
 from sqlalchemy import Select, delete, exists, func, or_, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import contains_eager
 
 from app.core.constants import LIKE_ESCAPE_CHAR
 from app.core.pagination import PageParams, paginate
@@ -9,9 +12,14 @@ from app.core.search import contains_pattern
 from app.modules.departments.models import Department, DepartmentManager
 from app.modules.users.models import User
 
+# Sắp user theo họ tên không phân biệt hoa thường, không dấu. Collation của DB (C, hay musl trên
+# image alpine) sắp theo byte: chữ thường, chữ có dấu đứng sau "Z" ("Bình, Zung, an, Ánh, Đặng").
+# Trùng tên không dấu thì xét tên gốc rồi id để thứ tự cố định giữa các trang.
+_BY_NAME = (func.immutable_unaccent(func.lower(User.full_name)), User.full_name, User.id)
+
 
 class DepartmentRepository:
-    """Truy vấn bảng departments. Mặc định bỏ qua bộ phận đã bị xóa mềm."""
+    """Truy vấn bộ phận, thành viên và manager. Mặc định bỏ qua bản ghi đã bị xóa mềm."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -74,6 +82,58 @@ class DepartmentRepository:
                 )
             )
             or 0
+        )
+
+    def members_statement(self, department_id: int) -> Select[User]:
+        return (
+            select(User)
+            .where(User.department_id == department_id, User.deleted_at.is_(None))
+            .order_by(*_BY_NAME)
+        )
+
+    def managers_statement(self, department_id: int) -> Select[DepartmentManager]:
+        """Liên kết manager của bộ phận, kèm user (bỏ user đã xóa mềm), sắp theo họ tên."""
+        return (
+            select(DepartmentManager)
+            .join(DepartmentManager.user)
+            .options(contains_eager(DepartmentManager.user))
+            .where(DepartmentManager.department_id == department_id, User.deleted_at.is_(None))
+            .order_by(*_BY_NAME)
+        )
+
+    async def get_manager_ids(self, department_id: int, user_ids: Sequence[int]) -> set[int]:
+        """Trong `user_ids`, những ai là manager của bộ phận."""
+        rows = await self.session.scalars(
+            select(DepartmentManager.user_id).where(
+                DepartmentManager.department_id == department_id,
+                DepartmentManager.user_id.in_(user_ids),
+            )
+        )
+        return set(rows)
+
+    async def add_manager(self, department_id: int, user_id: int) -> datetime:
+        """Gán manager, trả thời điểm gán. Đã là manager thì giữ thời điểm gán lần đầu."""
+        # ON CONFLICT: hai request gán cùng một người chạy song song không thành lỗi trùng khóa.
+        # DO UPDATE ghi lại chính giá trị cũ, không dùng DO NOTHING: dòng đã có bị khóa đến khi
+        # commit và RETURNING luôn có một dòng. DO NOTHING không khóa, lệnh gỡ manager commit chen
+        # giữa lúc ghi và lúc đọc lại thì không còn dòng để trả về.
+        result = await self.session.execute(
+            insert(DepartmentManager)
+            .values(department_id=department_id, user_id=user_id)
+            .on_conflict_do_update(
+                index_elements=[DepartmentManager.department_id, DepartmentManager.user_id],
+                set_={"assigned_at": DepartmentManager.assigned_at},
+            )
+            .returning(DepartmentManager.assigned_at)
+        )
+        return result.scalar_one()
+
+    async def remove_manager(self, department_id: int, user_id: int) -> None:
+        await self.session.execute(
+            delete(DepartmentManager).where(
+                DepartmentManager.department_id == department_id,
+                DepartmentManager.user_id == user_id,
+            )
         )
 
     async def remove_managers(self, department_id: int) -> None:

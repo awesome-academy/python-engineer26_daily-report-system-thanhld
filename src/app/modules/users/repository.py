@@ -30,6 +30,15 @@ class UserRepository:
             .execution_options(populate_existing=True)
         )
 
+    async def get_by_id_for_share(self, user_id: int) -> User | None:
+        # FOR SHARE: đổi role, khóa, xóa user phải chờ thao tác đang dựa vào các giá trị này xong.
+        return await self.session.scalar(
+            select(User)
+            .where(User.id == user_id, User.deleted_at.is_(None))
+            .with_for_update(read=True)
+            .execution_options(populate_existing=True)
+        )
+
     async def lock_active_admin_ids(self) -> list[int]:
         """Khóa dòng mọi admin đăng nhập được, theo thứ tự id, trả về id của họ.
 

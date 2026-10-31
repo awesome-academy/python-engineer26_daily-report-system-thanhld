@@ -15,7 +15,8 @@ from app.core.constants import (
     DEPARTMENT_NAME_MIN_LENGTH,
 )
 from app.core.pagination import PageParams
-from app.core.validators import Keyword, NoNul, blank_to_none, reject_null
+from app.core.validators import Id, Keyword, NoNul, blank_to_none, reject_null
+from app.modules.users.models import UserRole
 
 
 def _check_department_code(code: str) -> str:
@@ -95,3 +96,27 @@ class DepartmentListParams(PageParams):
 
 
 DepartmentListQuery = Annotated[DepartmentListParams, Query()]
+
+
+class DepartmentMemberOut(BaseModel):
+    id: int
+    email: str
+    full_name: str
+    role: UserRole
+    is_active: bool
+    # Đang là manager của chính bộ phận này.
+    is_manager: bool
+
+
+class ManagerAssign(BaseModel):
+    # Field lạ trả 422 như DepartmentCreate, DepartmentUpdate.
+    model_config = ConfigDict(extra="forbid")
+
+    user_id: Id
+
+
+class DepartmentManagerOut(BaseModel):
+    id: int
+    email: str
+    full_name: str
+    assigned_at: datetime

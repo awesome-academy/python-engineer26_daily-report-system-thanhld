@@ -1,8 +1,7 @@
-from collections.abc import AsyncIterator
 from datetime import date
 
 import pytest
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -210,15 +209,6 @@ async def test_reset_clears_all_data(db_session: AsyncSession) -> None:
 
     assert await count(db_session, User) == 0
     assert await count(db_session, DailyReport) == 0
-
-
-@pytest.fixture
-async def clean_after(engine: AsyncEngine) -> AsyncIterator[None]:
-    """Lệnh CLI commit thật vào DB test, nên xóa sạch dữ liệu sau test."""
-    yield
-    tables = ", ".join(table.name for table in Base.metadata.sorted_tables)
-    async with engine.begin() as connection:
-        await connection.execute(text(f"TRUNCATE TABLE {tables} RESTART IDENTITY CASCADE"))
 
 
 @pytest.mark.usefixtures("clean_after")

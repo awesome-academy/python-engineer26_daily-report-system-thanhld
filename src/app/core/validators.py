@@ -5,7 +5,7 @@ from typing import Annotated
 from pydantic import AfterValidator, Field, StringConstraints
 
 from app.core import messages
-from app.core.constants import BIGINT_MAX, KEYWORD_MAX_LENGTH
+from app.core.constants import BIGINT_MAX, ID_MIN, KEYWORD_MAX_LENGTH
 
 
 def reject_null[T](value: T | None) -> T:
@@ -40,7 +40,7 @@ def blank_to_none(value: str) -> str | None:
 
 # Id bản ghi (path, query, body): ngoài phạm vi khóa chính bigint thì trả 422 ngay. Số lớn hơn mà
 # gửi xuống DB thì asyncpg từ chối tham số, API trả 500.
-Id = Annotated[int, Field(ge=1, le=BIGINT_MAX)]
+Id = Annotated[int, Field(ge=ID_MIN, le=BIGINT_MAX)]
 # Từ khóa tìm kiếm của danh sách. Chuỗi rỗng sau khi trim nghĩa là không lọc.
 Keyword = Annotated[
     str, StringConstraints(strip_whitespace=True, max_length=KEYWORD_MAX_LENGTH), NoNul

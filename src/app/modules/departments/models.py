@@ -53,6 +53,9 @@ class DepartmentManager(Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
+    # Chỉ đọc: liệt kê manager kèm assigned_at trong một câu truy vấn (contains_eager).
+    user: Mapped["User"] = relationship(viewonly=True, lazy="raise")
+
 
 # Mã bộ phận không trùng trong số bộ phận chưa bị xóa mềm, không phân biệt hoa thường như email.
 DEPARTMENT_CODE_UNIQUE_INDEX = "uq_departments_code_active"
