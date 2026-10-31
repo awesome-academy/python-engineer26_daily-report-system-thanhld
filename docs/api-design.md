@@ -114,7 +114,7 @@ Phiên đăng nhập:
 | GET | `/me/recipients` | U3 | Manager của bộ phận mình |
 | POST | `/me/reports` | U3, S1 | Tạo báo cáo, kích hoạt email |
 | GET | `/me/reports` | U3 | `date_from`, `date_to`, phân trang |
-| GET | `/me/reports/{id}` | U3 | |
+| GET | `/me/reports/{id}` | U3 | Gồm bộ phận lúc viết, người nhận |
 
 Hồ sơ cá nhân:
 
@@ -133,6 +133,9 @@ Báo cáo hằng ngày (U3):
 - Mỗi người một báo cáo mỗi ngày: trùng trả 409 `REPORT_ALREADY_EXISTS`, `details` là `{"field": "report_date"}`. Hai request cùng ngày gửi đồng thời cũng chỉ một request thành công (unique `(author_id, report_date)` ở DB).
 - Không gửi field `recipient_ids` hoặc gửi `null` thì báo cáo gửi cho mọi người trong `GET /me/recipients` (Q4). Danh sách rỗng `[]` trả 422 `VALIDATION_ERROR`. Có gửi thì 1 đến 50 id, id trùng được gộp, mỗi id từ 1 đến 2^63 − 1. Id không có trong danh sách người nhận trả 422 `INVALID_RECIPIENT`, `details` là `{"field": "recipient_ids", "invalid_ids": [...]}`. Danh sách người nhận rỗng (chưa thuộc bộ phận nào, bộ phận chưa có manager) trả 422 `NO_RECIPIENT_AVAILABLE`: gửi lại request nào cũng lỗi, phải chờ admin xếp bộ phận, gán manager.
 - Báo cáo và người nhận lưu trong một transaction. Báo cáo đã gửi không sửa, xóa được (Q5).
+- `GET /me/reports`: `date_from`, `date_to` lọc theo ngày báo cáo, tính cả hai ngày, bỏ trống thì không giới hạn đầu đó; `date_to` trước `date_from` trả 422 ở field `query.date_to`. Sắp ngày mới nhất trước, phân trang. Mỗi phần tử có nội dung báo cáo và `department_id`, không kèm người nhận.
+- `GET /me/reports/{id}` thêm `department` (`id`, `code`, `name` của bộ phận lúc viết, kể cả khi người viết đã chuyển bộ phận hoặc bộ phận đã bị xóa) và `recipients` sắp theo họ tên như `GET /me/recipients`. Báo cáo không tồn tại hoặc của người khác cùng trả 404, `details` là `{"field": "report_id"}`.
+- Người nhận giữ đúng lịch sử lúc gửi: người đã bị khóa, đổi role hay bị xóa sau đó vẫn có trong `recipients`. Mỗi người gồm `id`, `full_name`, `email`, `is_deleted`; người đã bị xóa có `is_deleted` là `true` và `email` là `null`, vì email chỉ unique trên tài khoản chưa xóa nên có thể đã thuộc về một tài khoản mới.
 
 ### /manager: role MANAGER, chỉ bộ phận mình quản lý (11)
 
