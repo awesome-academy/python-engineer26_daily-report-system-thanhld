@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from datetime import date
+from datetime import UTC, date, datetime
 
 import pytest
 from sqlalchemy import delete, func, select
@@ -47,7 +47,9 @@ async def department(db_session: AsyncSession, manager: User) -> Department:
 
 @pytest.fixture
 async def author(db_session: AsyncSession, department: Department) -> User:
-    return await create_user(db_session, department=department)
+    return await create_user(
+        db_session, department=department, created_at=datetime(2026, 1, 1, tzinfo=UTC)
+    )
 
 
 async def commit_prepared_data(session: AsyncSession) -> None:

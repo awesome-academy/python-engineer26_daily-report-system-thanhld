@@ -1,5 +1,6 @@
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi import FastAPI
@@ -25,6 +26,8 @@ RECIPIENTS_URL = f"{API}/me/recipients"
 REPORTS_URL = f"{API}/me/reports"
 # Ngày 1/3 năm không nhuận: lùi 3 ngày là sang tháng 2, thử luôn mốc qua tháng.
 TODAY = date(2026, 3, 1)
+# Tài khoản người viết tạo từ trước, không chặn ngày báo cáo nào trong các test.
+JOINED = datetime(2026, 1, 1, tzinfo=UTC)
 
 
 def report_body(**overrides: Any) -> dict[str, Any]:
@@ -72,7 +75,7 @@ async def department(db_session: AsyncSession, managers: list[User]) -> Departme
 
 @pytest.fixture
 async def author(db_session: AsyncSession, department: Department) -> User:
-    return await create_user(db_session, department=department)
+    return await create_user(db_session, department=department, created_at=JOINED)
 
 
 @pytest.fixture
@@ -276,6 +279,29 @@ async def test_create_report_rejects_date_out_of_range(
     assert await count_reports(db_session, author) == 0
 
 
+async def test_create_report_rejects_date_before_account_was_created(
+    client: AsyncClient, db_session: AsyncSession, department: Department
+) -> None:
+    # 01:00 ngày 28/2 giờ nghiệp vụ, theo UTC vẫn là 27/2: ngày tạo tính theo giờ nghiệp vụ.
+    joined = datetime(2026, 2, 28, 1, tzinfo=ZoneInfo(get_settings().timezone))
+    newcomer = await create_user(db_session, department=department, created_at=joined)
+    headers = auth_headers(newcomer)
+
+    rejected = await client.post(
+        REPORTS_URL, json=report_body(report_date="2026-02-27"), headers=headers
+    )
+    accepted = await client.post(
+        REPORTS_URL, json=report_body(report_date="2026-02-28"), headers=headers
+    )
+
+    assert rejected.status_code == 422
+    assert error_of(rejected.json()) == (
+        "REPORT_DATE_OUT_OF_RANGE",
+        {"field": "report_date", "min_date": "2026-02-28", "max_date": TODAY.isoformat()},
+    )
+    assert accepted.status_code == 201
+
+
 async def test_create_report_uses_business_timezone_today(
     app: FastAPI, client: AsyncClient, headers: dict[str, str]
 ) -> None:
@@ -376,7 +402,7 @@ async def test_create_report_requires_someone_to_receive_it(
     client: AsyncClient, db_session: AsyncSession, has_department: bool
 ) -> None:
     department = await create_department(db_session) if has_department else None
-    user = await create_user(db_session, department=department)
+    user = await create_user(db_session, department=department, created_at=JOINED)
 
     response = await client.post(REPORTS_URL, json=report_body(), headers=auth_headers(user))
 

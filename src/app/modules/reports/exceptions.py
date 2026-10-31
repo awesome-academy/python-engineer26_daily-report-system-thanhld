@@ -18,8 +18,9 @@ class ReportAlreadyExistsError(ConflictError):
 class ReportDateOutOfRangeError(UnprocessableError):
     code = ErrorCode.REPORT_DATE_OUT_OF_RANGE
     message = (
-        f"Chỉ tạo được báo cáo cho hôm nay hoặc tối đa {REPORT_BACKDATE_DAYS} ngày trước, "
-        "không tạo trước cho ngày tương lai."
+        f"Chỉ tạo được báo cáo cho hôm nay hoặc tối đa {REPORT_BACKDATE_DAYS} ngày trước, không "
+        "trước ngày tạo tài khoản và không cho ngày tương lai. Xem khoảng ngày hợp lệ trong "
+        "details."
     )
 
     def __init__(self, min_date: date, max_date: date) -> None:

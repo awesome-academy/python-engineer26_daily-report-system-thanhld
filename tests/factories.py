@@ -29,6 +29,7 @@ async def create_user(
     is_active: bool = True,
     deleted: bool = False,
     department: Department | None = None,
+    created_at: datetime | None = None,
 ) -> User:
     password_hash = None
     if password is not None:
@@ -45,6 +46,9 @@ async def create_user(
         deleted_at=datetime.now(UTC) if deleted else None,
         department_id=department.id if department else None,
     )
+    # Bỏ trống thì DB tự đặt giờ hiện tại; gán None sẽ ghi NULL vào cột not null.
+    if created_at is not None:
+        user.created_at = created_at
     session.add(user)
     await session.flush()
     return user

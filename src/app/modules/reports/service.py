@@ -3,6 +3,7 @@ from datetime import date, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.clock import local_date
 from app.core.constants import REPORT_BACKDATE_DAYS
 from app.core.database import commit_unique
 from app.modules.reports.exceptions import (
@@ -32,7 +33,9 @@ class ReportService:
 
         `today` tính theo múi giờ nghiệp vụ, do router truyền vào để test cố định được ngày.
         """
-        min_date = today - timedelta(days=REPORT_BACKDATE_DAYS)
+        # Không báo cáo cho ngày trước khi có tài khoản: ngày đó không thuộc kỳ làm việc của user,
+        # tính vào thống kê tháng sẽ sai.
+        min_date = max(today - timedelta(days=REPORT_BACKDATE_DAYS), local_date(author.created_at))
         if not min_date <= data.report_date <= today:
             raise ReportDateOutOfRangeError(min_date, today)
         if await self.reports.exists_for_date(author.id, data.report_date):
