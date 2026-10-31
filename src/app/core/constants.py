@@ -62,8 +62,9 @@ EMAIL_STATUS_MAX_LENGTH = 16
 
 # Báo cáo hằng ngày: được tạo cho hôm nay và tối đa ngần này ngày trước, không cho ngày tương lai.
 REPORT_BACKDATE_DAYS = 3
-# Số người nhận tối đa trong một request: manager của một bộ phận chỉ vài người, chặn danh sách id
-# quá dài gửi xuống truy vấn.
+# Số người nhận client chọn trong một request. Tối đa: manager của một bộ phận chỉ vài người, chặn
+# danh sách id quá dài gửi xuống truy vấn.
+REPORT_RECIPIENTS_MIN = 1
 REPORT_RECIPIENTS_MAX = 50
 
 # JWT. HS256 cần khóa tối thiểu 256 bit (RFC 7518, mục 3.2).

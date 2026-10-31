@@ -11,13 +11,12 @@ from pydantic import (
 )
 
 from app.core.constants import (
-    BIGINT_MAX,
-    ID_MIN,
     REPORT_CONTENT_MAX_LENGTH,
     REPORT_CONTENT_MIN_LENGTH,
     REPORT_RECIPIENTS_MAX,
+    REPORT_RECIPIENTS_MIN,
 )
-from app.core.validators import NoNul, blank_to_none
+from app.core.validators import Id, NoNul, blank_to_none
 
 
 def _drop_duplicates(ids: list[int]) -> list[int]:
@@ -40,9 +39,10 @@ OptionalReportContent = Annotated[
     NoNul,
     AfterValidator(blank_to_none),
 ]
+# Danh sách rỗng trả 422: không gửi cho ai thì bỏ field (hoặc null) để gửi cho tất cả.
 RecipientIds = Annotated[
-    list[Annotated[int, Field(ge=ID_MIN, le=BIGINT_MAX)]],
-    Field(min_length=1, max_length=REPORT_RECIPIENTS_MAX),
+    list[Id],
+    Field(min_length=REPORT_RECIPIENTS_MIN, max_length=REPORT_RECIPIENTS_MAX),
     AfterValidator(_drop_duplicates),
 ]
 
@@ -66,7 +66,10 @@ class ReportCreate(BaseModel):
     next_day_plan: ReportContent
     recipient_ids: RecipientIds | None = Field(
         default=None,
-        description="Id người nhận, lấy từ GET /me/recipients. Bỏ trống thì gửi cho tất cả.",
+        description=(
+            "Id người nhận, lấy từ GET /me/recipients. Không gửi field này (hoặc null) thì gửi "
+            "cho tất cả; danh sách rỗng bị từ chối."
+        ),
     )
 
 
