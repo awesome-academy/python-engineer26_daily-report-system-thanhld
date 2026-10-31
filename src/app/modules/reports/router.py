@@ -6,12 +6,11 @@ from app.core.exceptions import error_responses
 from app.modules.reports.dependencies import ReportServiceDep
 from app.modules.reports.schemas import RecipientOut, ReportCreate, ReportOut
 
-# Include vào nhóm /me của nhân viên (api/v1.py): role USER được kiểm tra ở nhóm, 401, 403 khai ở
-# nhóm.
-me_report_router = APIRouter(tags=["Cá nhân: báo cáo"])
+# Include vào nhóm role USER (api/v1.py): role được kiểm tra ở nhóm, 401, 403 khai ở nhóm.
+my_report_router = APIRouter(prefix="/me", tags=["Cá nhân: báo cáo"])
 
 
-@me_report_router.get(
+@my_report_router.get(
     "/recipients",
     summary="Danh sách người nhận báo cáo",
     description=(
@@ -22,7 +21,7 @@ async def list_my_recipients(user: CurrentUser, service: ReportServiceDep) -> li
     return [RecipientOut.model_validate(item) for item in await service.list_recipients(user)]
 
 
-@me_report_router.post(
+@my_report_router.post(
     "/reports",
     status_code=status.HTTP_201_CREATED,
     summary="Tạo báo cáo hằng ngày",
