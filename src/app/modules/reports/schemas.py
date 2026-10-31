@@ -17,6 +17,7 @@ from app.core.constants import (
     REPORT_RECIPIENTS_MIN,
 )
 from app.core.validators import Id, NoNul, blank_to_none
+from app.modules.reports.models import ReportRecipient
 
 
 def _drop_duplicates(ids: list[int]) -> list[int]:
@@ -90,5 +91,8 @@ class ReportOut(BaseModel):
     @field_validator("recipients", mode="before")
     @classmethod
     def _recipient_users(cls, value: Any) -> Any:
-        # Bảng report_recipients chỉ giữ id; client cần biết tên, email người nhận.
-        return [item.recipient for item in value]
+        # Bảng report_recipients chỉ giữ id; client cần biết tên, email người nhận. Chỉ bóc khi là
+        # model: dữ liệu dạng dict (cache, truy vấn khác) để Pydantic tự validate, sai thì 422.
+        if isinstance(value, list):
+            return [item.recipient if isinstance(item, ReportRecipient) else item for item in value]
+        return value
