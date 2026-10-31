@@ -1,13 +1,15 @@
-"""Phân trang dùng chung: tham số query, response {data, meta} và hàm paginate()."""
+"""Phân trang, lọc theo khoảng ngày dùng chung: tham số query, response {data, meta}, paginate()."""
 
 from collections.abc import Sequence
+from datetime import date
 from typing import Annotated, Any, Self
 
 from fastapi import Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import messages
 from app.core.constants import DEFAULT_PAGE_SIZE, MAX_PAGE, MAX_PAGE_SIZE
 
 
@@ -23,6 +25,28 @@ class PageParams(BaseModel):
 
 
 PageQuery = Annotated[PageParams, Query()]
+
+
+class DateRange(BaseModel):
+    """Lọc theo khoảng ngày, tính cả hai đầu; bỏ trống đầu nào thì không giới hạn đầu đó."""
+
+    date_from: date | None = Field(default=None, description="Từ ngày, tính cả ngày này")
+    date_to: date | None = Field(default=None, description="Đến ngày, tính cả ngày này")
+
+    @field_validator("date_to")
+    @classmethod
+    def _not_before_date_from(cls, value: date | None, info: ValidationInfo) -> date | None:
+        date_from = info.data.get("date_from")
+        if value is not None and date_from is not None and value < date_from:
+            raise ValueError(messages.DATE_RANGE_INVALID)
+        return value
+
+
+class DateRangePageParams(PageParams, DateRange):
+    """Danh sách theo ngày có phân trang: lịch sử báo cáo của tôi (U3), báo cáo của manager (M3).
+
+    Repository nhận nguyên object này; danh sách cần thêm bộ lọc thì kế thừa thêm field.
+    """
 
 
 class PageMeta(BaseModel):

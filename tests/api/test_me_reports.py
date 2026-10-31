@@ -12,6 +12,7 @@ from app.core.clock import local_today
 from app.core.config import get_settings
 from app.core.constants import (
     BIGINT_MAX,
+    DEFAULT_PAGE_SIZE,
     REPORT_BACKDATE_DAYS,
     REPORT_CONTENT_MAX_LENGTH,
     REPORT_RECIPIENTS_MAX,
@@ -475,3 +476,238 @@ async def test_create_report_requires_every_content_field(
         "body.actual_work",
         "body.next_day_plan",
     }
+
+
+# Lịch sử, chi tiết báo cáo của tôi
+
+DAY_1, DAY_2, DAY_3 = (TODAY - timedelta(days=n) for n in (2, 1, 0))
+
+
+def report_url(report_id: int) -> str:
+    return f"{REPORTS_URL}/{report_id}"
+
+
+@pytest.fixture
+async def three_reports(
+    db_session: AsyncSession, department: Department, author: User
+) -> list[DailyReport]:
+    return [
+        await create_report(db_session, author=author, department=department, report_date=day)
+        for day in (DAY_1, DAY_2, DAY_3)
+    ]
+
+
+@pytest.mark.parametrize("path", ["", "/1"], ids=["list", "detail"])
+async def test_my_reports_require_login(client: AsyncClient, path: str) -> None:
+    response = await client.get(f"{REPORTS_URL}{path}")
+
+    assert response.status_code == 401
+    assert response.headers["WWW-Authenticate"] == "Bearer"
+
+
+@pytest.mark.parametrize("role", [UserRole.MANAGER, UserRole.ADMIN])
+async def test_non_user_role_cannot_view_my_reports(
+    client: AsyncClient, db_session: AsyncSession, department: Department, role: UserRole
+) -> None:
+    # Q3: chỉ role USER có báo cáo; kể cả báo cáo viết khi còn là USER cũng không xem qua /me.
+    user = await create_user(db_session, role=role, department=department)
+    report = await create_report(db_session, author=user, department=department, report_date=DAY_1)
+
+    responses = [
+        await client.get(REPORTS_URL, headers=auth_headers(user)),
+        await client.get(report_url(report.id), headers=auth_headers(user)),
+    ]
+
+    assert [r.status_code for r in responses] == [403, 403]
+
+
+async def test_user_lists_only_own_reports_newest_first(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    department: Department,
+    author: User,
+    headers: dict[str, str],
+) -> None:
+    old_department = await create_department(db_session)
+    first = await create_report(
+        db_session, author=author, department=old_department, report_date=DAY_1
+    )
+    third = await create_report(db_session, author=author, department=department, report_date=DAY_3)
+    colleague = await create_user(db_session, department=department)
+    await create_report(db_session, author=colleague, department=department, report_date=DAY_2)
+
+    response = await client.get(REPORTS_URL, headers=headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [r["id"] for r in body["data"]] == [third.id, first.id]
+    assert body["meta"] == {"page": 1, "page_size": DEFAULT_PAGE_SIZE, "total": 2}
+    assert body["data"][1]["department_id"] == old_department.id
+    assert "recipients" not in body["data"][0]
+
+
+@pytest.mark.parametrize(
+    ("days", "expected"),
+    [
+        ((1, None), [DAY_3, DAY_2]),
+        ((None, 1), [DAY_2, DAY_1]),
+        ((1, 1), [DAY_2]),
+        ((3, None), []),
+    ],
+    ids=["from-inclusive", "to-inclusive", "single-day", "no-match"],
+)
+@pytest.mark.usefixtures("three_reports")
+async def test_list_my_reports_filters_by_date_range(
+    client: AsyncClient,
+    headers: dict[str, str],
+    days: tuple[int | None, int | None],
+    expected: list[date],
+) -> None:
+    # days: chỉ số trong (DAY_1, DAY_2, DAY_3) của date_from, date_to; 3 là ngày sau DAY_3.
+    all_days = [DAY_1, DAY_2, DAY_3, DAY_3 + timedelta(days=1)]
+    params = {
+        name: all_days[index].isoformat()
+        for name, index in zip(("date_from", "date_to"), days, strict=True)
+        if index is not None
+    }
+
+    response = await client.get(REPORTS_URL, params=params, headers=headers)
+
+    assert response.status_code == 200
+    assert [r["report_date"] for r in response.json()["data"]] == [d.isoformat() for d in expected]
+    assert response.json()["meta"]["total"] == len(expected)
+
+
+@pytest.mark.usefixtures("three_reports")
+async def test_list_my_reports_paginates(client: AsyncClient, headers: dict[str, str]) -> None:
+    response = await client.get(REPORTS_URL, params={"page": 2, "page_size": 2}, headers=headers)
+
+    assert response.status_code == 200
+    assert [r["report_date"] for r in response.json()["data"]] == [DAY_1.isoformat()]
+    assert response.json()["meta"] == {"page": 2, "page_size": 2, "total": 3}
+
+
+@pytest.mark.parametrize(
+    ("params", "field"),
+    [
+        ({"date_from": "2026-03-02", "date_to": "2026-03-01"}, "query.date_to"),
+        ({"date_from": "2026-13-01"}, "query.date_from"),
+        ({"date_to": "hom-nay"}, "query.date_to"),
+        ({"page": 0}, "query.page"),
+    ],
+    ids=["to-before-from", "invalid-month", "not-a-date", "page-zero"],
+)
+async def test_list_my_reports_rejects_invalid_query(
+    client: AsyncClient, headers: dict[str, str], params: dict[str, Any], field: str
+) -> None:
+    response = await client.get(REPORTS_URL, params=params, headers=headers)
+
+    assert response.status_code == 422
+    assert [d["field"] for d in response.json()["error"]["details"]] == [field]
+
+
+async def test_user_gets_own_report_with_department_and_recipients(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    department: Department,
+    author: User,
+    headers: dict[str, str],
+) -> None:
+    # Collation của DB (image alpine) sắp theo byte; sắp bằng Python cũng ra cùng thứ tự sai đó:
+    # "Bình, Zung, an, Ánh, Đặng Văn Bình".
+    names = ["Zung", "Bình", "Đặng Văn Bình", "an", "Ánh"]
+    recipients = [await create_user(db_session, role=UserRole.MANAGER, full_name=n) for n in names]
+    report = await create_report(
+        db_session, author=author, department=department, report_date=DAY_2, recipients=recipients
+    )
+
+    response = await client.get(report_url(report.id), headers=headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert (body["id"], body["report_date"]) == (report.id, DAY_2.isoformat())
+    assert body["department"] == {
+        "id": department.id,
+        "code": department.code,
+        "name": department.name,
+    }
+    assert [r["full_name"] for r in body["recipients"]] == [
+        "an",
+        "Ánh",
+        "Bình",
+        "Đặng Văn Bình",
+        "Zung",
+    ]
+    assert body["recipients"][0] == {
+        "id": recipients[3].id,
+        "full_name": "an",
+        "email": recipients[3].email,
+        "is_deleted": False,
+    }
+
+
+async def test_report_hides_email_of_deleted_recipient(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    department: Department,
+    author: User,
+    headers: dict[str, str],
+) -> None:
+    # Email chỉ unique trên user chưa xóa: tài khoản mới có thể đang dùng lại email này.
+    deleted = await create_user(db_session, role=UserRole.MANAGER, deleted=True)
+    report = await create_report(
+        db_session, author=author, department=department, report_date=DAY_1, recipients=[deleted]
+    )
+
+    response = await client.get(report_url(report.id), headers=headers)
+
+    assert response.json()["recipients"] == [
+        {"id": deleted.id, "full_name": deleted.full_name, "email": None, "is_deleted": True}
+    ]
+
+
+async def test_report_keeps_department_at_writing_time(
+    client: AsyncClient, db_session: AsyncSession, author: User, headers: dict[str, str]
+) -> None:
+    # Nhân viên đã chuyển bộ phận, bộ phận cũ đã bị xóa: báo cáo cũ vẫn ghi bộ phận cũ.
+    old_department = await create_department(db_session, code="OLD", deleted=True)
+    report = await create_report(
+        db_session, author=author, department=old_department, report_date=DAY_1
+    )
+
+    response = await client.get(report_url(report.id), headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["department"]["code"] == "OLD"
+    assert response.json()["recipients"] == []
+
+
+async def test_user_cannot_view_report_of_another_user(
+    client: AsyncClient, db_session: AsyncSession, department: Department, headers: dict[str, str]
+) -> None:
+    colleague = await create_user(db_session, department=department)
+    report = await create_report(
+        db_session, author=colleague, department=department, report_date=DAY_1
+    )
+
+    response = await client.get(report_url(report.id), headers=headers)
+
+    assert response.status_code == 404
+    assert error_of(response.json()) == ("NOT_FOUND", {"field": "report_id"})
+
+
+async def test_get_missing_report_returns_404(client: AsyncClient, headers: dict[str, str]) -> None:
+    response = await client.get(report_url(999999), headers=headers)
+
+    assert response.status_code == 404
+    assert error_of(response.json()) == ("NOT_FOUND", {"field": "report_id"})
+
+
+@pytest.mark.parametrize("report_id", [0, BIGINT_MAX + 1], ids=["zero", "over-bigint"])
+async def test_report_id_out_of_range_returns_422(
+    client: AsyncClient, headers: dict[str, str], report_id: int
+) -> None:
+    response = await client.get(report_url(report_id), headers=headers)
+
+    assert response.status_code == 422
+    assert [d["field"] for d in response.json()["error"]["details"]] == ["path.report_id"]

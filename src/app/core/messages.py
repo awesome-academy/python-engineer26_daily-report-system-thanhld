@@ -12,3 +12,4 @@ NEW_PASSWORD_SAME_AS_CURRENT = "Mật khẩu mới phải khác mật khẩu hi�
 DEPARTMENT_CODE_INVALID = (
     "Mã bộ phận chỉ gồm chữ cái không dấu, chữ số, dấu gạch ngang và dấu gạch dưới."
 )
+DATE_RANGE_INVALID = "date_to phải cùng ngày hoặc sau date_from."

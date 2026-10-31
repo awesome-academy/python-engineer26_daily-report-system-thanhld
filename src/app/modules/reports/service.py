@@ -6,15 +6,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.clock import local_date
 from app.core.constants import REPORT_BACKDATE_DAYS
 from app.core.database import commit_unique
+from app.core.pagination import DateRangePageParams
 from app.modules.reports.exceptions import (
     InvalidRecipientError,
     NoRecipientError,
     ReportAlreadyExistsError,
     ReportDateOutOfRangeError,
+    ReportNotFoundError,
 )
 from app.modules.reports.models import REPORT_AUTHOR_DATE_UNIQUE, DailyReport, ReportRecipient
 from app.modules.reports.repository import ReportRepository
-from app.modules.reports.schemas import ReportCreate
+from app.modules.reports.schemas import ReportCreate, ReportDetailOut
 from app.modules.users.models import User
 
 
@@ -27,6 +29,19 @@ class ReportService:
         if author.department_id is None:
             return []
         return await self.reports.list_recipients(author.department_id)
+
+    async def list_my_reports(
+        self, author: User, params: DateRangePageParams
+    ) -> tuple[Sequence[DailyReport], int]:
+        return await self.reports.search_by_author(author.id, params)
+
+    async def get_my_report(self, author: User, report_id: int) -> ReportDetailOut:
+        # Báo cáo của người khác cũng trả 404, không lộ là báo cáo đó có tồn tại.
+        report = await self.reports.get_by_author(report_id, author.id)
+        if report is None:
+            raise ReportNotFoundError
+        recipients = await self.reports.get_report_recipients(report.id)
+        return ReportDetailOut.from_report(report, recipients)
 
     async def create_report(self, author: User, data: ReportCreate, *, today: date) -> DailyReport:
         """Lưu báo cáo cùng người nhận trong một lần commit: lỗi ở bước nào thì không lưu gì.
