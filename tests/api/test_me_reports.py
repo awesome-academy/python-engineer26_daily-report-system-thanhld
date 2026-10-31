@@ -381,7 +381,7 @@ async def test_create_report_requires_someone_to_receive_it(
     response = await client.post(REPORTS_URL, json=report_body(), headers=auth_headers(user))
 
     assert response.status_code == 422
-    assert error_of(response.json()) == ("INVALID_RECIPIENT", {"field": "recipient_ids"})
+    assert error_of(response.json()) == ("NO_RECIPIENT_AVAILABLE", None)
     assert await count_reports(db_session, user) == 0
 
 

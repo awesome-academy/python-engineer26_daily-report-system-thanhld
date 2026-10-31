@@ -39,11 +39,10 @@ class InvalidRecipientError(UnprocessableError):
 
 
 class NoRecipientError(UnprocessableError):
-    code = ErrorCode.INVALID_RECIPIENT
+    # Khác INVALID_RECIPIENT (client chọn sai, sửa request là được): ở đây gửi lại kiểu gì cũng
+    # lỗi, phải chờ admin xếp bộ phận, gán manager.
+    code = ErrorCode.NO_RECIPIENT_AVAILABLE
     message = (
         "Chưa có ai nhận được báo cáo của bạn: bạn chưa thuộc bộ phận nào hoặc bộ phận chưa có "
         "manager. Liên hệ admin để được xếp bộ phận, gán manager."
     )
-
-    def __init__(self) -> None:
-        super().__init__(details={"field": "recipient_ids"})
