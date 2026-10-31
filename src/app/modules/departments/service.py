@@ -47,6 +47,10 @@ class DepartmentService:
 
         Ngoài phạm vi trả đúng lỗi của bộ phận không tồn tại, để manager không dò được id nào là
         bộ phận có thật. Role MANAGER đã kiểm tra ở nhóm router `/manager`, ở đây chỉ xét phạm vi.
+
+        Đọc không khóa dòng, đủ cho endpoint chỉ đọc. Endpoint ghi vào bộ phận (thêm, gỡ thành
+        viên) phải khóa `FOR SHARE` như `assign_manager`, nếu không admin xóa bộ phận hay gỡ
+        manager chen giữa thì vẫn ghi được.
         """
         department = await self.departments.get_managed_by_id(department_id, manager_id)
         if department is None:
