@@ -46,6 +46,9 @@ DEPARTMENT_NAME_MIN_LENGTH = 1
 DEPARTMENT_NAME_MAX_LENGTH = 100
 # Cột description là text, giới hạn ở schema để request không gửi nội dung quá dài.
 DEPARTMENT_DESCRIPTION_MAX_LENGTH = 1000
+# Nội dung báo cáo: cột text, giới hạn ở schema để request không gửi nội dung quá dài.
+REPORT_CONTENT_MIN_LENGTH = 1
+REPORT_CONTENT_MAX_LENGTH = 5000
 # Đường dẫn file trong kho lưu trữ (local hoặc S3), ví dụ ảnh đại diện.
 STORAGE_KEY_MAX_LENGTH = 255
 TOKEN_JTI_MAX_LENGTH = 64
@@ -56,6 +59,13 @@ TOKEN_PURPOSE_MAX_LENGTH = 32
 EMAIL_TEMPLATE_MAX_LENGTH = 64
 EMAIL_DEDUP_KEY_MAX_LENGTH = 128
 EMAIL_STATUS_MAX_LENGTH = 16
+
+# Báo cáo hằng ngày: được tạo cho hôm nay và tối đa ngần này ngày trước, không cho ngày tương lai.
+REPORT_BACKDATE_DAYS = 3
+# Số người nhận client chọn trong một request. Tối đa: manager của một bộ phận chỉ vài người, chặn
+# danh sách id quá dài gửi xuống truy vấn.
+REPORT_RECIPIENTS_MIN = 1
+REPORT_RECIPIENTS_MAX = 50
 
 # JWT. HS256 cần khóa tối thiểu 256 bit (RFC 7518, mục 3.2).
 ACCESS_TOKEN_EXPIRE_MINUTES = 15

@@ -2,8 +2,9 @@
 
 from functools import lru_cache
 from typing import Literal, Self
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.constants import (
@@ -47,6 +48,18 @@ class Settings(BaseSettings):
     @property
     def json_logs(self) -> bool:
         return self.environment is Environment.PRODUCTION
+
+    @field_validator("timezone")
+    @classmethod
+    def _known_timezone(cls, value: str) -> str:
+        # Kiểm tra lúc khởi động: sai tên múi giờ thì app không chạy, thay vì mọi request cần
+        # "hôm nay" (tạo báo cáo) trả 500.
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            msg = f"Múi giờ không hợp lệ: {value!r}, ví dụ đúng: Asia/Ho_Chi_Minh."
+            raise ValueError(msg) from exc
+        return value
 
     @model_validator(mode="after")
     def _require_secret_key_in_production(self) -> Self:
