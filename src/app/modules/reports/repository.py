@@ -25,7 +25,10 @@ class ReportRepository:
         )
 
     async def list_recipients(self, department_id: int) -> Sequence[User]:
-        """Manager của bộ phận còn nhận được báo cáo: đúng role, chưa bị khóa, chưa bị xóa.
+        """Manager của bộ phận còn nhận được báo cáo: đúng role, đăng nhập được để đọc.
+
+        Manager chưa đặt mật khẩu, bị khóa hay bị xóa không đọc được báo cáo, nên không là
+        người nhận.
 
         Xét lại role: liên kết manager là dữ liệu riêng, user đổi role thì liên kết vẫn còn.
         """
@@ -35,8 +38,7 @@ class ReportRepository:
             .where(
                 DepartmentManager.department_id == department_id,
                 User.role == UserRole.MANAGER,
-                User.is_active.is_(True),
-                User.deleted_at.is_(None),
+                User.can_log_in,
             )
             .order_by(User.full_name, User.id)
         )

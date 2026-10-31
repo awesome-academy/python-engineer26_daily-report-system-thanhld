@@ -2,7 +2,20 @@ from datetime import date, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import BigInteger, Date, DateTime, Enum, ForeignKey, Index, String, func, text
+from sqlalchemy import (
+    BigInteger,
+    ColumnElement,
+    Date,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    String,
+    and_,
+    func,
+    text,
+)
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.constants import (
@@ -70,9 +83,18 @@ class User(TimestampMixin, SoftDeleteMixin, Base):
         back_populates="user", cascade="all, delete-orphan", passive_deletes=True, lazy="raise"
     )
 
-    @property
+    # Một định nghĩa cho cả kiểm tra trên object (đăng nhập, token) và lọc trong SQL (người nhận
+    # báo cáo), để hai nơi không lệch nhau.
+    @hybrid_property
     def can_log_in(self) -> bool:
         return self.is_active and self.deleted_at is None and self.password_hash is not None
+
+    @can_log_in.inplace.expression
+    @classmethod
+    def _can_log_in_expression(cls) -> ColumnElement[bool]:
+        return and_(
+            cls.is_active.is_(True), cls.deleted_at.is_(None), cls.password_hash.is_not(None)
+        )
 
 
 # Email không trùng (không phân biệt hoa thường) trong số user chưa bị xóa mềm.

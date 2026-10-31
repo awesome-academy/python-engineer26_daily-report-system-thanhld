@@ -126,7 +126,7 @@ Hồ sơ cá nhân:
 Báo cáo hằng ngày (U3):
 
 - `/me/recipients`, `/me/reports` chỉ cho role USER (Q3), kiểm tra ở nhóm router như `/admin`; MANAGER, ADMIN nhận 403. Các endpoint `/me` khác dùng được với mọi role.
-- `GET /me/recipients`: manager của bộ phận mình còn nhận được báo cáo (role MANAGER, chưa bị khóa, chưa bị xóa), sắp theo họ tên; mỗi người gồm `id`, `full_name`, `email`. Chưa thuộc bộ phận nào thì trả danh sách rỗng.
+- `GET /me/recipients`: manager của bộ phận mình còn nhận được báo cáo: role MANAGER, đăng nhập được (đã đặt mật khẩu, chưa bị khóa, chưa bị xóa), sắp theo họ tên; mỗi người gồm `id`, `full_name`, `email`. Chưa thuộc bộ phận nào thì trả danh sách rỗng.
 - `POST /me/reports` body `report_date`, `planned_work`, `actual_work`, `incomplete_reason` (tùy chọn), `next_day_plan`, `recipient_ids` (tùy chọn). Nội dung được trim, 1 đến 5000 ký tự; `incomplete_reason` rỗng sau khi trim lưu thành `null`; chứa ký tự NUL trả 422. Gửi field lạ trả 422. Trả 201 kèm báo cáo và danh sách người nhận.
 - `report_date` từ hôm nay trừ 3 ngày đến hôm nay, "hôm nay" theo giờ Việt Nam (cấu hình `timezone`, mặc định `Asia/Ho_Chi_Minh`). Ngoài khoảng trả 422 `REPORT_DATE_OUT_OF_RANGE`, `details` là `{"field": "report_date", "min_date": ..., "max_date": ...}`.
 - Mỗi người một báo cáo mỗi ngày: trùng trả 409 `REPORT_ALREADY_EXISTS`, `details` là `{"field": "report_date"}`. Hai request cùng ngày gửi đồng thời cũng chỉ một request thành công (unique `(author_id, report_date)` ở DB).

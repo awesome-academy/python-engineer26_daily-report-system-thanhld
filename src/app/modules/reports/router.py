@@ -14,7 +14,7 @@ my_report_router = APIRouter(prefix="/me", tags=["Cá nhân: báo cáo"])
     "/recipients",
     summary="Danh sách người nhận báo cáo",
     description=(
-        "Manager đang hoạt động của bộ phận mình. Chưa thuộc bộ phận nào thì danh sách rỗng."
+        "Manager đăng nhập được của bộ phận mình. Chưa thuộc bộ phận nào thì danh sách rỗng."
     ),
 )
 async def list_my_recipients(user: CurrentUser, service: ReportServiceDep) -> list[RecipientOut]:

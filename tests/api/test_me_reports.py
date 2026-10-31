@@ -131,8 +131,8 @@ async def test_recipients_are_active_managers_of_own_department_sorted_by_name(
 
 @pytest.mark.parametrize(
     "change",
-    [{"is_active": False}, {"deleted": True}, {"role": UserRole.USER}],
-    ids=["locked", "deleted", "no-longer-manager"],
+    [{"is_active": False}, {"deleted": True}, {"password": None}, {"role": UserRole.USER}],
+    ids=["locked", "deleted", "password-not-set", "no-longer-manager"],
 )
 async def test_recipients_exclude_managers_who_cannot_receive(
     client: AsyncClient, db_session: AsyncSession, headers: dict[str, str], change: dict[str, Any]
