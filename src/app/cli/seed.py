@@ -7,9 +7,8 @@ import asyncio
 import calendar
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from typing import Annotated
-from zoneinfo import ZoneInfo
 
 import typer
 from pydantic import TypeAdapter, ValidationError
@@ -17,6 +16,7 @@ from sqlalchemy import func, select, text, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.cli._db import cli_session, exit_with_validation_errors
+from app.core.clock import local_today
 from app.core.config import get_settings
 from app.core.constants import Environment
 from app.core.database import Base
@@ -313,8 +313,7 @@ def seed(
     if reset and not yes:
         typer.confirm("Xóa TOÀN BỘ dữ liệu hiện có rồi seed lại?", abort=True)
 
-    today = datetime.now(ZoneInfo(settings.timezone)).date()
-    result = asyncio.run(_run(password=password, today=today, reset=reset))
+    result = asyncio.run(_run(password=password, today=local_today(), reset=reset))
 
     typer.secho(
         f"Đã seed: {result.departments} bộ phận, {result.users} user, "

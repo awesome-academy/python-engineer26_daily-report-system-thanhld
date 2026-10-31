@@ -1,12 +1,14 @@
 """Dependency dùng chung cho các router."""
 
 from collections.abc import Awaitable, Callable
+from datetime import date
 from typing import Annotated
 
 from fastapi import Depends, Path
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.clock import local_today
 from app.core.database import get_db_session
 from app.core.exceptions import ForbiddenError, UnauthorizedError
 from app.core.redis import get_redis
@@ -20,6 +22,8 @@ DbSession = Annotated[AsyncSession, Depends(get_db_session)]
 RedisClient = Annotated[Redis, Depends(get_redis)]
 # Id trên URL, cùng ràng buộc với id trong body, query (xem Id).
 IdPath = Annotated[Id, Path()]
+# Hôm nay theo múi giờ nghiệp vụ. Nhận qua dependency để test cố định được ngày (mốc qua tháng).
+Today = Annotated[date, Depends(local_today)]
 
 
 async def get_token_claims(

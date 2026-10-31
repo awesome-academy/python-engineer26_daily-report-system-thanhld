@@ -1,0 +1,11 @@
+"""Thời điểm theo múi giờ nghiệp vụ (Settings.timezone), không theo giờ của máy chủ."""
+
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
+
+from app.core.config import get_settings
+
+
+def local_today() -> date:
+    """Hôm nay theo giờ Việt Nam: máy chủ chạy UTC thì 00:30 sáng ở Việt Nam vẫn là hôm qua."""
+    return datetime.now(ZoneInfo(get_settings().timezone)).date()
