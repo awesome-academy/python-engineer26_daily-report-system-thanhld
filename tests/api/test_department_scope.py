@@ -1,20 +1,31 @@
 """Policy phạm vi bộ phận của manager (`ManagedDepartment`), chạy theo ma trận quyền.
 
-Chưa có endpoint /manager nào (Ngày 6), nên test gắn route thăm dò dùng `ManagedDepartment` vào
-app riêng, với đúng dependency và response lỗi của nhóm /manager, giống test_rbac.py. Endpoint
-thật có `{department_id}` trên URL thêm vào SCOPED_ENDPOINTS để chạy cùng ma trận.
+Mọi route dưới /manager/departments/{...} thao tác trên một bộ phận cụ thể, nên phải đi qua
+`ManagedDepartment`. Danh sách route lấy từ app (route thật và route thăm dò), không liệt kê tay:
+endpoint Ngày 6 thêm vào là tự chạy ma trận, và test đỏ nếu endpoint không dùng dependency.
+
+Chưa có endpoint /manager nào, nên route thăm dò gắn vào app riêng với đúng dependency và
+response lỗi của nhóm /manager, giống test_rbac.py.
 """
+
+import re
+from collections.abc import Callable, Iterator
+from typing import Any
 
 import pytest
 from fastapi import APIRouter, FastAPI, status
+from fastapi.dependencies.models import Dependant
+from fastapi.routing import APIRoute
 from httpx import AsyncClient
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1 import manager_router
+from app.api.v1 import api_router, manager_router
 from app.core.config import get_settings
 from app.core.constants import BIGINT_MAX, ID_MIN
 from app.core.exceptions import AppError, ForbiddenError, UnauthorizedError, error_responses
-from app.modules.departments.dependencies import ManagedDepartment
+from app.core.validators import Id
+from app.modules.departments.dependencies import ManagedDepartment, get_managed_department
 from app.modules.departments.exceptions import DepartmentNotFoundError
 from app.modules.departments.service import DepartmentService
 from app.modules.users.models import UserRole
@@ -27,35 +38,77 @@ from tests.helpers import (
 )
 
 API = get_settings().api_v1_prefix
-PROBE_PATH = f"{manager_router.prefix}/scope-probe/{{department_id}}"
-# Endpoint /manager có bộ phận trên URL: (method, đường dẫn sau tiền tố API).
-SCOPED_ENDPOINTS = [pytest.param(("GET", PROBE_PATH), id="probe")]
+SCOPED_PREFIX = f"{API}{manager_router.prefix}/departments/"
+PATH_PARAM = re.compile(r"\{(\w+)\}")
+_SCOPE_ERRORS = error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT)
 
-probe_router = APIRouter()
+probe_router = APIRouter(
+    prefix=f"{API}{manager_router.prefix}",
+    dependencies=manager_router.dependencies,
+    responses=manager_router.responses,
+)
+
+
+class ProbeBody(BaseModel):
+    user_id: Id
 
 
 # Khai 404, 422 như mọi endpoint thật dùng ManagedDepartment phải khai.
-@probe_router.get(
-    "/scope-probe/{department_id}",
-    responses=error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
-)
-async def scope_probe(department: ManagedDepartment) -> dict[str, int]:
+@probe_router.get("/departments/{department_id}/scope-probe", responses=_SCOPE_ERRORS)
+async def read_probe(department: ManagedDepartment) -> dict[str, int]:
     # Trả id để test thấy handler nhận đúng bản ghi bộ phận trên URL.
     return {"id": department.id}
 
 
-@pytest.fixture(autouse=True)
-def mount_probe_route(probe_app: FastAPI) -> None:
-    probe_app.include_router(
-        probe_router,
-        prefix=f"{API}{manager_router.prefix}",
-        dependencies=manager_router.dependencies,
-        responses=manager_router.responses,
+# Endpoint ghi có body (như M2 thêm thành viên): phạm vi được kiểm tra trước body.
+@probe_router.post("/departments/{department_id}/scope-probe", responses=_SCOPE_ERRORS)
+async def write_probe(department: ManagedDepartment, data: ProbeBody) -> dict[str, int]:
+    return {"id": department.id, "user_id": data.user_id}
+
+
+def scoped_routes() -> list[APIRoute]:
+    return [
+        route
+        for route in [*api_router.routes, *probe_router.routes]
+        if isinstance(route, APIRoute) and route.path.startswith(SCOPED_PREFIX)
+    ]
+
+
+SCOPED_ENDPOINTS = [
+    pytest.param((method, route.path), id=f"{method} {route.path.removeprefix(API)}")
+    for route in scoped_routes()
+    for method in sorted(route.methods or ())
+]
+
+
+def dependency_calls(dependant: Dependant) -> Iterator[Callable[..., Any]]:
+    for sub in dependant.dependencies:
+        if sub.call is not None:
+            yield sub.call
+        yield from dependency_calls(sub)
+
+
+def fill_path(path: str, department_id: int | str) -> str:
+    # Param khác trên URL (user_id) lấy id hợp lệ bất kỳ: lỗi phạm vi phải có trước khi xét nó.
+    return PATH_PARAM.sub(
+        lambda match: str(department_id if match[1] == "department_id" else ID_MIN), path
     )
 
 
 def probe_url(department_id: int | str) -> str:
-    return f"{API}{PROBE_PATH.format(department_id=department_id)}"
+    return fill_path(f"{SCOPED_PREFIX}{{department_id}}/scope-probe", department_id)
+
+
+@pytest.fixture(autouse=True)
+def mount_probe_routes(probe_app: FastAPI) -> None:
+    probe_app.include_router(probe_router)
+
+
+@pytest.mark.parametrize("route", scoped_routes(), ids=lambda route: route.path)
+def test_department_route_goes_through_managed_department(route: APIRoute) -> None:
+    # ManagedDepartment đọc path param tên department_id: đặt tên khác ({id}) thì mọi request 422.
+    assert "{department_id}" in route.path
+    assert get_managed_department in set(dependency_calls(route.dependant))
 
 
 @pytest.mark.parametrize("endpoint", SCOPED_ENDPOINTS)
@@ -71,7 +124,7 @@ async def test_scoped_endpoint_denies_caller_outside_scope(
     target = await arrange(db_session)
 
     response = await probe_client.request(
-        method, f"{API}{path.format(department_id=target.department_id)}", headers=target.headers
+        method, fill_path(path, target.department_id), headers=target.headers
     )
 
     assert response.status_code == error.status_code
@@ -88,6 +141,18 @@ async def test_managed_department_passes_department_to_handler(
 
     assert response.status_code == 200
     assert response.json() == {"id": target.department_id}
+
+
+async def test_body_is_validated_after_scope(
+    probe_client: AsyncClient, db_session: AsyncSession
+) -> None:
+    manager = await create_user(db_session, role=UserRole.MANAGER)
+    department = await create_department(db_session, managers=[manager])
+
+    response = await probe_client.post(probe_url(department.id), headers=auth_headers(manager))
+
+    assert response.status_code == 422
+    assert response.json()["error"]["details"][0]["field"] == "body"
 
 
 async def test_manager_loses_access_once_removed_from_department(
@@ -133,21 +198,15 @@ async def test_token_and_role_are_checked_before_department_id(
     assert response.json() == error_json(error)
 
 
-async def test_scoped_endpoints_document_scope_errors_in_swagger(
-    probe_client: AsyncClient,
+@pytest.mark.parametrize("endpoint", SCOPED_ENDPOINTS)
+async def test_scoped_endpoint_documents_scope_errors_in_swagger(
+    probe_client: AsyncClient, endpoint: tuple[str, str]
 ) -> None:
-    # ManagedDepartment trả 404, 422 nhưng dependency không tự khai được response trên Swagger:
-    # endpoint nào có {department_id} trong /manager mà quên khai thì test này đỏ.
+    # Dependency không tự khai response trên Swagger: endpoint quên khai 404, 422 thì đỏ.
+    method, path = endpoint
     paths = (await probe_client.get("/openapi.json")).json()["paths"]
-    scoped = {
-        path: operations
-        for path, operations in paths.items()
-        if path.startswith(f"{API}{manager_router.prefix}/") and "{department_id}" in path
-    }
 
-    assert scoped
-    for operations in scoped.values():
-        for operation in operations.values():
-            for status_code in ("404", "422"):
-                schema = operation["responses"][status_code]["content"]["application/json"]
-                assert schema["schema"] == {"$ref": "#/components/schemas/ErrorResponse"}
+    responses = paths[path][method.lower()]["responses"]
+    for status_code in ("404", "422"):
+        schema = responses[status_code]["content"]["application/json"]["schema"]
+        assert schema == {"$ref": "#/components/schemas/ErrorResponse"}
