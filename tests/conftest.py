@@ -12,6 +12,7 @@ bên trong fixture `app`.
 import asyncio
 import os
 from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -147,12 +148,37 @@ def app() -> Iterator[FastAPI]:
     fastapi_app.dependency_overrides.clear()
 
 
-@pytest.fixture
-async def client(
-    app: FastAPI, db_session: AsyncSession, redis: Redis
-) -> AsyncIterator[AsyncClient]:
+@asynccontextmanager
+async def _http_client(app: FastAPI, db_session: AsyncSession) -> AsyncIterator[AsyncClient]:
     from app.core.database import get_db_session  # noqa: PLC0415 (xem docstring của module)
 
     app.dependency_overrides[get_db_session] = lambda: db_session
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
+        yield http
+
+
+@pytest.fixture
+async def client(
+    app: FastAPI, db_session: AsyncSession, redis: Redis
+) -> AsyncIterator[AsyncClient]:
+    async with _http_client(app, db_session) as http:
+        yield http
+
+
+@pytest.fixture
+def probe_app() -> FastAPI:
+    """App riêng để test gắn route thăm dò, thử dependency khi chưa có endpoint thật dùng nó.
+
+    Không gắn vào app dùng chung: route thêm vào sẽ còn lại cho mọi test sau.
+    """
+    from app.main import create_app  # noqa: PLC0415 (xem docstring của module)
+
+    return create_app()
+
+
+@pytest.fixture
+async def probe_client(
+    probe_app: FastAPI, db_session: AsyncSession, redis: Redis
+) -> AsyncIterator[AsyncClient]:
+    async with _http_client(probe_app, db_session) as http:
         yield http

@@ -18,8 +18,8 @@ Mã chức năng ghi theo vai trò: U (User), M (Manager), A (Admin), S (System)
 
 | Mã | Ô Excel | Chức năng | Mức | Endpoint / Trigger | Kỹ thuật áp dụng |
 | --- | --- | --- | --- | --- | --- |
-| M1 | B8 | Quản lý thông tin bộ phận | Basic | `GET /manager/departments`, `GET /manager/departments/{id}`, `GET /manager/departments/{id}/members` | Policy phạm vi bộ phận dùng chung. Tìm tên tiếng Việt không dấu (unaccent, pg_trgm). Phân trang. `selectinload` tránh N+1. |
-| M2 | B9 | Thêm, xóa nhân viên trong bộ phận | Basic | `GET /manager/candidates`, `POST /manager/departments/{id}/members`, `DELETE /manager/departments/{id}/members/{user_id}` | Chỉ thêm user role User chưa thuộc bộ phận nào. Xóa chỉ gỡ liên kết. Idempotent. |
+| M1 | B8 | Quản lý thông tin bộ phận | Basic | `GET /manager/departments`, `GET /manager/departments/{department_id}`, `GET /manager/departments/{department_id}/members` | Policy phạm vi bộ phận dùng chung. Tìm tên tiếng Việt không dấu (unaccent, pg_trgm). Phân trang. `selectinload` tránh N+1. |
+| M2 | B9 | Thêm, xóa nhân viên trong bộ phận | Basic | `GET /manager/candidates`, `POST /manager/departments/{department_id}/members`, `DELETE /manager/departments/{department_id}/members/{user_id}` | Chỉ thêm user role User chưa thuộc bộ phận nào. Xóa chỉ gỡ liên kết. Idempotent. |
 | M3 | B10 | Quản lý báo cáo của nhân viên | Basic | `GET /manager/reports`, `GET /manager/reports/{id}` | Bộ lọc động (tên, khoảng ngày, bộ phận), phân trang, sắp xếp. Index (department_id, report_date). Ngoài phạm vi trả 404. |
 | M4 | B11 | Quản lý nhân viên | Basic | `GET /manager/employees`, `GET /manager/employees/{id}` | Tìm theo tên, email, chỉ trong bộ phận mình. Schema không có trường nhạy cảm. |
 | M5 | B13 | Export Excel báo cáo theo ngày | Advance | `GET /manager/reports/export?date=` | openpyxl write-only, `StreamingResponse`. Đánh dấu người chưa nộp. |

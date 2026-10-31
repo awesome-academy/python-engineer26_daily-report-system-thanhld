@@ -15,7 +15,9 @@
 
 - Nhóm `/admin` chỉ cho role ADMIN, nhóm `/manager` chỉ cho role MANAGER. Role được kiểm tra một lần ở cấp nhóm router bằng dependency `require_roles` (`app/api/deps.py`), endpoint trong nhóm không tự kiểm tra lại.
 - Không có thứ bậc role: ADMIN gọi `/manager` cũng nhận 403, vì chức năng manager gắn với bộ phận mình quản lý.
-- Thứ tự kiểm tra: token (401) → role (403) → phạm vi dữ liệu trong service (404).
+- Thứ tự kiểm tra: token (401) → role (403) → tham số trên URL sai định dạng (422, ví dụ id không phải số hoặc ngoài 1 đến 2^63 − 1) → phạm vi dữ liệu trong service (404) → body sai (422). Client gặp 422 ở `path.*` là lỗi của chính URL, chưa xét tới quyền trên bản ghi; body chỉ được xét khi đã có quyền.
+- Phạm vi của manager là các bộ phận admin đã gán cho manager đó (bảng `department_managers`), không phải bộ phận manager là thành viên. Một chỗ duy nhất định nghĩa phạm vi: `DepartmentService.get_managed_department` kiểm tra một bộ phận, `DepartmentRepository.managed_department_ids` lọc danh sách. Mọi endpoint dưới `/manager/departments/{department_id}` nhận bộ phận qua dependency `ManagedDepartment`; tên path param bắt buộc là `department_id` (dependency đọc đúng tên này, tên khác thì mọi request trả 422). Test chặn endpoint không dùng dependency hoặc đặt sai tên.
+- Ngoài phạm vi trả 404 giống hệt bộ phận không tồn tại hoặc đã xóa (`NOT_FOUND`, `details.field = "department_id"`), để không dò được id nào là bộ phận có thật. Phạm vi đọc từ DB ở mỗi request: bị gỡ khỏi bộ phận thì mất quyền ngay.
 - Role đọc từ user trong DB ở mỗi request, không từ claim `role` của token, nên đổi role có hiệu lực ngay.
 
 ### Danh sách có phân trang
@@ -142,11 +144,11 @@ Báo cáo hằng ngày (U3):
 | Method | Endpoint | Mã | Ghi chú |
 | --- | --- | --- | --- |
 | GET | `/manager/departments` | M1 | |
-| GET | `/manager/departments/{id}` | M1 | Gồm danh sách manager, số nhân viên |
-| GET | `/manager/departments/{id}/members` | M1 | `keyword`, phân trang |
+| GET | `/manager/departments/{department_id}` | M1 | Gồm danh sách manager, số nhân viên |
+| GET | `/manager/departments/{department_id}/members` | M1 | `keyword`, phân trang |
 | GET | `/manager/candidates` | M2 | User role User chưa thuộc bộ phận nào |
-| POST | `/manager/departments/{id}/members` | M2 | Body `user_ids[]` |
-| DELETE | `/manager/departments/{id}/members/{user_id}` | M2 | Chỉ gỡ liên kết |
+| POST | `/manager/departments/{department_id}/members` | M2 | Body `user_ids[]` |
+| DELETE | `/manager/departments/{department_id}/members/{user_id}` | M2 | Chỉ gỡ liên kết |
 | GET | `/manager/employees` | M4 | `keyword`, `department_id`, phân trang |
 | GET | `/manager/employees/{id}` | M4 | |
 | GET | `/manager/reports` | M3 | `keyword`, `date_from`, `date_to`, `department_id`, `sort`, phân trang |
