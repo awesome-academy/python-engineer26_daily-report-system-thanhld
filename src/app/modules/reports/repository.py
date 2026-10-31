@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.departments.models import DepartmentManager
 from app.modules.reports.models import DailyReport
-from app.modules.users.models import User, UserRole
+from app.modules.users.models import User, UserRole, order_by_full_name
 
 
 class ReportRepository:
@@ -40,7 +40,7 @@ class ReportRepository:
                 User.role == UserRole.MANAGER,
                 User.can_log_in,
             )
-            .order_by(User.full_name, User.id)
+            .order_by(*order_by_full_name())
         )
         return (await self.session.scalars(statement)).all()
 

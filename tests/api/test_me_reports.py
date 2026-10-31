@@ -129,6 +129,20 @@ async def test_recipients_are_active_managers_of_own_department_sorted_by_name(
     ]
 
 
+async def test_recipients_are_sorted_by_name_ignoring_case_and_accents(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    # Collation của DB (image alpine) sắp theo byte: chữ thường, chữ có dấu đứng sau "Z".
+    names = ["Zung", "Bình", "an", "Ánh"]
+    managers = [await create_user(db_session, role=UserRole.MANAGER, full_name=n) for n in names]
+    department = await create_department(db_session, managers=managers)
+    author = await create_user(db_session, department=department)
+
+    response = await client.get(RECIPIENTS_URL, headers=auth_headers(author))
+
+    assert [r["full_name"] for r in response.json()] == ["an", "Ánh", "Bình", "Zung"]
+
+
 @pytest.mark.parametrize(
     "change",
     [{"is_active": False}, {"deleted": True}, {"password": None}, {"role": UserRole.USER}],

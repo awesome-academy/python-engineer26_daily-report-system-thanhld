@@ -1,6 +1,6 @@
 from datetime import date, datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
     BigInteger,
@@ -16,7 +16,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import InstrumentedAttribute, Mapped, mapped_column, relationship
 
 from app.core.constants import (
     EMAIL_MAX_LENGTH,
@@ -120,3 +120,13 @@ Index(
     postgresql_using="gin",
     postgresql_ops={"email_search": "gin_trgm_ops"},
 )
+
+
+def order_by_full_name() -> tuple[ColumnElement[Any] | InstrumentedAttribute[Any], ...]:
+    """Sắp user theo họ tên không phân biệt hoa thường, không dấu, dùng `.order_by(*...)`.
+
+    Collation của DB (C, hay musl trên image alpine) sắp theo byte: chữ thường, chữ có dấu đứng
+    sau "Z" ("Bình, Zung, an, Ánh, Đặng"). Trùng tên không dấu thì xét tên gốc rồi id để thứ tự
+    cố định giữa các trang.
+    """
+    return (func.immutable_unaccent(func.lower(User.full_name)), User.full_name, User.id)

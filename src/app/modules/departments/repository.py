@@ -10,12 +10,7 @@ from app.core.constants import LIKE_ESCAPE_CHAR
 from app.core.pagination import PageParams, paginate
 from app.core.search import contains_pattern
 from app.modules.departments.models import Department, DepartmentManager
-from app.modules.users.models import User
-
-# Sắp user theo họ tên không phân biệt hoa thường, không dấu. Collation của DB (C, hay musl trên
-# image alpine) sắp theo byte: chữ thường, chữ có dấu đứng sau "Z" ("Bình, Zung, an, Ánh, Đặng").
-# Trùng tên không dấu thì xét tên gốc rồi id để thứ tự cố định giữa các trang.
-_BY_NAME = (func.immutable_unaccent(func.lower(User.full_name)), User.full_name, User.id)
+from app.modules.users.models import User, order_by_full_name
 
 
 class DepartmentRepository:
@@ -88,7 +83,7 @@ class DepartmentRepository:
         return (
             select(User)
             .where(User.department_id == department_id, User.deleted_at.is_(None))
-            .order_by(*_BY_NAME)
+            .order_by(*order_by_full_name())
         )
 
     def managers_statement(self, department_id: int) -> Select[DepartmentManager]:
@@ -98,7 +93,7 @@ class DepartmentRepository:
             .join(DepartmentManager.user)
             .options(contains_eager(DepartmentManager.user))
             .where(DepartmentManager.department_id == department_id, User.deleted_at.is_(None))
-            .order_by(*_BY_NAME)
+            .order_by(*order_by_full_name())
         )
 
     async def get_manager_ids(self, department_id: int, user_ids: Sequence[int]) -> set[int]:
