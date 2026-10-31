@@ -1,6 +1,8 @@
+from collections.abc import Sequence
 from datetime import date, datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Self
 
+from fastapi import Query
 from pydantic import (
     AfterValidator,
     BaseModel,
@@ -16,8 +18,10 @@ from app.core.constants import (
     REPORT_RECIPIENTS_MAX,
     REPORT_RECIPIENTS_MIN,
 )
+from app.core.pagination import DateRangePageParams
 from app.core.validators import Id, NoNul, blank_to_none
-from app.modules.reports.models import ReportRecipient
+from app.modules.reports.models import DailyReport, ReportRecipient
+from app.modules.users.models import User
 
 
 def _drop_duplicates(ids: list[int]) -> list[int]:
@@ -74,7 +78,9 @@ class ReportCreate(BaseModel):
     )
 
 
-class ReportOut(BaseModel):
+class ReportSummaryOut(BaseModel):
+    """Báo cáo không kèm người nhận: phần tử của lịch sử báo cáo, phần chung của các schema sau."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -84,9 +90,12 @@ class ReportOut(BaseModel):
     actual_work: str
     incomplete_reason: str | None
     next_day_plan: str
-    recipients: list[RecipientOut]
     created_at: datetime
     updated_at: datetime
+
+
+class ReportOut(ReportSummaryOut):
+    recipients: list[RecipientOut]
 
     @field_validator("recipients", mode="before")
     @classmethod
@@ -96,3 +105,48 @@ class ReportOut(BaseModel):
         if isinstance(value, list):
             return [item.recipient if isinstance(item, ReportRecipient) else item for item in value]
         return value
+
+
+class ReportDepartmentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    code: str
+    name: str
+
+
+class ReportRecipientOut(BaseModel):
+    id: int
+    full_name: str
+    # Người nhận đã bị xóa vẫn hiện để giữ đúng lịch sử, nhưng ẩn email: email chỉ unique trên
+    # user chưa xóa nên có thể đã thuộc về một tài khoản mới.
+    email: str | None
+    is_deleted: bool
+
+    @classmethod
+    def from_user(cls, user: User) -> Self:
+        is_deleted = user.deleted_at is not None
+        return cls(
+            id=user.id,
+            full_name=user.full_name,
+            email=None if is_deleted else user.email,
+            is_deleted=is_deleted,
+        )
+
+
+class ReportDetailOut(ReportSummaryOut):
+    # Bộ phận lúc viết báo cáo, có thể khác bộ phận hiện tại của người viết.
+    department: ReportDepartmentOut
+    recipients: list[ReportRecipientOut]
+
+    @classmethod
+    def from_report(cls, report: DailyReport, recipients: Sequence[User]) -> Self:
+        """`report` phải đã load sẵn `department`; `recipients` đã sắp theo tên."""
+        return cls(
+            **ReportSummaryOut.model_validate(report).model_dump(),
+            department=ReportDepartmentOut.model_validate(report.department),
+            recipients=[ReportRecipientOut.from_user(user) for user in recipients],
+        )
+
+
+ReportListQuery = Annotated[DateRangePageParams, Query()]

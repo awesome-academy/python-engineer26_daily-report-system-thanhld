@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from datetime import date
 
 from app.core.constants import REPORT_BACKDATE_DAYS
-from app.core.exceptions import ConflictError, ErrorCode, UnprocessableError
+from app.core.exceptions import ConflictError, ErrorCode, NotFoundError, UnprocessableError
 
 
 class ReportAlreadyExistsError(ConflictError):
@@ -47,3 +47,10 @@ class NoRecipientError(UnprocessableError):
         "Chưa có ai nhận được báo cáo của bạn: bạn chưa thuộc bộ phận nào hoặc bộ phận chưa có "
         "manager. Liên hệ admin để được xếp bộ phận, gán manager."
     )
+
+
+class ReportNotFoundError(NotFoundError):
+    message = "Không tìm thấy báo cáo."
+
+    def __init__(self) -> None:
+        super().__init__(details={"field": "report_id"})
