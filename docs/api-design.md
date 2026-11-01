@@ -16,7 +16,7 @@
 - Nhóm `/admin` chỉ cho role ADMIN, nhóm `/manager` chỉ cho role MANAGER. Role được kiểm tra một lần ở cấp nhóm router bằng dependency `require_roles` (`app/api/deps.py`), endpoint trong nhóm không tự kiểm tra lại.
 - Không có thứ bậc role: ADMIN gọi `/manager` cũng nhận 403, vì chức năng manager gắn với bộ phận mình quản lý.
 - Thứ tự kiểm tra: token (401) → role (403) → tham số trên URL sai định dạng (422, ví dụ id không phải số hoặc ngoài 1 đến 2^63 − 1) → phạm vi dữ liệu trong service (404) → body sai (422). Client gặp 422 ở `path.*` là lỗi của chính URL, chưa xét tới quyền trên bản ghi; body chỉ được xét khi đã có quyền.
-- Phạm vi của manager là các bộ phận admin đã gán cho manager đó (bảng `department_managers`), không phải bộ phận manager là thành viên. Một chỗ duy nhất định nghĩa phạm vi: `DepartmentService.get_managed_department` kiểm tra một bộ phận, `DepartmentRepository.managed_department_ids` lọc danh sách. Mọi endpoint dưới `/manager/departments/{department_id}` nhận bộ phận qua dependency `ManagedDepartment`; tên path param bắt buộc là `department_id` (dependency đọc đúng tên này, tên khác thì mọi request trả 422). Test chặn endpoint không dùng dependency hoặc đặt sai tên.
+- Phạm vi của manager là các bộ phận admin đã gán cho manager đó (bảng `department_managers`), không phải bộ phận manager là thành viên. Một chỗ duy nhất định nghĩa phạm vi: `DepartmentService.get_managed_department` kiểm tra một bộ phận, `DepartmentRepository.managed_department_ids` lọc danh sách. Mọi endpoint dưới `/manager/departments/{department_id}` nhận bộ phận qua dependency `ManagedDepartment` (endpoint ghi dùng `ManagedDepartmentForShare`, cùng policy nhưng khóa dòng bộ phận `FOR SHARE`); tên path param bắt buộc là `department_id` (dependency đọc đúng tên này, tên khác thì mọi request trả 422). Test chặn endpoint không dùng dependency hoặc đặt sai tên.
 - Ngoài phạm vi trả 404 giống hệt bộ phận không tồn tại hoặc đã xóa (`NOT_FOUND`, `details.field = "department_id"`), để không dò được id nào là bộ phận có thật. Phạm vi đọc từ DB ở mỗi request: bị gỡ khỏi bộ phận thì mất quyền ngay.
 - Role đọc từ user trong DB ở mỗi request, không từ claim `role` của token, nên đổi role có hiệu lực ngay.
 
@@ -83,6 +83,8 @@ Lỗi validate (422) có `details` là danh sách `{ "field": "body.report_date"
 | `REPORT_DATE_OUT_OF_RANGE` | 422 | 5 |
 | `INVALID_RECIPIENT` | 422 | 5 |
 | `NO_RECIPIENT_AVAILABLE` | 422 | 5 |
+| `INVALID_MEMBER_CANDIDATE` | 422 | 6 |
+| `EMPLOYEE_ROLE_REQUIRED` | 422 | 6 |
 | `SETUP_TOKEN_INVALID` | 400 | 7 |
 | `IMPORT_VALIDATION_FAILED` | 422 | 8 |
 
@@ -146,9 +148,9 @@ Báo cáo hằng ngày (U3):
 | GET | `/manager/departments` | M1 | `keyword`, phân trang |
 | GET | `/manager/departments/{department_id}` | M1 | Gồm danh sách manager, số thành viên |
 | GET | `/manager/departments/{department_id}/members` | M1 | `keyword`, phân trang |
-| GET | `/manager/candidates` | M2 | User role User chưa thuộc bộ phận nào |
-| POST | `/manager/departments/{department_id}/members` | M2 | Body `user_ids[]` |
-| DELETE | `/manager/departments/{department_id}/members/{user_id}` | M2 | Chỉ gỡ liên kết |
+| GET | `/manager/candidates` | M2 | User role User chưa thuộc bộ phận nào. `keyword`, phân trang |
+| POST | `/manager/departments/{department_id}/members` | M2 | Body `user_ids[]`. Trả 204 |
+| DELETE | `/manager/departments/{department_id}/members/{user_id}` | M2 | Chỉ gỡ liên kết. Trả 204 |
 | GET | `/manager/employees` | M4 | `keyword`, `department_id`, phân trang |
 | GET | `/manager/employees/{id}` | M4 | |
 | GET | `/manager/reports` | M3 | `keyword`, `date_from`, `date_to`, `department_id`, `sort`, phân trang |
@@ -161,6 +163,13 @@ Bộ phận của tôi (M1):
 - `GET /manager/departments/{department_id}` thêm `managers` (mọi manager của bộ phận, gồm cả mình; mỗi người `id`, `email`, `full_name`, `assigned_at`, sắp theo họ tên như thành viên) và `member_count` (user chưa xóa thuộc bộ phận, kể cả tài khoản bị khóa, như số đếm khi xóa bộ phận).
 - `GET /manager/departments/{department_id}/members` trả thành viên cùng dạng `GET /admin/departments/{id}/members` (`id`, `email`, `full_name`, `role`, `is_active`, `is_manager`), sắp theo họ tên. `keyword` tìm một phần họ tên không dấu hoặc email, không phân biệt hoa thường (`nguyen` khớp `Nguyễn`), chỉ trong bộ phận trên URL; `%`, `_` là ký tự thường.
 - Số câu SQL của mỗi endpoint không đổi theo số manager, thành viên: thành viên một trang lấy bằng một câu, cờ `is_manager` của cả trang một câu.
+
+Thêm, gỡ nhân viên trong bộ phận (M2):
+
+- Ứng viên là user role USER đang hoạt động, chưa bị xóa, chưa thuộc bộ phận nào (Q7). User chưa đặt mật khẩu vẫn là ứng viên: nhân viên mới được xếp bộ phận trước lần đăng nhập đầu. `GET /manager/candidates` trả `id`, `email`, `full_name`; `keyword` tìm trong họ tên (không phân biệt dấu, hoa thường) hoặc email; sắp theo họ tên như danh sách thành viên.
+- `POST .../members` nhận `user_ids` từ 1 đến 100 id (một trang ứng viên), id trùng được gộp, mỗi id từ 1 đến 2^63 − 1; field lạ trả 422. Mỗi id phải là ứng viên hoặc đã là thành viên bộ phận này: gửi lại người đã thêm không lỗi (trả 204), nên client timeout rồi gửi lại cũng an toàn. Còn id khác (không tồn tại, đã xóa, bị khóa, role khác USER, thuộc bộ phận khác) thì không thêm ai, trả 422 `INVALID_MEMBER_CANDIDATE`, `details` là `{"field": "user_ids", "invalid_ids": [...]}` theo thứ tự gửi.
+- `DELETE .../members/{user_id}` chỉ gỡ khỏi bộ phận (`department_id` về `null`), tài khoản giữ nguyên và quay lại danh sách ứng viên. User không thuộc bộ phận này (chưa có bộ phận, đã được chuyển đi) thì không có gì để gỡ, vẫn trả 204. User không tồn tại hoặc đã xóa mềm trả 404, `details.field` là `user_id`. Thành viên role khác USER (manager, admin do admin xếp vào) trả 422 `EMPLOYEE_ROLE_REQUIRED`: manager chỉ quản lý nhân viên.
+- Hai endpoint ghi khóa bộ phận `FOR SHARE` đến khi lưu xong, như gán manager (A3): admin xóa bộ phận đúng lúc đó thì chờ, rồi thấy thành viên vừa thêm và trả `DEPARTMENT_NOT_EMPTY`. User được khóa dòng theo thứ tự id: hai manager hai bộ phận cùng thêm một người thì người gửi sau nhận `INVALID_MEMBER_CANDIDATE`, không ghi đè; admin đổi bộ phận của user trong lúc manager gỡ thì user giữ bộ phận admin vừa đổi.
 
 ### /admin: role ADMIN (15)
 
