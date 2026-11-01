@@ -11,18 +11,35 @@ from app.modules.departments.exceptions import (
     DepartmentNotFoundError,
     ManagerRoleRequiredError,
 )
-from app.modules.departments.models import DEPARTMENT_CODE_UNIQUE_INDEX, Department
+from app.modules.departments.models import (
+    DEPARTMENT_CODE_UNIQUE_INDEX,
+    Department,
+    DepartmentManager,
+)
 from app.modules.departments.repository import DepartmentRepository
 from app.modules.departments.schemas import (
     DepartmentCreate,
+    DepartmentDetailOut,
     DepartmentListParams,
     DepartmentManagerOut,
+    DepartmentMemberListParams,
     DepartmentMemberOut,
+    DepartmentOut,
     DepartmentUpdate,
 )
 from app.modules.users.exceptions import UserInactiveError, UserNotFoundError
 from app.modules.users.models import UserRole
 from app.modules.users.repository import UserRepository
+
+
+def _manager_out(link: DepartmentManager) -> DepartmentManagerOut:
+    # link.user đã nạp sẵn trong managers_statement (contains_eager).
+    return DepartmentManagerOut(
+        id=link.user.id,
+        email=link.user.email,
+        full_name=link.user.full_name,
+        assigned_at=link.assigned_at,
+    )
 
 
 class DepartmentService:
@@ -35,6 +52,11 @@ class DepartmentService:
         self, params: DepartmentListParams
     ) -> tuple[Sequence[Department], int]:
         return await self.departments.search(params, params.keyword)
+
+    async def list_managed_departments(
+        self, manager_id: int, params: DepartmentListParams
+    ) -> tuple[Sequence[Department], int]:
+        return await self.departments.search(params, params.keyword, manager_id=manager_id)
 
     async def get_department(self, department_id: int) -> Department:
         department = await self.departments.get_by_id(department_id)
@@ -104,12 +126,33 @@ class DepartmentService:
         department.deleted_at = datetime.now(UTC)
         await self.session.commit()
 
+    async def get_department_detail(self, department: Department) -> DepartmentDetailOut:
+        """Bộ phận kèm manager và số thành viên: thêm đúng hai câu SQL, không phụ thuộc số người."""
+        links = await self.session.scalars(self.departments.managers_statement(department.id))
+        return DepartmentDetailOut(
+            **DepartmentOut.model_validate(department).model_dump(),
+            managers=[_manager_out(link) for link in links],
+            member_count=await self.departments.count_members(department.id),
+        )
+
     async def list_members(
         self, department_id: int, params: PageParams
     ) -> Page[DepartmentMemberOut]:
         await self.get_department(department_id)
+        return await self._members_page(department_id, params)
+
+    async def list_managed_members(
+        self, department: Department, params: DepartmentMemberListParams
+    ) -> Page[DepartmentMemberOut]:
+        # Bộ phận đã qua policy phạm vi (ManagedDepartment), không đọc lại.
+        return await self._members_page(department.id, params, params.keyword)
+
+    async def _members_page(
+        self, department_id: int, params: PageParams, keyword: str | None = None
+    ) -> Page[DepartmentMemberOut]:
+        # Ba câu SQL (đếm, trang thành viên, cờ manager của cả trang) dù trang có bao nhiêu người.
         members, total = await paginate(
-            self.session, self.departments.members_statement(department_id), params
+            self.session, self.departments.members_statement(department_id, keyword), params
         )
         manager_ids = await self.departments.get_manager_ids(
             department_id, [member.id for member in members]
@@ -134,16 +177,7 @@ class DepartmentService:
         links, total = await paginate(
             self.session, self.departments.managers_statement(department_id), params
         )
-        items = [
-            DepartmentManagerOut(
-                id=link.user.id,
-                email=link.user.email,
-                full_name=link.user.full_name,
-                assigned_at=link.assigned_at,
-            )
-            for link in links
-        ]
-        return Page.build(items, total=total, params=params)
+        return Page.build([_manager_out(link) for link in links], total=total, params=params)
 
     async def assign_manager(self, department_id: int, user_id: int) -> DepartmentManagerOut:
         """Gán manager cho bộ phận. Người đã là manager thì giữ nguyên, không báo lỗi.

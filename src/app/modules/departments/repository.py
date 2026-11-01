@@ -10,7 +10,7 @@ from app.core.constants import LIKE_ESCAPE_CHAR
 from app.core.pagination import PageParams, paginate
 from app.core.search import contains_pattern
 from app.modules.departments.models import Department, DepartmentManager
-from app.modules.users.models import User, order_by_full_name
+from app.modules.users.models import User, full_name_or_email_matches, order_by_full_name
 
 
 class DepartmentRepository:
@@ -23,9 +23,12 @@ class DepartmentRepository:
         return select(Department).where(Department.deleted_at.is_(None))
 
     async def search(
-        self, params: PageParams, keyword: str | None
+        self, params: PageParams, keyword: str | None, *, manager_id: int | None = None
     ) -> tuple[Sequence[Department], int]:
+        """Tìm bộ phận, sắp theo mã. Có `manager_id` thì chỉ trong phạm vi của manager đó."""
         statement = self._active().order_by(Department.code)
+        if manager_id is not None:
+            statement = statement.where(Department.id.in_(self.managed_department_ids(manager_id)))
         if keyword:
             # Tìm theo mã hoặc tên, không phân biệt hoa thường, không dấu ("ky thuat" khớp
             # "Kỹ thuật"). Mã chỉ có chữ không dấu nên không cần unaccent.
@@ -100,12 +103,15 @@ class DepartmentRepository:
             or 0
         )
 
-    def members_statement(self, department_id: int) -> Select[User]:
-        return (
+    def members_statement(self, department_id: int, keyword: str | None = None) -> Select[User]:
+        statement = (
             select(User)
             .where(User.department_id == department_id, User.deleted_at.is_(None))
             .order_by(*order_by_full_name())
         )
+        if keyword:
+            statement = statement.where(full_name_or_email_matches(keyword))
+        return statement
 
     def managers_statement(self, department_id: int) -> Select[DepartmentManager]:
         """Liên kết manager của bộ phận, kèm user (bỏ user đã xóa mềm), sắp theo họ tên."""
