@@ -25,6 +25,9 @@ from tests.factories import DEFAULT_PASSWORD, auth_headers, create_department, c
 
 LOGIN_URL = "/api/v1/auth/login"
 REFRESH_URL = "/api/v1/auth/refresh"
+# Test chạy song song hai transaction: chờ chừng này để lệnh đang thử chạy tới bước khóa dòng
+# trước khi transaction kia commit. Không có khóa thì lệnh đó đọc bản cũ, test đỏ.
+LOCK_WAIT_SECONDS = 0.3
 
 runner = CliRunner()
 

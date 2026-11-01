@@ -17,6 +17,7 @@ from app.modules.users.repository import UserRepository
 from app.modules.users.schemas import AdminUserCreate, AdminUserUpdate, UserCreate
 from app.modules.users.service import UserService
 from tests.factories import DEFAULT_PASSWORD, create_user
+from tests.helpers import LOCK_WAIT_SECONDS
 
 
 async def no_user_with_email(_: UserRepository, __: str) -> User | None:
@@ -102,7 +103,7 @@ async def test_assign_department_waits_for_concurrent_delete_and_returns_not_fou
             await deleting.flush()
 
             assignment = asyncio.create_task(assign(assigning, admin, department.id))
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(LOCK_WAIT_SECONDS)
             await deleting.commit()
 
             # Không chờ khóa thì lệnh gán đọc bộ phận chưa xóa, user vào bộ phận vừa bị xóa.
@@ -137,7 +138,7 @@ async def test_delete_department_waits_for_assignment_holding_share_lock(
             deletion = asyncio.create_task(
                 DepartmentService(deleting).delete_department(department.id)
             )
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(LOCK_WAIT_SECONDS)
             await assigning.commit()
 
             # Lệnh xóa chờ khóa, đếm thành viên sau khi lệnh gán commit nên thấy user vừa gán.
