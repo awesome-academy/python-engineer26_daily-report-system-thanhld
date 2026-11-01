@@ -99,6 +99,28 @@ class User(TimestampMixin, SoftDeleteMixin, Base):
             cls.is_active.is_(True), cls.deleted_at.is_(None), cls.password_hash.is_not(None)
         )
 
+    # Ứng viên manager thêm được vào bộ phận (M2, Q7): nhân viên role USER đang hoạt động, chưa
+    # thuộc bộ phận nào. Chưa đặt mật khẩu vẫn là ứng viên: nhân viên mới được xếp bộ phận trước khi
+    # đăng nhập lần đầu. Danh sách ứng viên (SQL) và lệnh thêm (object) dùng chung định nghĩa này.
+    @hybrid_property
+    def is_member_candidate(self) -> bool:
+        return (
+            self.role is UserRole.USER
+            and self.is_active
+            and self.deleted_at is None
+            and self.department_id is None
+        )
+
+    @is_member_candidate.inplace.expression
+    @classmethod
+    def _is_member_candidate_expression(cls) -> ColumnElement[bool]:
+        return and_(
+            cls.role == UserRole.USER,
+            cls.is_active.is_(True),
+            cls.deleted_at.is_(None),
+            cls.department_id.is_(None),
+        )
+
 
 # Email không trùng (không phân biệt hoa thường) trong số user chưa bị xóa mềm.
 USER_EMAIL_UNIQUE_INDEX = "uq_users_email_active"

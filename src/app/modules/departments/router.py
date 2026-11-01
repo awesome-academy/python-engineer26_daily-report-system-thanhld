@@ -3,7 +3,11 @@ from fastapi import APIRouter, status
 from app.api.deps import CurrentUser, IdPath
 from app.core.exceptions import error_responses
 from app.core.pagination import Page, PageQuery
-from app.modules.departments.dependencies import DepartmentServiceDep, ManagedDepartment
+from app.modules.departments.dependencies import (
+    DepartmentServiceDep,
+    ManagedDepartment,
+    ManagedDepartmentForShare,
+)
 from app.modules.departments.schemas import (
     DepartmentCreate,
     DepartmentDetailOut,
@@ -14,6 +18,9 @@ from app.modules.departments.schemas import (
     DepartmentOut,
     DepartmentUpdate,
     ManagerAssign,
+    MemberCandidateListQuery,
+    MemberCandidateOut,
+    MembersAdd,
 )
 
 # Include vào nhóm /admin (api/v1.py): role ADMIN được kiểm tra ở nhóm, 401, 403 khai ở nhóm.
@@ -154,7 +161,8 @@ async def remove_department_manager(
 
 
 # Include vào nhóm /manager (api/v1.py): role MANAGER được kiểm tra ở nhóm, 401, 403 khai ở nhóm.
-# Endpoint có {department_id} nhận bộ phận qua ManagedDepartment: ngoài phạm vi trả 404.
+# Endpoint có {department_id} nhận bộ phận qua ManagedDepartment: ngoài phạm vi trả 404. Endpoint
+# ghi dùng ManagedDepartmentForShare: khóa bộ phận tới hết transaction, admin không xóa xen được.
 manager_department_router = APIRouter(prefix="/departments", tags=["Manager: bộ phận"])
 
 
@@ -205,3 +213,59 @@ async def list_my_department_members(
     service: DepartmentServiceDep,
 ) -> Page[DepartmentMemberOut]:
     return await service.list_managed_members(department, params)
+
+
+@manager_department_router.post(
+    "/{department_id}/members",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Thêm nhân viên vào bộ phận",
+    description=(
+        "Mỗi id phải là ứng viên (GET /manager/candidates) hoặc đã là thành viên bộ phận này: "
+        "gửi lại không lỗi. Còn id sai thì không thêm ai, trả 422 `INVALID_MEMBER_CANDIDATE` "
+        "kèm `invalid_ids`."
+    ),
+    responses=error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
+)
+async def add_department_members(
+    department: ManagedDepartmentForShare, data: MembersAdd, service: DepartmentServiceDep
+) -> None:
+    await service.add_members(department.id, data.user_ids)
+
+
+@manager_department_router.delete(
+    "/{department_id}/members/{user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Gỡ nhân viên khỏi bộ phận",
+    description=(
+        "Chỉ gỡ liên kết, tài khoản giữ nguyên. Người không thuộc bộ phận này thì vẫn trả 204; "
+        "user không tồn tại hoặc đã xóa thì 404. Thành viên role khác USER do admin xếp bộ phận: "
+        "422 `EMPLOYEE_ROLE_REQUIRED`."
+    ),
+    responses=error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
+)
+async def remove_department_member(
+    department: ManagedDepartmentForShare, user_id: IdPath, service: DepartmentServiceDep
+) -> None:
+    await service.remove_member(department.id, user_id)
+
+
+# Ứng viên chưa thuộc bộ phận nào nên không nằm dưới /departments/{department_id}.
+manager_candidate_router = APIRouter(prefix="/candidates", tags=["Manager: bộ phận"])
+
+
+@manager_candidate_router.get(
+    "",
+    summary="Ứng viên thêm vào bộ phận",
+    description=(
+        "Nhân viên role USER đang hoạt động, chưa thuộc bộ phận nào. Tìm theo họ tên (không phân "
+        "biệt hoa thường, không dấu) hoặc email, sắp theo họ tên."
+    ),
+    responses=error_responses(status.HTTP_422_UNPROCESSABLE_CONTENT),
+)
+async def list_member_candidates(
+    params: MemberCandidateListQuery, service: DepartmentServiceDep
+) -> Page[MemberCandidateOut]:
+    users, total = await service.list_candidates(params)
+    return Page[MemberCandidateOut].build(
+        [MemberCandidateOut.model_validate(user) for user in users], total=total, params=params
+    )
