@@ -1,11 +1,13 @@
 """Policy phạm vi bộ phận của manager (`ManagedDepartment`), chạy theo ma trận quyền.
 
 Mọi route dưới /manager/departments/{...} thao tác trên một bộ phận cụ thể, nên phải đi qua
-`ManagedDepartment`. Danh sách route lấy từ app (route thật và route thăm dò), không liệt kê tay:
-endpoint Ngày 6 thêm vào là tự chạy ma trận, và test đỏ nếu endpoint không dùng dependency.
+`ManagedDepartment` (hoặc `ManagedDepartmentForShare` với endpoint ghi). Danh sách route lấy từ app
+(route thật và route thăm dò), không liệt kê tay: endpoint Ngày 6 thêm vào là tự chạy ma trận, và
+test đỏ nếu endpoint không dùng dependency.
 
-Ngoài endpoint thật (M1), route thăm dò gắn vào app riêng với đúng dependency và response lỗi
-của nhóm /manager, giống test_rbac.py: thử endpoint ghi có body khi chưa có endpoint ghi (M2).
+Ngoài endpoint thật, route thăm dò gắn vào app riêng với đúng dependency và response lỗi của nhóm
+/manager, giống test_rbac.py, để thử policy (handler nhận đúng bộ phận, body xét sau phạm vi) độc
+lập với nghiệp vụ của endpoint thật.
 """
 
 import re
@@ -25,7 +27,11 @@ from app.core.config import get_settings
 from app.core.constants import BIGINT_MAX, ID_MIN
 from app.core.exceptions import AppError, ForbiddenError, UnauthorizedError, error_responses
 from app.core.validators import Id
-from app.modules.departments.dependencies import ManagedDepartment, get_managed_department
+from app.modules.departments.dependencies import (
+    ManagedDepartment,
+    get_managed_department,
+    get_managed_department_for_share,
+)
 from app.modules.departments.exceptions import DepartmentNotFoundError
 from app.modules.departments.service import DepartmentService
 from app.modules.users.models import UserRole
@@ -131,7 +137,9 @@ def test_department_route_goes_through_managed_department(route: RouteContext) -
     # ManagedDepartment đọc path param tên department_id: đặt tên khác ({id}) thì mọi request 422.
     assert route.path is not None
     assert "{department_id}" in route.path
-    assert get_managed_department in set(dependency_calls(route.dependant))
+    # Bản đọc hay bản khóa FOR SHARE (endpoint ghi) đều gọi cùng policy của service.
+    policies = {get_managed_department, get_managed_department_for_share}
+    assert policies & set(dependency_calls(route.dependant))
 
 
 @pytest.mark.parametrize("endpoint", SCOPED_ENDPOINTS)

@@ -24,3 +24,14 @@ async def get_managed_department(
 # ngoài phạm vi hoặc không tồn tại thì 404 trước khi vào handler. Endpoint phải khai 404 trong
 # `responses` của mình.
 ManagedDepartment = Annotated[Department, Depends(get_managed_department)]
+
+
+async def get_managed_department_for_share(
+    department_id: IdPath, manager: CurrentUser, service: DepartmentServiceDep
+) -> Department:
+    return await service.get_managed_department(manager.id, department_id, for_share=True)
+
+
+# Như ManagedDepartment, cho endpoint ghi vào bộ phận (thêm, gỡ thành viên): bộ phận bị khóa
+# FOR SHARE đến khi handler commit, admin xóa bộ phận phải chờ.
+ManagedDepartmentForShare = Annotated[Department, Depends(get_managed_department_for_share)]
