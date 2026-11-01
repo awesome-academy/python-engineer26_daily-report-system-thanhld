@@ -1,7 +1,8 @@
 """Helper dùng chung cho test."""
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -9,6 +10,7 @@ from typing import Any
 import jwt
 import pytest
 from httpx import AsyncClient, Response
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession
 from typer.testing import CliRunner, Result
 
@@ -76,6 +78,26 @@ def bearer(access_token: str) -> dict[str, str]:
 def error_json(error: AppError) -> dict[str, Any]:
     """Body JSON mà handler chung trả cho lỗi nghiệp vụ `error`."""
     return {"error": {"code": error.code, "message": error.message, "details": error.details}}
+
+
+@contextmanager
+def recorded_queries(session: AsyncSession) -> Iterator[list[str]]:
+    """Ghi lại câu SQL chạy trên kết nối của `session` trong khối `with`.
+
+    Dùng để kiểm tra không có N+1: số câu không đổi khi số bản ghi tăng.
+    """
+    statements: list[str] = []
+    connection = session.sync_session.get_bind()
+
+    def record(*args: Any) -> None:
+        # before_cursor_execute(conn, cursor, statement, parameters, context, executemany).
+        statements.append(args[2])
+
+    event.listen(connection, "before_cursor_execute", record)
+    try:
+        yield statements
+    finally:
+        event.remove(connection, "before_cursor_execute", record)
 
 
 @dataclass(frozen=True)
