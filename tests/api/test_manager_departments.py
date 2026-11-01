@@ -11,7 +11,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.constants import KEYWORD_MAX_LENGTH, MAX_PAGE
+from app.core.constants import KEYWORD_MAX_LENGTH, MAX_PAGE, MAX_PAGE_SIZE
 from app.core.exceptions import AppError, ForbiddenError, UnauthorizedError
 from app.modules.departments.models import Department
 from app.modules.users.models import User, UserRole
@@ -354,7 +354,7 @@ async def test_blank_member_keyword_does_not_filter(
     ("params", "field"),
     [
         ({"page": 0}, "query.page"),
-        ({"page_size": 101}, "query.page_size"),
+        ({"page_size": MAX_PAGE_SIZE + 1}, "query.page_size"),
         ({"keyword": "k" * (KEYWORD_MAX_LENGTH + 1)}, "query.keyword"),
         ({"keyword": "k\x00"}, "query.keyword"),
     ],
