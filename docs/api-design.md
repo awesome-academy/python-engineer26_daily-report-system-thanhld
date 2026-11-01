@@ -143,8 +143,8 @@ Báo cáo hằng ngày (U3):
 
 | Method | Endpoint | Mã | Ghi chú |
 | --- | --- | --- | --- |
-| GET | `/manager/departments` | M1 | |
-| GET | `/manager/departments/{department_id}` | M1 | Gồm danh sách manager, số nhân viên |
+| GET | `/manager/departments` | M1 | `keyword`, phân trang |
+| GET | `/manager/departments/{department_id}` | M1 | Gồm danh sách manager, số thành viên |
 | GET | `/manager/departments/{department_id}/members` | M1 | `keyword`, phân trang |
 | GET | `/manager/candidates` | M2 | User role User chưa thuộc bộ phận nào |
 | POST | `/manager/departments/{department_id}/members` | M2 | Body `user_ids[]` |
@@ -154,6 +154,13 @@ Báo cáo hằng ngày (U3):
 | GET | `/manager/reports` | M3 | `keyword`, `date_from`, `date_to`, `department_id`, `sort`, phân trang |
 | GET | `/manager/reports/{id}` | M3 | |
 | GET | `/manager/reports/export` | M5 | `date`, `department_id`, trả file .xlsx |
+
+Bộ phận của tôi (M1):
+
+- `GET /manager/departments` chỉ gồm bộ phận chưa xóa mà admin đã gán cho manager đang đăng nhập (không gồm bộ phận manager chỉ là thành viên). Tìm theo mã hoặc tên, sắp theo mã như `GET /admin/departments`; mỗi phần tử cùng dạng với bộ phận của admin. Chưa quản lý bộ phận nào thì danh sách rỗng.
+- `GET /manager/departments/{department_id}` thêm `managers` (mọi manager của bộ phận, gồm cả mình; mỗi người `id`, `email`, `full_name`, `assigned_at`, sắp theo họ tên như thành viên) và `member_count` (user chưa xóa thuộc bộ phận, kể cả tài khoản bị khóa, như số đếm khi xóa bộ phận).
+- `GET /manager/departments/{department_id}/members` trả thành viên cùng dạng `GET /admin/departments/{id}/members` (`id`, `email`, `full_name`, `role`, `is_active`, `is_manager`), sắp theo họ tên. `keyword` tìm một phần họ tên không dấu hoặc email, không phân biệt hoa thường (`nguyen` khớp `Nguyễn`), chỉ trong bộ phận trên URL; `%`, `_` là ký tự thường.
+- Số câu SQL của mỗi endpoint không đổi theo số manager, thành viên: thành viên một trang lấy bằng một câu, cờ `is_manager` của cả trang một câu.
 
 ### /admin: role ADMIN (15)
 

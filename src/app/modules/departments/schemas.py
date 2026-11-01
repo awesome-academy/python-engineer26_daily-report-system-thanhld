@@ -3,7 +3,14 @@ from datetime import datetime
 from typing import Annotated
 
 from fastapi import Query
-from pydantic import AfterValidator, BaseModel, ConfigDict, StringConstraints, field_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+)
 
 from app.core import messages
 from app.core.constants import (
@@ -98,6 +105,15 @@ class DepartmentListParams(PageParams):
 DepartmentListQuery = Annotated[DepartmentListParams, Query()]
 
 
+class DepartmentMemberListParams(PageParams):
+    keyword: Annotated[
+        Keyword | None, Field(description="Tìm theo họ tên (không dấu) hoặc email")
+    ] = None
+
+
+DepartmentMemberListQuery = Annotated[DepartmentMemberListParams, Query()]
+
+
 class DepartmentMemberOut(BaseModel):
     id: int
     email: str
@@ -120,3 +136,10 @@ class DepartmentManagerOut(BaseModel):
     email: str
     full_name: str
     assigned_at: datetime
+
+
+class DepartmentDetailOut(DepartmentOut):
+    """Bộ phận kèm manager (sắp theo họ tên) và số thành viên, cho manager xem bộ phận mình."""
+
+    managers: list[DepartmentManagerOut]
+    member_count: int

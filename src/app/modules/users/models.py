@@ -13,6 +13,7 @@ from sqlalchemy import (
     String,
     and_,
     func,
+    or_,
     text,
 )
 from sqlalchemy.ext.hybrid import hybrid_property
@@ -21,11 +22,13 @@ from sqlalchemy.orm import InstrumentedAttribute, Mapped, mapped_column, relatio
 from app.core.constants import (
     EMAIL_MAX_LENGTH,
     FULL_NAME_MAX_LENGTH,
+    LIKE_ESCAPE_CHAR,
     PASSWORD_HASH_MAX_LENGTH,
     PHONE_MAX_LENGTH,
     STORAGE_KEY_MAX_LENGTH,
 )
 from app.core.database import Base, BigIntPK, SoftDeleteMixin, TimestampMixin
+from app.core.search import contains_pattern
 
 if TYPE_CHECKING:
     from app.modules.auth.models import RefreshToken, UserToken
@@ -130,3 +133,16 @@ def order_by_full_name() -> tuple[ColumnElement[Any] | InstrumentedAttribute[Any
     cố định giữa các trang.
     """
     return (func.immutable_unaccent(func.lower(User.full_name)), User.full_name, User.id)
+
+
+def full_name_or_email_matches(keyword: str) -> ColumnElement[bool]:
+    """Điều kiện tìm user theo một phần họ tên (không dấu) hoặc email, không phân biệt hoa thường.
+
+    Cùng biểu thức với GIN index `ix_users_full_name_search`, `ix_users_email_search`: "nguyen"
+    khớp "Nguyễn". Thiếu một trong hai index thì cả điều kiện OR thành Seq Scan.
+    """
+    pattern = contains_pattern(keyword)
+    return or_(
+        func.immutable_unaccent(func.lower(User.full_name)).like(pattern, escape=LIKE_ESCAPE_CHAR),
+        func.lower(User.email).like(pattern, escape=LIKE_ESCAPE_CHAR),
+    )

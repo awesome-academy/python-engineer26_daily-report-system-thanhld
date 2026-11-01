@@ -1,12 +1,10 @@
 from collections.abc import Sequence
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.constants import LIKE_ESCAPE_CHAR
 from app.core.pagination import PageParams, paginate
-from app.core.search import contains_pattern
-from app.modules.users.models import User, UserRole
+from app.modules.users.models import User, UserRole, full_name_or_email_matches
 
 
 class UserRepository:
@@ -74,13 +72,7 @@ class UserRepository:
     ) -> tuple[Sequence[User], int]:
         statement = select(User).where(User.deleted_at.is_(None)).order_by(User.id)
         if keyword:
-            pattern = contains_pattern(keyword)
-            # Cùng biểu thức với GIN index ix_users_full_name_search: "nguyen" khớp "Nguyễn".
-            name_matches = func.immutable_unaccent(func.lower(User.full_name)).like(
-                pattern, escape=LIKE_ESCAPE_CHAR
-            )
-            email_matches = func.lower(User.email).like(pattern, escape=LIKE_ESCAPE_CHAR)
-            statement = statement.where(or_(name_matches, email_matches))
+            statement = statement.where(full_name_or_email_matches(keyword))
         if role is not None:
             statement = statement.where(User.role == role)
         if department_id is not None:

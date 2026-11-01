@@ -4,8 +4,8 @@ Mọi route dưới /manager/departments/{...} thao tác trên một bộ phận
 `ManagedDepartment`. Danh sách route lấy từ app (route thật và route thăm dò), không liệt kê tay:
 endpoint Ngày 6 thêm vào là tự chạy ma trận, và test đỏ nếu endpoint không dùng dependency.
 
-Chưa có endpoint /manager nào, nên route thăm dò gắn vào app riêng với đúng dependency và
-response lỗi của nhóm /manager, giống test_rbac.py.
+Ngoài endpoint thật (M1), route thăm dò gắn vào app riêng với đúng dependency và response lỗi
+của nhóm /manager, giống test_rbac.py: thử endpoint ghi có body khi chưa có endpoint ghi (M2).
 """
 
 import re
@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 from fastapi import APIRouter, FastAPI, status
 from fastapi.dependencies.models import Dependant
-from fastapi.routing import APIRoute
+from fastapi.routing import APIRoute, RouteContext, iter_route_contexts
 from httpx import AsyncClient
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -66,17 +66,23 @@ async def write_probe(department: ManagedDepartment, data: ProbeBody) -> dict[st
     return {"id": department.id, "user_id": data.user_id}
 
 
-def scoped_routes() -> list[APIRoute]:
+def scoped_routes() -> list[RouteContext]:
+    # include_router không chép route ra router cha mà giữ cả router con, nên `api_router.routes`
+    # không có route lồng trong nhóm /manager. Duyệt bằng iter_route_contexts như khi FastAPI
+    # sinh OpenAPI: path, dependant là của route sau khi gộp tiền tố, dependency của nhóm.
     return [
         route
-        for route in [*api_router.routes, *probe_router.routes]
-        if isinstance(route, APIRoute) and route.path.startswith(SCOPED_PREFIX)
+        for route in iter_route_contexts([*api_router.routes, *probe_router.routes])
+        if isinstance(route.original_route, APIRoute)
+        and route.path is not None
+        and route.path.startswith(SCOPED_PREFIX)
     ]
 
 
 SCOPED_ENDPOINTS = [
-    pytest.param((method, route.path), id=f"{method} {route.path.removeprefix(API)}")
+    pytest.param((method, path), id=f"{method} {path.removeprefix(API)}")
     for route in scoped_routes()
+    if (path := route.path) is not None
     for method in sorted(route.methods or ())
 ]
 
@@ -104,9 +110,26 @@ def mount_probe_routes(probe_app: FastAPI) -> None:
     probe_app.include_router(probe_router)
 
 
+async def test_scoped_routes_cover_every_documented_department_endpoint(
+    probe_client: AsyncClient,
+) -> None:
+    # Cách lấy route sai (chỉ đọc `api_router.routes`) thì ma trận chỉ còn route thăm dò mà vẫn
+    # xanh. Đối chiếu với Swagger để endpoint thật không lọt khỏi ma trận.
+    paths = (await probe_client.get("/openapi.json")).json()["paths"]
+    documented = {
+        (method.upper(), path)
+        for path, operations in paths.items()
+        if path.startswith(SCOPED_PREFIX)
+        for method in operations
+    }
+
+    assert documented == {param.values[0] for param in SCOPED_ENDPOINTS}
+
+
 @pytest.mark.parametrize("route", scoped_routes(), ids=lambda route: route.path)
-def test_department_route_goes_through_managed_department(route: APIRoute) -> None:
+def test_department_route_goes_through_managed_department(route: RouteContext) -> None:
     # ManagedDepartment đọc path param tên department_id: đặt tên khác ({id}) thì mọi request 422.
+    assert route.path is not None
     assert "{department_id}" in route.path
     assert get_managed_department in set(dependency_calls(route.dependant))
 

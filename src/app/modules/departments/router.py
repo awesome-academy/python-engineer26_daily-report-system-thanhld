@@ -1,13 +1,15 @@
 from fastapi import APIRouter, status
 
-from app.api.deps import IdPath
+from app.api.deps import CurrentUser, IdPath
 from app.core.exceptions import error_responses
 from app.core.pagination import Page, PageQuery
-from app.modules.departments.dependencies import DepartmentServiceDep
+from app.modules.departments.dependencies import DepartmentServiceDep, ManagedDepartment
 from app.modules.departments.schemas import (
     DepartmentCreate,
+    DepartmentDetailOut,
     DepartmentListQuery,
     DepartmentManagerOut,
+    DepartmentMemberListQuery,
     DepartmentMemberOut,
     DepartmentOut,
     DepartmentUpdate,
@@ -149,3 +151,57 @@ async def remove_department_manager(
     department_id: IdPath, user_id: IdPath, service: DepartmentServiceDep
 ) -> None:
     await service.remove_manager(department_id, user_id)
+
+
+# Include vào nhóm /manager (api/v1.py): role MANAGER được kiểm tra ở nhóm, 401, 403 khai ở nhóm.
+# Endpoint có {department_id} nhận bộ phận qua ManagedDepartment: ngoài phạm vi trả 404.
+manager_department_router = APIRouter(prefix="/departments", tags=["Manager: bộ phận"])
+
+
+@manager_department_router.get(
+    "",
+    summary="Bộ phận tôi quản lý",
+    description=(
+        "Các bộ phận admin đã gán cho tôi làm manager. Tìm theo mã hoặc tên (không phân biệt "
+        "hoa thường, không dấu), sắp theo mã."
+    ),
+    responses=error_responses(status.HTTP_422_UNPROCESSABLE_CONTENT),
+)
+async def list_my_departments(
+    params: DepartmentListQuery, manager: CurrentUser, service: DepartmentServiceDep
+) -> Page[DepartmentOut]:
+    departments, total = await service.list_managed_departments(manager.id, params)
+    return Page[DepartmentOut].build(
+        [DepartmentOut.model_validate(department) for department in departments],
+        total=total,
+        params=params,
+    )
+
+
+@manager_department_router.get(
+    "/{department_id}",
+    summary="Xem bộ phận tôi quản lý",
+    description="Kèm các manager của bộ phận (sắp theo họ tên) và số thành viên.",
+    responses=error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
+)
+async def get_my_department(
+    department: ManagedDepartment, service: DepartmentServiceDep
+) -> DepartmentDetailOut:
+    return await service.get_department_detail(department)
+
+
+@manager_department_router.get(
+    "/{department_id}/members",
+    summary="Thành viên bộ phận tôi quản lý",
+    description=(
+        "Tìm theo họ tên (không dấu) hoặc email, sắp theo họ tên (không phân biệt hoa thường, "
+        "không dấu). Gồm cả tài khoản bị khóa, kèm `is_manager`."
+    ),
+    responses=error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
+)
+async def list_my_department_members(
+    department: ManagedDepartment,
+    params: DepartmentMemberListQuery,
+    service: DepartmentServiceDep,
+) -> Page[DepartmentMemberOut]:
+    return await service.list_managed_members(department, params)
