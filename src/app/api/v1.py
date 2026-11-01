@@ -16,8 +16,8 @@ from app.modules.users.models import UserRole
 from app.modules.users.router import admin_users_router, me_router
 
 # Nhóm theo role: kiểm tra role một lần ở nhóm, endpoint bên trong không tự kiểm tra lại.
-# Router của module phải include vào nhóm trước khi nhóm được include vào api_router,
-# vì include_router chép route tại thời điểm gọi.
+# include_router giữ router con chứ không chép route (FastAPI 0.162), nên router của module
+# include vào nhóm lúc nào cũng có hiệu lực; vẫn include ngay dưới đây để dễ đọc theo nhóm.
 _ROLE_ERRORS = error_responses(status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN)
 admin_router = APIRouter(
     prefix="/admin", dependencies=[Depends(require_roles(UserRole.ADMIN))], responses=_ROLE_ERRORS
