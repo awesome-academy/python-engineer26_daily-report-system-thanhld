@@ -10,7 +10,11 @@ from app.api.deps import require_roles
 from app.core.config import get_settings
 from app.core.exceptions import error_responses
 from app.modules.auth.router import router as auth_router
-from app.modules.departments.router import admin_department_router, manager_department_router
+from app.modules.departments.router import (
+    admin_department_router,
+    manager_candidate_router,
+    manager_department_router,
+)
 from app.modules.reports.router import my_report_router
 from app.modules.users.models import UserRole
 from app.modules.users.router import admin_users_router, me_router
@@ -35,6 +39,7 @@ user_router = APIRouter(
 admin_router.include_router(admin_department_router)
 admin_router.include_router(admin_users_router)
 manager_router.include_router(manager_department_router)
+manager_router.include_router(manager_candidate_router)
 user_router.include_router(my_report_router)
 
 api_router = APIRouter(prefix=get_settings().api_v1_prefix)

@@ -14,6 +14,7 @@ from app.modules.departments.schemas import DepartmentCreate, DepartmentUpdate
 from app.modules.departments.service import DepartmentService
 from app.modules.users.models import USER_EMAIL_UNIQUE_INDEX, User
 from tests.factories import create_department
+from tests.helpers import LOCK_WAIT_SECONDS
 
 
 @pytest.fixture
@@ -82,7 +83,7 @@ async def test_update_department_waits_for_concurrent_delete_and_returns_not_fou
                     department.id, DepartmentUpdate(name="Phòng mới")
                 )
             )
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(LOCK_WAIT_SECONDS)
             await deleting.commit()
 
             with pytest.raises(DepartmentNotFoundError):

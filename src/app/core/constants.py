@@ -66,6 +66,9 @@ REPORT_BACKDATE_DAYS = 3
 # danh sách id quá dài gửi xuống truy vấn.
 REPORT_RECIPIENTS_MIN = 1
 REPORT_RECIPIENTS_MAX = 50
+# Số user manager thêm vào bộ phận trong một request: tối đa bằng một trang danh sách ứng viên.
+DEPARTMENT_MEMBERS_ADD_MIN = 1
+DEPARTMENT_MEMBERS_ADD_MAX = MAX_PAGE_SIZE
 
 # JWT. HS256 cần khóa tối thiểu 256 bit (RFC 7518, mục 3.2).
 ACCESS_TOKEN_EXPIRE_MINUTES = 15

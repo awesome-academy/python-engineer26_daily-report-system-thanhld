@@ -19,15 +19,9 @@ from app.core.constants import (
     REPORT_RECIPIENTS_MIN,
 )
 from app.core.pagination import DateRangePageParams
-from app.core.validators import Id, NoNul, blank_to_none
+from app.core.validators import Id, NoNul, blank_to_none, drop_duplicates
 from app.modules.reports.models import DailyReport, ReportRecipient
 from app.modules.users.models import User
-
-
-def _drop_duplicates(ids: list[int]) -> list[int]:
-    # Gửi trùng id là cùng một người nhận; để nguyên thì insert trùng khóa chính, API trả 500.
-    return list(dict.fromkeys(ids))
-
 
 ReportContent = Annotated[
     str,
@@ -48,7 +42,7 @@ OptionalReportContent = Annotated[
 RecipientIds = Annotated[
     list[Id],
     Field(min_length=REPORT_RECIPIENTS_MIN, max_length=REPORT_RECIPIENTS_MAX),
-    AfterValidator(_drop_duplicates),
+    AfterValidator(drop_duplicates),
 ]
 
 

@@ -18,11 +18,13 @@ from app.core.constants import (
     DEPARTMENT_CODE_MIN_LENGTH,
     DEPARTMENT_CODE_PATTERN,
     DEPARTMENT_DESCRIPTION_MAX_LENGTH,
+    DEPARTMENT_MEMBERS_ADD_MAX,
+    DEPARTMENT_MEMBERS_ADD_MIN,
     DEPARTMENT_NAME_MAX_LENGTH,
     DEPARTMENT_NAME_MIN_LENGTH,
 )
 from app.core.pagination import PageParams
-from app.core.validators import Id, Keyword, NoNul, blank_to_none, reject_null
+from app.core.validators import Id, Keyword, NoNul, blank_to_none, drop_duplicates, reject_null
 from app.modules.users.models import UserRole
 
 
@@ -143,3 +145,35 @@ class DepartmentDetailOut(DepartmentOut):
 
     managers: list[DepartmentManagerOut]
     member_count: int
+
+
+class MemberCandidateListParams(PageParams):
+    keyword: Annotated[
+        Keyword | None, Field(description="Tìm theo họ tên (không dấu) hoặc email")
+    ] = None
+
+
+MemberCandidateListQuery = Annotated[MemberCandidateListParams, Query()]
+
+
+class MemberCandidateOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    email: str
+    full_name: str
+
+
+class MembersAdd(BaseModel):
+    # Field lạ trả 422 như các body khác của module.
+    model_config = ConfigDict(extra="forbid")
+
+    user_ids: Annotated[
+        list[Id],
+        Field(
+            min_length=DEPARTMENT_MEMBERS_ADD_MIN,
+            max_length=DEPARTMENT_MEMBERS_ADD_MAX,
+            description="Id nhân viên, lấy từ GET /manager/candidates. Id trùng được gộp.",
+        ),
+        AfterValidator(drop_duplicates),
+    ]

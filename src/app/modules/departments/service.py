@@ -9,6 +9,8 @@ from app.modules.departments.exceptions import (
     DepartmentCodeExistsError,
     DepartmentNotEmptyError,
     DepartmentNotFoundError,
+    EmployeeRoleRequiredError,
+    InvalidMemberCandidateError,
     ManagerRoleRequiredError,
 )
 from app.modules.departments.models import (
@@ -26,9 +28,10 @@ from app.modules.departments.schemas import (
     DepartmentMemberOut,
     DepartmentOut,
     DepartmentUpdate,
+    MemberCandidateListParams,
 )
 from app.modules.users.exceptions import UserInactiveError, UserNotFoundError
-from app.modules.users.models import UserRole
+from app.modules.users.models import User, UserRole
 from app.modules.users.repository import UserRepository
 
 
@@ -64,17 +67,21 @@ class DepartmentService:
             raise DepartmentNotFoundError
         return department
 
-    async def get_managed_department(self, manager_id: int, department_id: int) -> Department:
+    async def get_managed_department(
+        self, manager_id: int, department_id: int, *, for_share: bool = False
+    ) -> Department:
         """Policy phạm vi của manager: bộ phận phải còn và do manager này quản lý.
 
         Ngoài phạm vi trả đúng lỗi của bộ phận không tồn tại, để manager không dò được id nào là
         bộ phận có thật. Role MANAGER đã kiểm tra ở nhóm router `/manager`, ở đây chỉ xét phạm vi.
 
-        Đọc không khóa dòng, đủ cho endpoint chỉ đọc. Endpoint ghi vào bộ phận (thêm, gỡ thành
-        viên) phải khóa `FOR SHARE` như `assign_manager`, nếu không admin xóa bộ phận hay gỡ
-        manager chen giữa thì vẫn ghi được.
+        Endpoint chỉ đọc không cần khóa. Endpoint ghi vào bộ phận (thêm, gỡ thành viên) truyền
+        `for_share=True` để khóa `FOR SHARE` đến khi commit như `assign_manager`: admin xóa bộ
+        phận chen giữa thì phải chờ, rồi thấy thành viên vừa thêm và trả `DEPARTMENT_NOT_EMPTY`.
         """
-        department = await self.departments.get_managed_by_id(department_id, manager_id)
+        department = await self.departments.get_managed_by_id(
+            department_id, manager_id, for_share=for_share
+        )
         if department is None:
             raise DepartmentNotFoundError
         return department
@@ -215,4 +222,51 @@ class DepartmentService:
         if await self.users.get_by_id(user_id) is None:
             raise UserNotFoundError
         await self.departments.remove_manager(department_id, user_id)
+        await self.session.commit()
+
+    async def list_candidates(
+        self, params: MemberCandidateListParams
+    ) -> tuple[Sequence[User], int]:
+        return await self.users.search_member_candidates(params, params.keyword)
+
+    async def add_members(self, department_id: int, user_ids: Sequence[int]) -> None:
+        """Thêm nhân viên vào bộ phận của manager. Gửi lại người đã là thành viên thì không lỗi.
+
+        Bộ phận đã được khóa `FOR SHARE` (`ManagedDepartmentForShare`). Ở đây khóa dòng các user
+        rồi mới xét: hai manager của hai bộ phận cùng thêm một người thì lệnh sau chờ lệnh trước
+        commit, đọc lại thấy người đó đã thuộc bộ phận khác và báo lỗi, không ghi đè. Còn id sai
+        thì không thêm ai, để client sửa rồi gửi lại cả danh sách.
+        """
+        users = {user.id: user for user in await self.users.get_many_for_update(user_ids)}
+        invalid_ids = [
+            user_id
+            for user_id in user_ids
+            if (user := users.get(user_id)) is None
+            or not (user.is_member_candidate or user.department_id == department_id)
+        ]
+        if invalid_ids:
+            # Nhả khóa dòng ngay, không giữ đến khi session đóng.
+            await self.session.rollback()
+            raise InvalidMemberCandidateError(invalid_ids)
+        for user in users.values():
+            user.department_id = department_id
+        await self.session.commit()
+
+    async def remove_member(self, department_id: int, user_id: int) -> None:
+        """Gỡ nhân viên khỏi bộ phận, tài khoản giữ nguyên. Không còn là thành viên thì không lỗi.
+
+        Khóa dòng user để không chạy xen với admin đổi bộ phận, đổi role của người đó: user đã
+        được admin chuyển sang bộ phận khác thì không bị gỡ nhầm.
+        """
+        user = await self.users.get_by_id_for_update(user_id)
+        if user is None:
+            await self.session.rollback()
+            raise UserNotFoundError
+        if user.department_id != department_id:
+            await self.session.rollback()
+            return
+        if user.role is not UserRole.USER:
+            await self.session.rollback()
+            raise EmployeeRoleRequiredError
+        user.department_id = None
         await self.session.commit()

@@ -4,7 +4,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.pagination import PageParams, paginate
-from app.modules.users.models import User, UserRole, full_name_or_email_matches
+from app.modules.users.models import User, UserRole, full_name_or_email_matches, order_by_full_name
 
 
 class UserRepository:
@@ -78,6 +78,30 @@ class UserRepository:
         if department_id is not None:
             statement = statement.where(User.department_id == department_id)
         return await paginate(self.session, statement, params)
+
+    async def search_member_candidates(
+        self, params: PageParams, keyword: str | None
+    ) -> tuple[Sequence[User], int]:
+        """Ứng viên manager thêm được vào bộ phận (`User.is_member_candidate`), sắp theo họ tên."""
+        statement = select(User).where(User.is_member_candidate).order_by(*order_by_full_name())
+        if keyword:
+            statement = statement.where(full_name_or_email_matches(keyword))
+        return await paginate(self.session, statement, params)
+
+    async def get_many_for_update(self, user_ids: Sequence[int]) -> Sequence[User]:
+        """Khóa dòng các user chưa xóa trong `user_ids`, theo thứ tự id.
+
+        Hai request khóa chung vài user (hai manager cùng thêm một nhóm người) luôn khóa theo cùng
+        thứ tự, nên không giữ khóa chéo nhau (deadlock).
+        """
+        rows = await self.session.scalars(
+            select(User)
+            .where(User.id.in_(user_ids), User.deleted_at.is_(None))
+            .order_by(User.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return rows.all()
 
     def add(self, user: User) -> None:
         self.session.add(user)

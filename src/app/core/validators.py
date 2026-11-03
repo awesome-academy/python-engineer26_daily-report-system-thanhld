@@ -38,6 +38,14 @@ def blank_to_none(value: str) -> str | None:
     return value or None
 
 
+def drop_duplicates(ids: list[int]) -> list[int]:
+    """Danh sách id trong body: id gửi trùng là cùng một bản ghi, gộp lại và giữ thứ tự gửi.
+
+    Để nguyên thì insert trùng khóa chính (người nhận báo cáo), API trả 500.
+    """
+    return list(dict.fromkeys(ids))
+
+
 # Id bản ghi (path, query, body): ngoài phạm vi khóa chính bigint thì trả 422 ngay. Số lớn hơn mà
 # gửi xuống DB thì asyncpg từ chối tham số, API trả 500.
 Id = Annotated[int, Field(ge=ID_MIN, le=BIGINT_MAX)]

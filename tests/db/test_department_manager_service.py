@@ -14,9 +14,7 @@ from app.modules.departments.service import DepartmentService
 from app.modules.users.exceptions import UserInactiveError, UserNotFoundError
 from app.modules.users.models import User, UserRole
 from tests.factories import create_department, create_user
-
-# Đủ để lệnh gán chạy tới bước khóa dòng trước khi transaction kia commit.
-LOCK_WAIT_SECONDS = 0.3
+from tests.helpers import LOCK_WAIT_SECONDS
 
 
 @pytest.mark.parametrize(

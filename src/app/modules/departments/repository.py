@@ -59,13 +59,17 @@ class DepartmentRepository:
             .where(DepartmentManager.user_id == manager_id, Department.deleted_at.is_(None))
         )
 
-    async def get_managed_by_id(self, department_id: int, manager_id: int) -> Department | None:
-        return await self.session.scalar(
-            self._active().where(
-                Department.id == department_id,
-                Department.id.in_(self.managed_department_ids(manager_id)),
-            )
+    async def get_managed_by_id(
+        self, department_id: int, manager_id: int, *, for_share: bool = False
+    ) -> Department | None:
+        statement = self._active().where(
+            Department.id == department_id,
+            Department.id.in_(self.managed_department_ids(manager_id)),
         )
+        if for_share:
+            # Như get_by_id_for_share. Chỉ khóa dòng bộ phận: câu con phạm vi không bị khóa.
+            statement = statement.with_for_update(read=True)
+        return await self.session.scalar(statement)
 
     async def get_by_id_for_update(self, department_id: int) -> Department | None:
         return await self.session.scalar(
