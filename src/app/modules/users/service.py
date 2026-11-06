@@ -67,7 +67,7 @@ class UserService:
     ) -> tuple[Sequence[User], int]:
         """Nhân viên (role USER) các bộ phận manager quản lý.
 
-        `params.department_id` ngoài phạm vi đã bị chặn (404) ở dependency `ManagedEmployeeQuery`;
+        `params.department_id` ngoài phạm vi đã bị chặn (404) ở dependency `EmployeeListQuery`;
         câu truy vấn vẫn luôn lọc theo phạm vi, không trông vào bước đó.
         """
         return await self.users.search_employees(

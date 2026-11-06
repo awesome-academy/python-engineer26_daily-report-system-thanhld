@@ -174,6 +174,3 @@ class EmployeeListParams(PageParams):
     department_id: Annotated[
         Id | None, Field(description="Chỉ bộ phận này; phải là bộ phận mình quản lý")
     ] = None
-
-
-EmployeeListQuery = Annotated[EmployeeListParams, Query()]

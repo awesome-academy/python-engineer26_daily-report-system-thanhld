@@ -6,7 +6,7 @@ from app.core.exceptions import error_responses
 from app.core.pagination import Page
 from app.modules.auth.dependencies import AuthServiceDep
 from app.modules.auth.schemas import TokenResponse
-from app.modules.users.dependencies import ManagedEmployeeQuery, UserServiceDep
+from app.modules.users.dependencies import EmployeeListQuery, UserServiceDep
 from app.modules.users.schemas import (
     AdminUserCreate,
     AdminUserOut,
@@ -160,14 +160,13 @@ async def delete_user(user_id: IdPath, admin: CurrentUser, user_service: UserSer
     summary="Danh sách nhân viên các bộ phận mình quản lý",
     description=(
         "Thành viên role USER (kể cả tài khoản bị khóa) của các bộ phận được gán quản lý, sắp "
-        "theo họ tên. "
-        '`keyword` tìm trong họ tên (không phân biệt dấu, hoa thường: "nguyen" khớp "Nguyễn") '
-        "hoặc email. `department_id` không phải bộ phận mình quản lý thì nhận 404."
+        'theo họ tên. `keyword` tìm trong họ tên (không phân biệt dấu, hoa thường: "nguyen" khớp '
+        '"Nguyễn") hoặc email. `department_id` không phải bộ phận mình quản lý thì nhận 404.'
     ),
     responses=error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
 )
 async def list_employees(
-    params: ManagedEmployeeQuery, manager: CurrentUser, user_service: UserServiceDep
+    params: EmployeeListQuery, manager: CurrentUser, user_service: UserServiceDep
 ) -> Page[EmployeeOut]:
     users, total = await user_service.list_employees(manager.id, params)
     return Page.build([EmployeeOut.model_validate(u) for u in users], total=total, params=params)
