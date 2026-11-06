@@ -152,7 +152,7 @@ Báo cáo hằng ngày (U3):
 | POST | `/manager/departments/{department_id}/members` | M2 | Body `user_ids[]`. Trả 204 |
 | DELETE | `/manager/departments/{department_id}/members/{user_id}` | M2 | Chỉ gỡ liên kết. Trả 204 |
 | GET | `/manager/employees` | M4 | `keyword`, `department_id`, phân trang |
-| GET | `/manager/employees/{id}` | M4 | |
+| GET | `/manager/employees/{user_id}` | M4 | |
 | GET | `/manager/reports` | M3 | `keyword`, `date_from`, `date_to`, `department_id`, `sort`, phân trang |
 | GET | `/manager/reports/{id}` | M3 | |
 | GET | `/manager/reports/export` | M5 | `date`, `department_id`, trả file .xlsx |
@@ -170,6 +170,13 @@ Thêm, gỡ nhân viên trong bộ phận (M2):
 - `POST .../members` nhận `user_ids` từ 1 đến 100 id (một trang ứng viên), id trùng được gộp, mỗi id từ 1 đến 2^63 − 1; field lạ trả 422. Mỗi id phải là ứng viên hoặc đã là thành viên bộ phận này: gửi lại người đã thêm không lỗi (trả 204), nên client timeout rồi gửi lại cũng an toàn. Còn id khác (không tồn tại, đã xóa, bị khóa, role khác USER, thuộc bộ phận khác) thì không thêm ai, trả 422 `INVALID_MEMBER_CANDIDATE`, `details` là `{"field": "user_ids", "invalid_ids": [...]}` theo thứ tự gửi.
 - `DELETE .../members/{user_id}` chỉ gỡ khỏi bộ phận (`department_id` về `null`), tài khoản giữ nguyên và quay lại danh sách ứng viên. User không thuộc bộ phận này (chưa có bộ phận, đã được chuyển đi) thì không có gì để gỡ, vẫn trả 204. User không tồn tại hoặc đã xóa mềm trả 404, `details.field` là `user_id`. Thành viên role khác USER (manager, admin do admin xếp vào) trả 422 `EMPLOYEE_ROLE_REQUIRED`: manager chỉ quản lý nhân viên.
 - Hai endpoint ghi khóa bộ phận `FOR SHARE` đến khi lưu xong, như gán manager (A3): admin xóa bộ phận đúng lúc đó thì chờ, rồi thấy thành viên vừa thêm và trả `DEPARTMENT_NOT_EMPTY`. User được khóa dòng theo thứ tự id: hai manager hai bộ phận cùng thêm một người thì người gửi sau nhận `INVALID_MEMBER_CANDIDATE`, không ghi đè; admin đổi bộ phận của user trong lúc manager gỡ thì user giữ bộ phận admin vừa đổi.
+
+Nhân viên của tôi (M4):
+
+- Nhân viên là user role USER chưa bị xóa thuộc một bộ phận manager được gán quản lý (Q7), kể cả tài khoản bị khóa (`is_active: false`). Cùng nghĩa "nhân viên" với M2: manager, admin được admin xếp vào bộ phận không phải nhân viên (xem ở `GET /manager/departments/{department_id}/members`). Bộ phận manager chỉ là thành viên mà chưa được gán thì ngoài phạm vi.
+- Mỗi người gồm `id`, `email`, `full_name`, `phone`, `date_of_birth`, `role`, `is_active`, `last_login_at`, `created_at`, `department_id`; không có mật khẩu, `token_version`.
+- `GET /manager/employees`: nhân viên mọi bộ phận mình quản lý, sắp theo họ tên như danh sách thành viên. `keyword` tìm một phần họ tên không dấu hoặc email như `GET /admin/users`, chỉ trong phạm vi. `department_id` lọc một bộ phận: bộ phận không tồn tại, đã xóa hoặc không do mình quản lý trả 404 `NOT_FOUND`, `details.field = "department_id"`, như các endpoint `/manager/departments/{department_id}`. Tham số query sai (`page`, `keyword`, `department_id` ngoài 1 đến 2^63 − 1) trả 422 trước khi xét phạm vi.
+- `GET /manager/employees/{user_id}`: người không tồn tại, đã bị xóa, không phải role USER, chưa thuộc bộ phận nào hoặc thuộc bộ phận ngoài phạm vi cùng trả 404, `details.field = "user_id"`, để không dò được id nào là tài khoản có thật.
 
 ### /admin: role ADMIN (15)
 
