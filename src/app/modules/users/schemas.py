@@ -82,6 +82,12 @@ class AdminUserOut(UserOut):
     department_id: int | None
 
 
+class EmployeeOut(UserOut):
+    # Nhân viên luôn thuộc một bộ phận manager quản lý; manager quản lý nhiều bộ phận thì cần
+    # biết người này ở bộ phận nào.
+    department_id: int
+
+
 class UserCreate(BaseModel):
     email: Email
     full_name: FullName
@@ -159,3 +165,15 @@ class UserListParams(PageParams):
 
 
 UserListQuery = Annotated[UserListParams, Query()]
+
+
+class EmployeeListParams(PageParams):
+    keyword: Annotated[
+        Keyword | None, Field(description="Tìm theo họ tên (không dấu) hoặc email")
+    ] = None
+    department_id: Annotated[
+        Id | None, Field(description="Chỉ bộ phận này; phải là bộ phận mình quản lý")
+    ] = None
+
+
+EmployeeListQuery = Annotated[EmployeeListParams, Query()]
