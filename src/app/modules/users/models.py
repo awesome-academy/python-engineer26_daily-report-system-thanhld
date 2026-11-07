@@ -157,14 +157,22 @@ def order_by_full_name() -> tuple[ColumnElement[Any] | InstrumentedAttribute[Any
     return (func.immutable_unaccent(func.lower(User.full_name)), User.full_name, User.id)
 
 
-def full_name_or_email_matches(keyword: str) -> ColumnElement[bool]:
-    """Điều kiện tìm user theo một phần họ tên (không dấu) hoặc email, không phân biệt hoa thường.
+def full_name_matches(keyword: str) -> ColumnElement[bool]:
+    """Điều kiện tìm user theo một phần họ tên, không dấu, không phân biệt hoa thường.
 
-    Cùng biểu thức với GIN index `ix_users_full_name_search`, `ix_users_email_search`: "nguyen"
-    khớp "Nguyễn". Thiếu một trong hai index thì cả điều kiện OR thành Seq Scan.
+    Cùng biểu thức với GIN index `ix_users_full_name_search`: "nguyen" khớp "Nguyễn".
     """
-    pattern = contains_pattern(keyword)
+    return func.immutable_unaccent(func.lower(User.full_name)).like(
+        contains_pattern(keyword), escape=LIKE_ESCAPE_CHAR
+    )
+
+
+def full_name_or_email_matches(keyword: str) -> ColumnElement[bool]:
+    """Như `full_name_matches`, thêm một phần email (index `ix_users_email_search`).
+
+    Thiếu một trong hai index thì cả điều kiện OR thành Seq Scan.
+    """
     return or_(
-        func.immutable_unaccent(func.lower(User.full_name)).like(pattern, escape=LIKE_ESCAPE_CHAR),
-        func.lower(User.email).like(pattern, escape=LIKE_ESCAPE_CHAR),
+        full_name_matches(keyword),
+        func.lower(User.email).like(contains_pattern(keyword), escape=LIKE_ESCAPE_CHAR),
     )
