@@ -48,11 +48,12 @@ Phụ thuộc một chiều: router → service → repository → model. Module
 ├── scripts/                   # seed dữ liệu, tạo admin
 ├── src/app/
 │   ├── main.py                # create_app(): middleware, exception handler, router
+│   ├── worker.py              # Celery app: celery -A app.worker worker
 │   ├── cli.py                 # Typer: create-admin, seed
 │   ├── models.py              # import model của mọi module cho Alembic
 │   ├── core/                  # dùng chung, không chứa nghiệp vụ
 │   │   ├── config.py          # Settings từ biến môi trường
-│   │   ├── database.py        # engine, session, Base, mixin
+│   │   ├── database.py        # engine, session (async cho API, đồng bộ cho worker), Base, mixin
 │   │   ├── exceptions.py      # AppError, ErrorCode, exception handler
 │   │   ├── logging.py         # structlog, middleware request-id
 │   │   ├── pagination.py      # PageParams, Page, paginate()
