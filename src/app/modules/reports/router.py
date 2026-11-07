@@ -4,8 +4,10 @@ from app.api.deps import CurrentUser, IdPath, Today
 from app.core.constants import REPORT_BACKDATE_DAYS
 from app.core.exceptions import error_responses
 from app.core.pagination import Page
-from app.modules.reports.dependencies import ReportServiceDep
+from app.modules.reports.dependencies import ManagerReportListQuery, ReportServiceDep
 from app.modules.reports.schemas import (
+    ManagerReportDetailOut,
+    ManagerReportSummaryOut,
     RecipientOut,
     ReportCreate,
     ReportDetailOut,
@@ -77,3 +79,44 @@ async def get_my_report(
     report_id: IdPath, user: CurrentUser, service: ReportServiceDep
 ) -> ReportDetailOut:
     return await service.get_my_report(user, report_id)
+
+
+# Include vào nhóm /manager (api/v1.py): role MANAGER kiểm tra ở nhóm, 401, 403 khai ở nhóm.
+# Route tĩnh (M5 /export) phải khai trước /{report_id}.
+manager_report_router = APIRouter(prefix="/reports", tags=["Manager: báo cáo"])
+
+
+@manager_report_router.get(
+    "",
+    summary="Báo cáo của nhân viên bộ phận tôi quản lý",
+    description=(
+        "Báo cáo viết cho các bộ phận tôi quản lý (theo bộ phận lúc viết). Tìm theo họ tên người "
+        "viết (không dấu), lọc theo khoảng ngày, bộ phận; mặc định sắp ngày mới nhất trước. "
+        "`department_id` ngoài phạm vi trả 404."
+    ),
+    responses=error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
+)
+async def list_department_reports(
+    params: ManagerReportListQuery, manager: CurrentUser, service: ReportServiceDep
+) -> Page[ManagerReportSummaryOut]:
+    reports, total = await service.list_department_reports(manager.id, params)
+    return Page[ManagerReportSummaryOut].build(
+        [ManagerReportSummaryOut.from_report(report) for report in reports],
+        total=total,
+        params=params,
+    )
+
+
+@manager_report_router.get(
+    "/{report_id}",
+    summary="Xem báo cáo của nhân viên",
+    description=(
+        "Gồm người viết, bộ phận lúc viết và người nhận (sắp theo tên). Người đã bị xóa có "
+        "`is_deleted` là `true`, không trả email. Báo cáo ngoài phạm vi trả 404."
+    ),
+    responses=error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
+)
+async def get_department_report(
+    report_id: IdPath, manager: CurrentUser, service: ReportServiceDep
+) -> ManagerReportDetailOut:
+    return await service.get_department_report(manager.id, report_id)

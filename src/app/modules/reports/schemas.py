@@ -1,5 +1,6 @@
 from collections.abc import Sequence
 from datetime import date, datetime
+from enum import StrEnum
 from typing import Annotated, Any, Self
 
 from fastapi import Query
@@ -19,7 +20,7 @@ from app.core.constants import (
     REPORT_RECIPIENTS_MIN,
 )
 from app.core.pagination import DateRangePageParams
-from app.core.validators import Id, NoNul, blank_to_none, drop_duplicates
+from app.core.validators import Id, Keyword, NoNul, blank_to_none, drop_duplicates
 from app.modules.reports.models import DailyReport, ReportRecipient
 from app.modules.users.models import User
 
@@ -109,11 +110,13 @@ class ReportDepartmentOut(BaseModel):
     name: str
 
 
-class ReportRecipientOut(BaseModel):
+class ReportUserOut(BaseModel):
+    """Người viết hoặc người nhận của một báo cáo."""
+
     id: int
     full_name: str
-    # Người nhận đã bị xóa vẫn hiện để giữ đúng lịch sử, nhưng ẩn email: email chỉ unique trên
-    # user chưa xóa nên có thể đã thuộc về một tài khoản mới.
+    # Người đã bị xóa vẫn hiện để giữ đúng lịch sử, nhưng ẩn email: email chỉ unique trên user
+    # chưa xóa nên có thể đã thuộc về một tài khoản mới.
     email: str | None
     is_deleted: bool
 
@@ -131,7 +134,7 @@ class ReportRecipientOut(BaseModel):
 class ReportDetailOut(ReportSummaryOut):
     # Bộ phận lúc viết báo cáo, có thể khác bộ phận hiện tại của người viết.
     department: ReportDepartmentOut
-    recipients: list[ReportRecipientOut]
+    recipients: list[ReportUserOut]
 
     @classmethod
     def from_report(cls, report: DailyReport, recipients: Sequence[User]) -> Self:
@@ -139,8 +142,54 @@ class ReportDetailOut(ReportSummaryOut):
         return cls(
             **ReportSummaryOut.model_validate(report).model_dump(),
             department=ReportDepartmentOut.model_validate(report.department),
-            recipients=[ReportRecipientOut.from_user(user) for user in recipients],
+            recipients=[ReportUserOut.from_user(user) for user in recipients],
         )
 
 
 ReportListQuery = Annotated[DateRangePageParams, Query()]
+
+
+class ReportSort(StrEnum):
+    """Thứ tự danh sách báo cáo của manager; dấu `-` là giảm dần."""
+
+    REPORT_DATE_DESC = "-report_date"
+    REPORT_DATE = "report_date"
+    AUTHOR_NAME = "author_name"
+    AUTHOR_NAME_DESC = "-author_name"
+
+
+class ManagerReportListParams(DateRangePageParams):
+    keyword: Annotated[
+        Keyword | None, Field(description="Tìm theo họ tên người viết (không dấu)")
+    ] = None
+    department_id: Annotated[
+        Id | None, Field(description="Chỉ lấy báo cáo của bộ phận này (bộ phận tôi quản lý)")
+    ] = None
+    sort: ReportSort = Field(
+        default=ReportSort.REPORT_DATE_DESC,
+        description="Ngày báo cáo hoặc họ tên người viết, dấu `-` là giảm dần",
+    )
+
+
+class ManagerReportSummaryOut(ReportSummaryOut):
+    author: ReportUserOut
+
+    @classmethod
+    def from_report(cls, report: DailyReport) -> Self:
+        """`report` phải đã load sẵn `author`."""
+        return cls(
+            **ReportSummaryOut.model_validate(report).model_dump(),
+            author=ReportUserOut.from_user(report.author),
+        )
+
+
+class ManagerReportDetailOut(ReportDetailOut):
+    author: ReportUserOut
+
+    @classmethod
+    def from_report(cls, report: DailyReport, recipients: Sequence[User]) -> Self:
+        """Như `ReportDetailOut.from_report`, `report` load sẵn cả `author`."""
+        return cls(
+            **ReportDetailOut.from_report(report, recipients).model_dump(),
+            author=ReportUserOut.from_user(report.author),
+        )

@@ -7,6 +7,7 @@ from app.core.clock import local_date
 from app.core.constants import REPORT_BACKDATE_DAYS
 from app.core.database import commit_unique
 from app.core.pagination import DateRangePageParams
+from app.modules.departments.repository import DepartmentRepository
 from app.modules.reports.exceptions import (
     InvalidRecipientError,
     NoRecipientError,
@@ -16,7 +17,12 @@ from app.modules.reports.exceptions import (
 )
 from app.modules.reports.models import REPORT_AUTHOR_DATE_UNIQUE, DailyReport, ReportRecipient
 from app.modules.reports.repository import ReportRepository
-from app.modules.reports.schemas import ReportCreate, ReportDetailOut
+from app.modules.reports.schemas import (
+    ManagerReportDetailOut,
+    ManagerReportListParams,
+    ReportCreate,
+    ReportDetailOut,
+)
 from app.modules.users.models import User
 
 
@@ -24,6 +30,7 @@ class ReportService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.reports = ReportRepository(session)
+        self.departments = DepartmentRepository(session)
 
     async def list_recipients(self, author: User) -> Sequence[User]:
         if author.department_id is None:
@@ -42,6 +49,28 @@ class ReportService:
             raise ReportNotFoundError
         recipients = await self.reports.get_report_recipients(report.id)
         return ReportDetailOut.from_report(report, recipients)
+
+    async def list_department_reports(
+        self, manager_id: int, params: ManagerReportListParams
+    ) -> tuple[Sequence[DailyReport], int]:
+        """Báo cáo của các bộ phận manager quản lý, theo bộ phận lúc viết.
+
+        Luôn lọc theo phạm vi, kể cả khi có `department_id`: bộ lọc này đã được kiểm tra ở
+        dependency, nhưng câu truy vấn không trông vào bước đó.
+        """
+        scope = self.departments.managed_department_ids(manager_id)
+        return await self.reports.search_in_departments(scope, params)
+
+    async def get_department_report(
+        self, manager_id: int, report_id: int
+    ) -> ManagerReportDetailOut:
+        # Ngoài phạm vi trả 404 như báo cáo không tồn tại, không lộ id nào là báo cáo có thật.
+        scope = self.departments.managed_department_ids(manager_id)
+        report = await self.reports.get_in_departments(report_id, scope)
+        if report is None:
+            raise ReportNotFoundError
+        recipients = await self.reports.get_report_recipients(report.id)
+        return ManagerReportDetailOut.from_report(report, recipients)
 
     async def create_report(self, author: User, data: ReportCreate, *, today: date) -> DailyReport:
         """Lưu báo cáo cùng người nhận trong một lần commit: lỗi ở bước nào thì không lưu gì.

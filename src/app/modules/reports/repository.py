@@ -1,14 +1,36 @@
 from collections.abc import Sequence
 from datetime import date
+from typing import Any
 
-from sqlalchemy import exists, select
+from sqlalchemy import ColumnElement, Select, exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import InstrumentedAttribute, contains_eager, joinedload
 
-from app.core.pagination import DateRangePageParams, paginate
+from app.core.pagination import DateRange, DateRangePageParams, paginate
 from app.modules.departments.models import DepartmentManager
 from app.modules.reports.models import DailyReport, ReportRecipient
-from app.modules.users.models import User, UserRole, order_by_full_name
+from app.modules.reports.schemas import ManagerReportListParams, ReportSort
+from app.modules.users.models import User, UserRole, full_name_matches, order_by_full_name
+
+# Mỗi thứ tự sắp đều xét cả ngày và người viết (order_by_full_name có id): một người một báo cáo
+# mỗi ngày, nên không có hai báo cáo cùng vị trí, thứ tự cố định giữa các trang.
+_SORTS: dict[ReportSort, tuple[ColumnElement[Any] | InstrumentedAttribute[Any], ...]] = {
+    ReportSort.REPORT_DATE_DESC: (DailyReport.report_date.desc(), *order_by_full_name()),
+    ReportSort.REPORT_DATE: (DailyReport.report_date, *order_by_full_name()),
+    ReportSort.AUTHOR_NAME: (*order_by_full_name(), DailyReport.report_date.desc()),
+    ReportSort.AUTHOR_NAME_DESC: (
+        *(column.desc() for column in order_by_full_name()),
+        DailyReport.report_date.desc(),
+    ),
+}
+
+
+def _in_date_range(statement: Select[Any], date_range: DateRange) -> Select[Any]:
+    if date_range.date_from is not None:
+        statement = statement.where(DailyReport.report_date >= date_range.date_from)
+    if date_range.date_to is not None:
+        statement = statement.where(DailyReport.report_date <= date_range.date_to)
+    return statement
 
 
 class ReportRepository:
@@ -55,11 +77,28 @@ class ReportRepository:
             .where(DailyReport.author_id == author_id)
             .order_by(DailyReport.report_date.desc())
         )
-        if params.date_from is not None:
-            statement = statement.where(DailyReport.report_date >= params.date_from)
-        if params.date_to is not None:
-            statement = statement.where(DailyReport.report_date <= params.date_to)
-        return await paginate(self.session, statement, params)
+        return await paginate(self.session, _in_date_range(statement, params), params)
+
+    async def search_in_departments(
+        self, department_ids: Select[int], params: ManagerReportListParams
+    ) -> tuple[Sequence[DailyReport], int]:
+        """Báo cáo viết cho các bộ phận `department_ids` (bộ phận lúc viết), kèm người viết.
+
+        Điều kiện bộ phận và ngày dùng index (department_id, report_date). Người viết lấy cùng câu
+        (JOIN) vì cần để tìm, sắp theo tên.
+        """
+        statement = (
+            select(DailyReport)
+            .join(DailyReport.author)
+            .options(contains_eager(DailyReport.author))
+            .where(DailyReport.department_id.in_(department_ids))
+            .order_by(*_SORTS[params.sort])
+        )
+        if params.department_id is not None:
+            statement = statement.where(DailyReport.department_id == params.department_id)
+        if params.keyword:
+            statement = statement.where(full_name_matches(params.keyword))
+        return await paginate(self.session, _in_date_range(statement, params), params)
 
     async def get_by_author(self, report_id: int, author_id: int) -> DailyReport | None:
         """Báo cáo kèm bộ phận; báo cáo của người khác coi như không tồn tại."""
@@ -67,6 +106,16 @@ class ReportRepository:
             select(DailyReport)
             .where(DailyReport.id == report_id, DailyReport.author_id == author_id)
             .options(joinedload(DailyReport.department))
+        )
+
+    async def get_in_departments(
+        self, report_id: int, department_ids: Select[int]
+    ) -> DailyReport | None:
+        """Báo cáo kèm bộ phận, người viết; ngoài `department_ids` coi như không tồn tại."""
+        return await self.session.scalar(
+            select(DailyReport)
+            .where(DailyReport.id == report_id, DailyReport.department_id.in_(department_ids))
+            .options(joinedload(DailyReport.department), joinedload(DailyReport.author))
         )
 
     async def get_report_recipients(self, report_id: int) -> Sequence[User]:
