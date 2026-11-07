@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block content %}
+<p>Xin chào,</p>
+<p>Đây là email thử từ <strong>{{ app_name }}</strong>, tạo lúc {{ requested_at }}.</p>
+<p>Nhận được email này nghĩa là Celery worker và cấu hình SMTP đang hoạt động.</p>
+{% endblock %}

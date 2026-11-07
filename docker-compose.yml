@@ -35,6 +35,28 @@ services:
       retries: 5
       start_period: 15s
 
+  # Celery worker gửi email. Không tự reload khi sửa code: docker compose restart worker.
+  worker:
+    build: .
+    command: celery -A app.worker worker
+    environment:
+      ENVIRONMENT: local
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-daily_report}:${POSTGRES_PASSWORD:-daily_report}@postgres:5432/${POSTGRES_DB:-daily_report}
+      REDIS_URL: redis://redis:6379/0
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+    volumes:
+      - ./src:/app/src
+    depends_on:
+      # Bảng email_logs do container api tạo khi chạy migration lúc khởi động.
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+
   postgres:
     image: postgres:17-alpine
     environment:

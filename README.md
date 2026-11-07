@@ -2,7 +2,7 @@
 
 Backend REST API cho hệ thống báo cáo công việc hằng ngày: nhân viên gửi báo cáo, manager theo dõi theo bộ phận, admin quản lý user và bộ phận, hệ thống tự gửi email.
 
-Python 3.13 · FastAPI · PostgreSQL 17 · Redis 7 · SQLAlchemy 2 (async) · Alembic · Docker Compose.
+Python 3.13 · FastAPI · PostgreSQL 17 · Redis 7 · SQLAlchemy 2 (async) · Alembic · Celery · Docker Compose.
 
 ## Chạy nhanh
 
@@ -10,7 +10,7 @@ Cần [Docker](https://docs.docker.com/get-docker/) và [uv](https://docs.astral
 
 ```bash
 cp .env.example .env   # tùy chọn, chỉ cần khi muốn đổi cổng
-make dev               # build và chạy api, postgres, redis, mailpit
+make dev               # build và chạy api, worker, postgres, redis, mailpit
 ```
 
 | Địa chỉ | Dùng để |
@@ -50,6 +50,20 @@ Mật khẩu tối thiểu 8 ký tự, có chữ thường, chữ hoa, chữ s�
 
 **Log:** mỗi request có một dòng log kèm `request_id`, và header `X-Request-ID` trên response có cùng giá trị. Dùng giá trị này để tìm log của request đang lỗi: `make logs | grep <request_id>`.
 
+## Email
+
+API không gửi email trực tiếp: đẩy task vào Redis, Celery worker (container `worker`) dựng nội dung từ template Jinja2 (`src/app/modules/notifications/templates/`), gửi qua SMTP, ghi kết quả vào bảng `email_logs`. Lỗi kết nối, lỗi SMTP thì thử lại tối đa 3 lần (chờ 30s, 60s, 120s); vẫn lỗi thì ghi `FAILED` kèm lý do.
+
+Gửi thử một email để kiểm tra worker và SMTP:
+
+```bash
+docker compose exec api daily-report send-test-email ban@example.com   # hoặc: make test-email to=ban@example.com
+```
+
+Khi dev, mọi email đều vào Mailpit (http://localhost:8026), không gửi ra ngoài. Gửi qua SMTP thật thì đặt `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_STARTTLS`, `MAIL_FROM` (xem `.env.example`).
+
+Worker không tự reload khi sửa code: `docker compose restart worker`. Xem log: `make logs`; mức log của worker (cả log của Celery) lấy từ `LOG_LEVEL`.
+
 ## Dữ liệu mẫu
 
 ```bash
@@ -73,7 +87,10 @@ docker compose exec api daily-report seed      # hoặc: make seed (chạy trên
 make install    # cài dependency, git hook pre-commit
 make services   # chỉ chạy postgres, redis, mailpit
 make run        # chạy API trên máy host (dừng container api trước: docker compose stop api)
+make worker     # chạy Celery worker trên máy host (dừng container worker trước: docker compose stop worker)
 ```
+
+Celery không hỗ trợ pool mặc định (prefork) trên Windows: chạy worker trên Windows thì dùng `uv run celery -A app.worker worker --pool=solo`, hoặc dùng container `worker`.
 
 ## Kiểm tra
 
@@ -88,9 +105,10 @@ Test chạy trên PostgreSQL thật, database riêng `daily_report_test` (tự t
 | Lệnh | Việc |
 | --- | --- |
 | `make dev` / `make down` | Chạy / dừng toàn bộ stack |
-| `make logs` | Xem log API |
+| `make logs` | Xem log API và worker |
 | `make admin` | Tạo tài khoản admin (CLI Typer: `uv run daily-report --help`) |
 | `make seed` | Tạo dữ liệu mẫu |
+| `make test-email to=ban@example.com` | Gửi email thử qua worker, xem trên Mailpit |
 | `make migrate` | Chạy migration tới bản mới nhất |
 | `make migration m="add users table"` | Tạo migration từ model |
 | `make format` | Tự sửa lint, format |

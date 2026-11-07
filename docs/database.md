@@ -126,9 +126,9 @@ Mỗi lần refresh tạo một dòng mới cùng `session_id`, dòng cũ đư�
 | --- | --- | --- | --- |
 | id | bigint | PK, identity | |
 | to_email | varchar(255) | not null | không FK, ghi được cả địa chỉ chưa có tài khoản |
-| template | varchar(64) | not null | `report_created`, `account_setup`, `monthly_summary` |
+| template | varchar(64) | not null | tên mẫu email (`EmailTemplate`): `test` (lệnh `send-test-email`), `report_created`, `account_setup`, `monthly_summary` |
 | dedup_key | varchar(128) | null, unique | chống gửi trùng cho S3 (ví dụ `monthly:2026-10:dept:3:user:7`) |
-| status | varchar(16) | not null, `CHECK (status IN ('SENT', 'FAILED'))` | |
+| status | varchar(16) | not null, `CHECK (status IN ('SENT', 'FAILED'))` | worker ghi một dòng cho mỗi email: `SENT` khi gửi được, `FAILED` khi hết 3 lần thử lại |
 | error | text | null | lý do gửi lỗi |
 | created_at | timestamptz | not null, default now() | |
 

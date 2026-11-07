@@ -22,9 +22,10 @@ from alembic.config import Config
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from redis.asyncio import Redis
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
+from sqlalchemy.orm import Session
 from sqlalchemy.pool import NullPool
 
 from app.core.config import Settings
@@ -55,7 +56,7 @@ if _redis_target(TEST_REDIS_URL) == _redis_target(_settings.redis_url):
 # Chỉ import sau khi đặt biến môi trường: app.models kéo theo app.core.database, nơi engine được
 # tạo từ DATABASE_URL. Import sớm hơn thì engine trỏ vào database dev.
 from app import models as _models  # noqa: E402, F401
-from app.core.database import Base  # noqa: E402
+from app.core.database import Base, sync_database_url  # noqa: E402
 from app.core.database import engine as app_engine  # noqa: E402
 from app.core.redis import redis_client  # noqa: E402
 
@@ -122,6 +123,30 @@ async def db_session(engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
         finally:
             await session.close()
             await transaction.rollback()
+
+
+@pytest.fixture
+def sync_db_session(engine: AsyncEngine) -> Iterator[Session]:
+    """Session đồng bộ như của Celery worker, rollback sau test như `db_session`.
+
+    Phụ thuộc `engine` để database test đã được tạo và chạy migration.
+    """
+    sync_engine = create_engine(sync_database_url(TEST_DATABASE_URL), poolclass=NullPool)
+    try:
+        with sync_engine.connect() as connection:
+            transaction = connection.begin()
+            session = Session(
+                bind=connection,
+                expire_on_commit=False,
+                join_transaction_mode="create_savepoint",
+            )
+            try:
+                yield session
+            finally:
+                session.close()
+                transaction.rollback()
+    finally:
+        sync_engine.dispose()
 
 
 @pytest.fixture

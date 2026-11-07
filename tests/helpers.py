@@ -3,7 +3,7 @@
 import asyncio
 from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -20,6 +20,7 @@ from app.core.constants import BIGINT_MAX
 from app.core.exceptions import AppError, ForbiddenError, UnauthorizedError
 from app.modules.departments.exceptions import DepartmentNotFoundError
 from app.modules.departments.models import Department
+from app.modules.notifications.rendering import RenderedEmail
 from app.modules.users.models import UserRole
 from tests.factories import DEFAULT_PASSWORD, auth_headers, create_department, create_user
 
@@ -30,6 +31,19 @@ REFRESH_URL = "/api/v1/auth/refresh"
 LOCK_WAIT_SECONDS = 0.3
 
 runner = CliRunner()
+
+
+@dataclass
+class FakeMailer:
+    """Thay SmtpMailer trong test: ghi lại email đã gửi, ném lần lượt các lỗi trong `errors`."""
+
+    errors: list[Exception] = field(default_factory=list)
+    sent: list[tuple[str, RenderedEmail]] = field(default_factory=list)
+
+    def send(self, to_email: str, email: RenderedEmail) -> None:
+        if self.errors:
+            raise self.errors.pop(0)
+        self.sent.append((to_email, email))
 
 
 async def invoke(*args: str) -> Result:

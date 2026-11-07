@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 COMPOSE := docker compose
 
-.PHONY: help install dev debug down logs services run admin seed migrate migration lint format typecheck test check
+.PHONY: help install dev debug down logs services run worker admin seed test-email migrate migration lint format typecheck test check
 
 help: ## Liệt kê các lệnh
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-11s %s\n", $$1, $$2}'
@@ -19,8 +19,8 @@ debug: ## Chạy stack với API dưới debugpy (cổng 5678), rồi attach b�
 down: ## Dừng stack
 	$(COMPOSE) down
 
-logs: ## Xem log API
-	$(COMPOSE) logs -f api
+logs: ## Xem log API và Celery worker
+	$(COMPOSE) logs -f api worker
 
 services: ## Chỉ chạy PostgreSQL, Redis, Mailpit (để chạy API hoặc test trên máy host)
 	$(COMPOSE) up -d --wait postgres redis mailpit
@@ -29,11 +29,17 @@ run: ## Chạy API trên máy host, tự reload khi sửa code (cần make servi
 	uv run alembic upgrade head
 	uv run uvicorn app.main:app --reload --port 8001 --no-access-log
 
+worker: ## Chạy Celery worker trên máy host (cần make services, dừng container worker trước)
+	uv run celery -A app.worker worker
+
 admin: ## Tạo tài khoản admin (hỏi email, họ tên, mật khẩu)
 	uv run daily-report create-admin
 
 seed: ## Tạo dữ liệu mẫu (bộ phận, user, báo cáo). Chạy lại không tạo trùng
 	uv run daily-report seed
+
+test-email: ## Gửi email thử qua worker: make test-email to=ban@example.com, xem trên Mailpit
+	uv run daily-report send-test-email $(to)
 
 migrate: ## Chạy migration tới bản mới nhất
 	uv run alembic upgrade head
