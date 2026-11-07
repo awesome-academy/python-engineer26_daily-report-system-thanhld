@@ -23,6 +23,10 @@ LIKE_ESCAPE_CHAR = "\\"
 # Health check
 HEALTH_CHECK_TIMEOUT_SECONDS = 3
 
+# Kết nối PostgreSQL, Redis: service treo thì báo lỗi sau chừng này giây, không chờ vô hạn.
+DB_CONNECT_TIMEOUT_SECONDS = 5
+REDIS_TIMEOUT_SECONDS = 2
+
 # Khóa chính bigint identity: id client gửi lên (path, query, body) ngoài khoảng này thì trả 422,
 # không gửi xuống DB (xem Id ở core/validators.py).
 ID_MIN = 1
@@ -91,3 +95,11 @@ REDIS_LOGIN_ATTEMPTS_PREFIX = "auth:login-attempts:"
 # Mật khẩu người dùng nhập
 PASSWORD_MIN_LENGTH = 8
 PASSWORD_MAX_LENGTH = 128
+
+# Gửi email qua Celery worker. Lỗi SMTP, mất kết nối thì thử lại tối đa EMAIL_MAX_RETRIES lần,
+# lần thứ n chờ EMAIL_RETRY_BACKOFF_SECONDS * 2**n giây (30s, 60s, 120s).
+EMAIL_MAX_RETRIES = 3
+EMAIL_RETRY_BACKOFF_SECONDS = 30
+SMTP_TIMEOUT_SECONDS = 10
+# Cột email_logs.error là text: chỉ giữ đoạn đầu của thông báo lỗi.
+EMAIL_ERROR_MAX_LENGTH = 1000

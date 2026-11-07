@@ -1,0 +1,7 @@
+Xin chào,
+
+Đây là email thử từ {{ app_name }}, tạo lúc {{ requested_at }}.
+Nhận được email này nghĩa là Celery worker và cấu hình SMTP đang hoạt động.
+
+--
+Email tự động từ {{ app_name }}, vui lòng không trả lời.

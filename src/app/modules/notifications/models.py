@@ -17,6 +17,15 @@ class EmailStatus(StrEnum):
     FAILED = "FAILED"
 
 
+class EmailTemplate(StrEnum):
+    """Mẫu email, cũng là giá trị cột `email_logs.template`.
+
+    Mỗi mẫu là một thư mục trong `templates/`: `subject.txt`, `body.txt`, `body.html`.
+    """
+
+    TEST = "test"
+
+
 class EmailLog(CreatedAtMixin, Base):
     """Nhật ký email đã gửi. Không có khóa ngoại để ghi được cả địa chỉ chưa có tài khoản."""
 
