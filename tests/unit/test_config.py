@@ -37,3 +37,23 @@ def test_rejects_unknown_timezone(timezone: str) -> None:
     # Sai múi giờ phải báo ngay khi khởi động, không để mỗi request tạo báo cáo trả 500.
     with pytest.raises(ValidationError, match="timezone"):
         Settings(timezone=timezone)
+
+
+@pytest.mark.parametrize(
+    "credentials",
+    [{"smtp_username": "mailer"}, {"smtp_password": "bi-mat"}],
+    ids=["username-only", "password-only"],
+)
+def test_rejects_smtp_username_without_password(credentials: dict[str, str]) -> None:
+    with pytest.raises(ValidationError, match="SMTP_USERNAME"):
+        Settings(**credentials)  # type: ignore[arg-type]
+
+
+def test_blank_smtp_credentials_mean_no_login(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SMTP_USERNAME", "")
+    monkeypatch.setenv("SMTP_PASSWORD", "")
+
+    settings = Settings()
+
+    assert settings.smtp_username is None
+    assert settings.smtp_password is None
