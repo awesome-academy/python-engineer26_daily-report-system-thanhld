@@ -12,12 +12,7 @@ from app.modules.departments.models import Department
 from app.modules.users.exceptions import UserNotFoundError
 from app.modules.users.models import User, UserRole
 from tests.factories import auth_headers, create_department, create_user
-from tests.helpers import (
-    DEPARTMENT_SCOPE_ALLOWED,
-    DEPARTMENT_SCOPE_DENIED,
-    ArrangeScope,
-    error_json,
-)
+from tests.helpers import error_json
 
 API = get_settings().api_v1_prefix
 EMPLOYEES_URL = f"{API}/manager/employees"
@@ -221,33 +216,6 @@ async def test_manager_filters_employees_by_managed_department(
 
     assert response.status_code == 200
     assert listed_ids(response.json()) == [target.id]
-
-
-@pytest.mark.parametrize(("arrange", "error"), DEPARTMENT_SCOPE_DENIED)
-async def test_department_filter_outside_scope_is_rejected(
-    client: AsyncClient, db_session: AsyncSession, arrange: ArrangeScope, error: AppError
-) -> None:
-    target = await arrange(db_session)
-
-    response = await client.get(
-        EMPLOYEES_URL, params={"department_id": target.department_id}, headers=target.headers
-    )
-
-    assert response.status_code == error.status_code
-    assert response.json() == error_json(error)
-
-
-@pytest.mark.parametrize("arrange", DEPARTMENT_SCOPE_ALLOWED)
-async def test_department_filter_within_scope_is_allowed(
-    client: AsyncClient, db_session: AsyncSession, arrange: ArrangeScope
-) -> None:
-    target = await arrange(db_session)
-
-    response = await client.get(
-        EMPLOYEES_URL, params={"department_id": target.department_id}, headers=target.headers
-    )
-
-    assert response.status_code == 200
 
 
 @pytest.mark.parametrize(

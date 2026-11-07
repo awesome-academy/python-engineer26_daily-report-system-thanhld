@@ -8,6 +8,9 @@ test đỏ nếu endpoint không dùng dependency.
 Ngoài endpoint thật, route thăm dò gắn vào app riêng với đúng dependency và response lỗi của nhóm
 /manager, giống test_rbac.py, để thử policy (handler nhận đúng bộ phận, body xét sau phạm vi) độc
 lập với nghiệp vụ của endpoint thật.
+
+Danh sách /manager lọc theo `department_id` trên query (nhân viên M4, báo cáo M3, sau này export M5)
+cũng chạy cùng ma trận: bộ phận lọc ngoài phạm vi trả đúng lỗi như trên URL.
 """
 
 import re
@@ -20,6 +23,7 @@ from fastapi.dependencies.models import Dependant
 from fastapi.routing import APIRoute, RouteContext, iter_route_contexts
 from httpx import AsyncClient
 from pydantic import BaseModel
+from pydantic.fields import FieldInfo
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1 import api_router, manager_router
@@ -229,7 +233,132 @@ async def test_token_and_role_are_checked_before_department_id(
     assert response.json() == error_json(error)
 
 
-@pytest.mark.parametrize("endpoint", SCOPED_ENDPOINTS)
+# Lọc theo department_id trên query
+
+
+def query_names(field_info: FieldInfo, name: str) -> set[str]:
+    # Query khai bằng model (`Annotated[Params, Query()]`) là một param chứa nhiều field.
+    annotation = field_info.annotation
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        return set(annotation.model_fields)
+    return {name}
+
+
+def own_query_names(dependant: Dependant) -> set[str]:
+    names: set[str] = set()
+    for param in dependant.query_params:
+        names |= query_names(param.field_info, param.name)
+    return names
+
+
+def all_query_names(dependant: Dependant) -> set[str]:
+    names = own_query_names(dependant)
+    for sub in dependant.dependencies:
+        names |= all_query_names(sub)
+    return names
+
+
+def filtered_routes() -> list[RouteContext]:
+    return [
+        route
+        for route in iter_route_contexts(api_router.routes)
+        if isinstance(route.original_route, APIRoute)
+        and route.path is not None
+        and route.path.startswith(f"{API}{manager_router.prefix}")
+        and "department_id" in all_query_names(route.dependant)
+    ]
+
+
+FILTERED_ENDPOINTS = [
+    pytest.param((method, path), id=f"{method} {path.removeprefix(API)}")
+    for route in filtered_routes()
+    if (path := route.path) is not None
+    for method in sorted(route.methods or ())
+]
+
+
+def test_filtered_routes_are_found() -> None:
+    # Cách tìm route sai thì các test dưới không chạy trường hợp nào mà vẫn xanh.
+    prefix = f"{API}{manager_router.prefix}"
+    assert {("GET", f"{prefix}/employees"), ("GET", f"{prefix}/reports")} <= {
+        param.values[0] for param in FILTERED_ENDPOINTS
+    }
+
+
+@pytest.mark.parametrize("route", filtered_routes(), ids=lambda route: route.path)
+def test_department_filter_is_checked_in_dependency(route: RouteContext) -> None:
+    # department_id khai thẳng ở handler thì phải tự gọi policy trong handler (mentor không nhận),
+    # hoặc quên gọi là lọt dữ liệu: buộc đi qua dependency.
+    assert "department_id" not in own_query_names(route.dependant)
+
+
+@pytest.mark.parametrize("endpoint", FILTERED_ENDPOINTS)
+@pytest.mark.parametrize(("arrange", "error"), DEPARTMENT_SCOPE_DENIED)
+async def test_filtered_endpoint_denies_department_outside_scope(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    endpoint: tuple[str, str],
+    arrange: ArrangeScope,
+    error: AppError,
+) -> None:
+    method, path = endpoint
+    target = await arrange(db_session)
+
+    response = await client.request(
+        method,
+        fill_path(path, ID_MIN),
+        params={"department_id": target.department_id},
+        headers=target.headers,
+    )
+
+    assert response.status_code == error.status_code
+    assert response.json() == error_json(error)
+
+
+@pytest.mark.parametrize("endpoint", FILTERED_ENDPOINTS)
+@pytest.mark.parametrize("arrange", DEPARTMENT_SCOPE_ALLOWED)
+async def test_filtered_endpoint_accepts_managed_department(
+    client: AsyncClient, db_session: AsyncSession, endpoint: tuple[str, str], arrange: ArrangeScope
+) -> None:
+    method, path = endpoint
+    target = await arrange(db_session)
+
+    response = await client.request(
+        method,
+        fill_path(path, ID_MIN),
+        params={"department_id": target.department_id},
+        headers=target.headers,
+    )
+
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize("endpoint", FILTERED_ENDPOINTS)
+@pytest.mark.parametrize("department_id", [ID_MIN - 1, BIGINT_MAX + 1, "abc"])
+async def test_filtered_endpoint_rejects_invalid_department_id(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    endpoint: tuple[str, str],
+    department_id: int | str,
+) -> None:
+    method, path = endpoint
+    manager = await create_user(db_session, role=UserRole.MANAGER)
+
+    response = await client.request(
+        method,
+        fill_path(path, ID_MIN),
+        params={"department_id": department_id},
+        headers=auth_headers(manager),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["details"][0]["field"] == "query.department_id"
+
+
+# Swagger
+
+
+@pytest.mark.parametrize("endpoint", [*SCOPED_ENDPOINTS, *FILTERED_ENDPOINTS])
 async def test_scoped_endpoint_documents_scope_errors_in_swagger(
     probe_client: AsyncClient, endpoint: tuple[str, str]
 ) -> None:

@@ -84,17 +84,18 @@ def error_json(error: AppError) -> dict[str, Any]:
 
 
 @contextmanager
-def recorded_queries(session: AsyncSession) -> Iterator[list[str]]:
-    """Ghi lại câu SQL chạy trên kết nối của `session` trong khối `with`.
+def recorded_queries(session: AsyncSession) -> Iterator[list[tuple[str, Any]]]:
+    """Ghi lại câu SQL (kèm tham số) chạy trên kết nối của `session` trong khối `with`.
 
-    Dùng để kiểm tra không có N+1: số câu không đổi khi số bản ghi tăng.
+    Dùng để kiểm tra không có N+1 (số câu không đổi khi số bản ghi tăng), hoặc chạy lại đúng câu
+    đó với EXPLAIN.
     """
-    statements: list[str] = []
+    statements: list[tuple[str, Any]] = []
     connection = session.sync_session.get_bind()
 
     def record(*args: Any) -> None:
         # before_cursor_execute(conn, cursor, statement, parameters, context, executemany).
-        statements.append(args[2])
+        statements.append((args[2], args[3]))
 
     event.listen(connection, "before_cursor_execute", record)
     try:
