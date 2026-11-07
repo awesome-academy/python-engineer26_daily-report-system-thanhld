@@ -62,7 +62,7 @@ docker compose exec api daily-report send-test-email ban@example.com   # hoặc:
 
 Khi dev, mọi email đều vào Mailpit (http://localhost:8026), không gửi ra ngoài. Gửi qua SMTP thật thì đặt `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_STARTTLS`, `MAIL_FROM` (xem `.env.example`).
 
-Worker không tự reload khi sửa code: `docker compose restart worker`. Xem log: `make logs`.
+Worker không tự reload khi sửa code: `docker compose restart worker`. Xem log: `make logs`; mức log của worker (cả log của Celery) lấy từ `LOG_LEVEL`.
 
 ## Dữ liệu mẫu
 
@@ -89,6 +89,8 @@ make services   # chỉ chạy postgres, redis, mailpit
 make run        # chạy API trên máy host (dừng container api trước: docker compose stop api)
 make worker     # chạy Celery worker trên máy host (dừng container worker trước: docker compose stop worker)
 ```
+
+Celery không hỗ trợ pool mặc định (prefork) trên Windows: chạy worker trên Windows thì dùng `uv run celery -A app.worker worker --pool=solo`, hoặc dùng container `worker`.
 
 ## Kiểm tra
 
