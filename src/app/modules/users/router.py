@@ -6,11 +6,12 @@ from app.core.exceptions import error_responses
 from app.core.pagination import Page
 from app.modules.auth.dependencies import AuthServiceDep
 from app.modules.auth.schemas import TokenResponse
-from app.modules.users.dependencies import UserServiceDep
+from app.modules.users.dependencies import EmployeeListQuery, UserServiceDep
 from app.modules.users.schemas import (
     AdminUserCreate,
     AdminUserOut,
     AdminUserUpdate,
+    EmployeeOut,
     PasswordChange,
     UserListQuery,
     UserOut,
@@ -20,6 +21,8 @@ from app.modules.users.schemas import (
 me_router = APIRouter(prefix="/me", tags=["Cá nhân"])
 # Include vào admin_router (api/v1.py): role ADMIN được kiểm tra ở nhóm, endpoint không tự kiểm tra.
 admin_users_router = APIRouter(prefix="/users", tags=["Admin: người dùng"])
+# Include vào manager_router (api/v1.py): role MANAGER kiểm tra ở nhóm, phạm vi bộ phận ở service.
+manager_employees_router = APIRouter(prefix="/employees", tags=["Manager: nhân viên"])
 
 
 @me_router.get(
@@ -150,3 +153,32 @@ async def update_user(
 )
 async def delete_user(user_id: IdPath, admin: CurrentUser, user_service: UserServiceDep) -> None:
     await user_service.delete_by_admin(admin, user_id)
+
+
+@manager_employees_router.get(
+    "",
+    summary="Danh sách nhân viên các bộ phận mình quản lý",
+    description=(
+        "Thành viên role USER (kể cả tài khoản bị khóa) của các bộ phận được gán quản lý, sắp "
+        'theo họ tên. `keyword` tìm trong họ tên (không phân biệt dấu, hoa thường: "nguyen" khớp '
+        '"Nguyễn") hoặc email. `department_id` không phải bộ phận mình quản lý thì nhận 404.'
+    ),
+    responses=error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
+)
+async def list_employees(
+    params: EmployeeListQuery, manager: CurrentUser, user_service: UserServiceDep
+) -> Page[EmployeeOut]:
+    users, total = await user_service.list_employees(manager.id, params)
+    return Page.build([EmployeeOut.model_validate(u) for u in users], total=total, params=params)
+
+
+@manager_employees_router.get(
+    "/{user_id}",
+    summary="Xem nhân viên",
+    description="Nhân viên không thuộc bộ phận nào mình quản lý trả 404 như id không tồn tại.",
+    responses=error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
+)
+async def get_employee(
+    user_id: IdPath, manager: CurrentUser, user_service: UserServiceDep
+) -> EmployeeOut:
+    return EmployeeOut.model_validate(await user_service.get_employee(manager.id, user_id))

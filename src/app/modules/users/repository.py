@@ -1,10 +1,11 @@
 from collections.abc import Sequence
 
-from sqlalchemy import func, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.pagination import PageParams, paginate
 from app.modules.users.models import User, UserRole, full_name_or_email_matches, order_by_full_name
+from app.modules.users.schemas import EmployeeListParams
 
 
 class UserRepository:
@@ -102,6 +103,31 @@ class UserRepository:
             .execution_options(populate_existing=True)
         )
         return rows.all()
+
+    def _employees_in(self, department_ids: Select[int]) -> Select[User]:
+        # Nhân viên là role USER như khi manager gỡ thành viên (M2): manager, admin được admin xếp
+        # vào bộ phận không do manager quản lý. Tài khoản bị khóa vẫn tính, chỉ bỏ user đã xóa.
+        return select(User).where(
+            User.role == UserRole.USER,
+            User.deleted_at.is_(None),
+            User.department_id.in_(department_ids),
+        )
+
+    async def search_employees(
+        self, department_ids: Select[int], params: EmployeeListParams
+    ) -> tuple[Sequence[User], int]:
+        """Nhân viên các bộ phận trong `department_ids` (câu select con), sắp theo họ tên."""
+        statement = self._employees_in(department_ids).order_by(*order_by_full_name())
+        if params.keyword:
+            statement = statement.where(full_name_or_email_matches(params.keyword))
+        if params.department_id is not None:
+            statement = statement.where(User.department_id == params.department_id)
+        return await paginate(self.session, statement, params)
+
+    async def get_employee(self, user_id: int, department_ids: Select[int]) -> User | None:
+        return await self.session.scalar(
+            self._employees_in(department_ids).where(User.id == user_id)
+        )
 
     def add(self, user: User) -> None:
         self.session.add(user)

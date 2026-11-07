@@ -21,6 +21,7 @@ from app.modules.users.repository import UserRepository
 from app.modules.users.schemas import (
     AdminUserCreate,
     AdminUserUpdate,
+    EmployeeListParams,
     UserCreate,
     UserListParams,
     UserProfileUpdate,
@@ -57,6 +58,27 @@ class UserService:
 
     async def get_user(self, user_id: int) -> User:
         user = await self.users.get_by_id(user_id)
+        if user is None:
+            raise UserNotFoundError
+        return user
+
+    async def list_employees(
+        self, manager_id: int, params: EmployeeListParams
+    ) -> tuple[Sequence[User], int]:
+        """Nhân viên (role USER) các bộ phận manager quản lý.
+
+        `params.department_id` ngoài phạm vi đã bị chặn (404) ở dependency `EmployeeListQuery`;
+        câu truy vấn vẫn luôn lọc theo phạm vi, không trông vào bước đó.
+        """
+        return await self.users.search_employees(
+            self.departments.managed_department_ids(manager_id), params
+        )
+
+    async def get_employee(self, manager_id: int, user_id: int) -> User:
+        """Nhân viên ngoài phạm vi trả đúng lỗi của user không tồn tại, không dò được id."""
+        user = await self.users.get_employee(
+            user_id, self.departments.managed_department_ids(manager_id)
+        )
         if user is None:
             raise UserNotFoundError
         return user

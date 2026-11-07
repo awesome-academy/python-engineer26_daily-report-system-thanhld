@@ -17,7 +17,7 @@ from app.modules.departments.router import (
 )
 from app.modules.reports.router import my_report_router
 from app.modules.users.models import UserRole
-from app.modules.users.router import admin_users_router, me_router
+from app.modules.users.router import admin_users_router, manager_employees_router, me_router
 
 # Nhóm theo role: kiểm tra role một lần ở nhóm, endpoint bên trong không tự kiểm tra lại.
 # include_router giữ router con chứ không chép route (FastAPI 0.162), nên router của module
@@ -40,6 +40,7 @@ admin_router.include_router(admin_department_router)
 admin_router.include_router(admin_users_router)
 manager_router.include_router(manager_department_router)
 manager_router.include_router(manager_candidate_router)
+manager_router.include_router(manager_employees_router)
 user_router.include_router(my_report_router)
 
 api_router = APIRouter(prefix=get_settings().api_v1_prefix)
