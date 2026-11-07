@@ -11,7 +11,7 @@ from celery.signals import worker_init
 
 from app import models as _models  # noqa: F401 (nạp đủ model trước khi SQLAlchemy nối quan hệ)
 from app.core.config import get_settings
-from app.core.constants import REDIS_TIMEOUT_SECONDS
+from app.core.constants import REDIS_TIMEOUT_SECONDS, TASK_RETRY_BACKOFF_SECONDS
 from app.core.logging import configure_logging
 
 settings = get_settings()
@@ -49,3 +49,8 @@ celery_app.conf.update(
 def _configure_worker_logging(**_: Any) -> None:
     # Chạy ở process chính trước khi tạo process con, process con kế thừa cấu hình.
     configure_logging(settings.log_level, json_logs=settings.json_logs)
+
+
+def retry_countdown(retries: int) -> int:
+    """Số giây chờ trước lần thử lại thứ `retries + 1` của task: 30s, 60s, 120s."""
+    return int(TASK_RETRY_BACKOFF_SECONDS * 2**retries)

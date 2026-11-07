@@ -7,11 +7,11 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.constants import EMAIL_MAX_RETRIES, EMAIL_RETRY_BACKOFF_SECONDS
+from app.core.constants import TASK_MAX_RETRIES
 from app.modules.notifications import tasks
 from app.modules.notifications.models import EmailLog, EmailStatus, EmailTemplate
-from app.modules.notifications.tasks import retry_countdown, send_email
-from app.worker import celery_app
+from app.modules.notifications.tasks import send_email
+from app.worker import celery_app, retry_countdown
 from tests.helpers import FakeMailer
 
 ARGS = ("an@example.com", EmailTemplate.TEST.value, {"requested_at": "08:30:00 06/11/2026"})
@@ -67,14 +67,14 @@ def countdowns(monkeypatch: pytest.MonkeyPatch) -> list[int | None]:
 def test_task_retries_with_backoff_then_sends(
     mailer: FakeMailer, sync_db_session: Session, countdowns: list[int | None], error: Exception
 ) -> None:
-    mailer.errors.extend([error] * EMAIL_MAX_RETRIES)
+    mailer.errors.extend([error] * TASK_MAX_RETRIES)
 
     # apply() chạy task tại chỗ, lần thử lại chạy ngay (bỏ qua countdown), nên một lệnh apply()
     # đi hết các lần thử như worker.
     result = send_email.apply(args=ARGS)
 
     assert result.successful()
-    assert countdowns == [retry_countdown(n) for n in range(EMAIL_MAX_RETRIES)]
+    assert countdowns == [retry_countdown(n) for n in range(TASK_MAX_RETRIES)]
     assert len(mailer.sent) == 1
     [log] = _logs(sync_db_session)
     assert log.status == EmailStatus.SENT
@@ -84,12 +84,12 @@ def test_task_logs_failed_after_last_retry(
     mailer: FakeMailer, sync_db_session: Session, countdowns: list[int | None]
 ) -> None:
     refused = smtplib.SMTPRecipientsRefused({"an@example.com": (550, b"no user")})
-    mailer.errors.extend([refused] * (EMAIL_MAX_RETRIES + 1))
+    mailer.errors.extend([refused] * (TASK_MAX_RETRIES + 1))
 
     result = send_email.apply(args=ARGS)
 
     assert result.successful()
-    assert len(countdowns) == EMAIL_MAX_RETRIES
+    assert len(countdowns) == TASK_MAX_RETRIES
     assert mailer.sent == []
     [log] = _logs(sync_db_session)
     assert log.status == EmailStatus.FAILED
@@ -104,11 +104,3 @@ def test_task_does_not_retry_unknown_template(mailer: FakeMailer, sync_db_sessio
     assert isinstance(result.result, ValueError)
     assert mailer.sent == []
     assert _logs(sync_db_session) == []
-
-
-def test_retry_countdown_doubles_each_attempt() -> None:
-    assert [retry_countdown(n) for n in range(EMAIL_MAX_RETRIES)] == [
-        EMAIL_RETRY_BACKOFF_SECONDS,
-        EMAIL_RETRY_BACKOFF_SECONDS * 2,
-        EMAIL_RETRY_BACKOFF_SECONDS * 4,
-    ]

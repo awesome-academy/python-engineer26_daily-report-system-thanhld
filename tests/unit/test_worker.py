@@ -1,7 +1,7 @@
 from app.core.config import get_settings
-from app.core.constants import EMAIL_MAX_RETRIES, REDIS_TIMEOUT_SECONDS
+from app.core.constants import REDIS_TIMEOUT_SECONDS, TASK_MAX_RETRIES, TASK_RETRY_BACKOFF_SECONDS
 from app.modules.notifications.tasks import send_email
-from app.worker import celery_app
+from app.worker import celery_app, retry_countdown
 
 
 def test_celery_uses_redis_broker_with_json_and_timeouts() -> None:
@@ -22,4 +22,12 @@ def test_send_email_task_is_registered_with_retry_limit() -> None:
     # Worker chỉ nạp task trong `include`: quên khai module thì worker từ chối task từ API.
     celery_app.loader.import_default_modules()
 
-    assert celery_app.tasks[send_email.name].max_retries == EMAIL_MAX_RETRIES
+    assert celery_app.tasks[send_email.name].max_retries == TASK_MAX_RETRIES
+
+
+def test_retry_countdown_doubles_each_attempt() -> None:
+    assert [retry_countdown(n) for n in range(TASK_MAX_RETRIES)] == [
+        TASK_RETRY_BACKOFF_SECONDS,
+        TASK_RETRY_BACKOFF_SECONDS * 2,
+        TASK_RETRY_BACKOFF_SECONDS * 4,
+    ]

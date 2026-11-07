@@ -96,10 +96,10 @@ REDIS_LOGIN_ATTEMPTS_PREFIX = "auth:login-attempts:"
 PASSWORD_MIN_LENGTH = 8
 PASSWORD_MAX_LENGTH = 128
 
-# Gửi email qua Celery worker. Lỗi SMTP, mất kết nối thì thử lại tối đa EMAIL_MAX_RETRIES lần,
-# lần thứ n chờ EMAIL_RETRY_BACKOFF_SECONDS * 2**n giây (30s, 60s, 120s).
-EMAIL_MAX_RETRIES = 3
-EMAIL_RETRY_BACKOFF_SECONDS = 30
+# Celery task gặp lỗi tạm thời (SMTP, mất kết nối) thì thử lại tối đa TASK_MAX_RETRIES lần, lần
+# thứ n chờ TASK_RETRY_BACKOFF_SECONDS * 2**n giây (30s, 60s, 120s). Mọi task dùng chung.
+TASK_MAX_RETRIES = 3
+TASK_RETRY_BACKOFF_SECONDS = 30
 SMTP_TIMEOUT_SECONDS = 10
 # Cột email_logs.error là text: chỉ giữ đoạn đầu của thông báo lỗi.
 EMAIL_ERROR_MAX_LENGTH = 1000

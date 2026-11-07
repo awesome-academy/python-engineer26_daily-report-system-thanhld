@@ -7,12 +7,12 @@ import structlog
 from celery import Task
 
 from app.core.config import get_settings
-from app.core.constants import EMAIL_MAX_RETRIES, EMAIL_RETRY_BACKOFF_SECONDS
+from app.core.constants import TASK_MAX_RETRIES
 from app.core.database import sync_session
 from app.modules.notifications.mailer import SmtpMailer
 from app.modules.notifications.models import EmailTemplate
 from app.modules.notifications.service import EmailService
-from app.worker import celery_app
+from app.worker import celery_app, retry_countdown
 
 logger = structlog.get_logger(__name__)
 
@@ -20,14 +20,9 @@ logger = structlog.get_logger(__name__)
 RETRYABLE_ERRORS = (smtplib.SMTPException, OSError)
 
 
-def retry_countdown(retries: int) -> int:
-    """Số giây chờ trước lần thử lại thứ `retries + 1`: 30s, 60s, 120s."""
-    return int(EMAIL_RETRY_BACKOFF_SECONDS * 2**retries)
-
-
-@celery_app.task(bind=True, name="notifications.send_email", max_retries=EMAIL_MAX_RETRIES)
+@celery_app.task(bind=True, name="notifications.send_email", max_retries=TASK_MAX_RETRIES)
 def send_email(self: Task[Any, Any], to_email: str, template: str, context: dict[str, Any]) -> None:
-    """Gửi một email theo template; lỗi thì thử lại tối đa EMAIL_MAX_RETRIES lần.
+    """Gửi một email theo template; lỗi thì thử lại tối đa TASK_MAX_RETRIES lần.
 
     Tham số đi qua Redis dạng JSON nên `context` chỉ chứa kiểu JSON (chuỗi, số, list, dict).
     Hết lượt thử lại thì ghi email_logs trạng thái FAILED, không ném lỗi.
@@ -41,7 +36,7 @@ def send_email(self: Task[Any, Any], to_email: str, template: str, context: dict
         try:
             service.send(to_email, email_template, context)
         except RETRYABLE_ERRORS as exc:
-            if self.request.retries < EMAIL_MAX_RETRIES:
+            if self.request.retries < TASK_MAX_RETRIES:
                 countdown = retry_countdown(self.request.retries)
                 log.warning("email_retry", error=repr(exc), countdown=countdown)
                 raise self.retry(exc=exc, countdown=countdown) from exc
