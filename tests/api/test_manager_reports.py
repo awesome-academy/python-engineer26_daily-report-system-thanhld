@@ -4,6 +4,7 @@ Bộ lọc `department_id` ngoài phạm vi (bộ phận khác, đã xóa, role 
 quyền ở tests/api/test_department_scope.py; ở đây là dữ liệu trả về.
 """
 
+from collections.abc import Awaitable, Callable
 from datetime import date
 from typing import Any
 
@@ -441,6 +442,10 @@ async def test_report_detail_hides_email_of_deleted_author(
     }
 
 
+# Tạo một báo cáo theo kịch bản, trả id; manager là người gọi API.
+ArrangeReport = Callable[[AsyncSession, User], Awaitable[int]]
+
+
 async def _report_of_other_department(session: AsyncSession, manager: User) -> int:
     return (await write(session, await create_department(session), DAY_1)).id
 
@@ -487,7 +492,7 @@ async def test_report_outside_scope_is_not_found(
     db_session: AsyncSession,
     manager: User,
     headers: dict[str, str],
-    arrange: Any,
+    arrange: ArrangeReport,
 ) -> None:
     report_id = await arrange(db_session, manager)
 

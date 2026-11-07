@@ -9,7 +9,7 @@ Ngoài endpoint thật, route thăm dò gắn vào app riêng với đúng depen
 /manager, giống test_rbac.py, để thử policy (handler nhận đúng bộ phận, body xét sau phạm vi) độc
 lập với nghiệp vụ của endpoint thật.
 
-Danh sách /manager lọc theo `department_id` trên query (báo cáo M3, sau này nhân viên M4, export M5)
+Danh sách /manager lọc theo `department_id` trên query (nhân viên M4, báo cáo M3, sau này export M5)
 cũng chạy cùng ma trận: bộ phận lọc ngoài phạm vi trả đúng lỗi như trên URL.
 """
 
@@ -233,20 +233,6 @@ async def test_token_and_role_are_checked_before_department_id(
     assert response.json() == error_json(error)
 
 
-@pytest.mark.parametrize("endpoint", SCOPED_ENDPOINTS)
-async def test_scoped_endpoint_documents_scope_errors_in_swagger(
-    probe_client: AsyncClient, endpoint: tuple[str, str]
-) -> None:
-    # Dependency không tự khai response trên Swagger: endpoint quên khai 404, 422 thì đỏ.
-    method, path = endpoint
-    paths = (await probe_client.get("/openapi.json")).json()["paths"]
-
-    responses = paths[path][method.lower()]["responses"]
-    for status_code in ("404", "422"):
-        schema = responses[status_code]["content"]["application/json"]["schema"]
-        assert schema == {"$ref": "#/components/schemas/ErrorResponse"}
-
-
 # Lọc theo department_id trên query
 
 
@@ -369,12 +355,16 @@ async def test_filtered_endpoint_rejects_invalid_department_id(
     assert response.json()["error"]["details"][0]["field"] == "query.department_id"
 
 
-@pytest.mark.parametrize("endpoint", FILTERED_ENDPOINTS)
-async def test_filtered_endpoint_documents_scope_errors_in_swagger(
-    client: AsyncClient, endpoint: tuple[str, str]
+# Swagger
+
+
+@pytest.mark.parametrize("endpoint", [*SCOPED_ENDPOINTS, *FILTERED_ENDPOINTS])
+async def test_scoped_endpoint_documents_scope_errors_in_swagger(
+    probe_client: AsyncClient, endpoint: tuple[str, str]
 ) -> None:
+    # Dependency không tự khai response trên Swagger: endpoint quên khai 404, 422 thì đỏ.
     method, path = endpoint
-    paths = (await client.get("/openapi.json")).json()["paths"]
+    paths = (await probe_client.get("/openapi.json")).json()["paths"]
 
     responses = paths[path][method.lower()]["responses"]
     for status_code in ("404", "422"):
