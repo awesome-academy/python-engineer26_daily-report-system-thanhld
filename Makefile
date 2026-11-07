@@ -30,7 +30,7 @@ run: ## Chạy API trên máy host, tự reload khi sửa code (cần make servi
 	uv run uvicorn app.main:app --reload --port 8001 --no-access-log
 
 worker: ## Chạy Celery worker trên máy host (cần make services, dừng container worker trước)
-	uv run celery -A app.worker worker --loglevel=INFO
+	uv run celery -A app.worker worker
 
 admin: ## Tạo tài khoản admin (hỏi email, họ tên, mật khẩu)
 	uv run daily-report create-admin

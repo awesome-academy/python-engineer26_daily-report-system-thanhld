@@ -4,10 +4,11 @@ Chạy worker: `celery -A app.worker worker` (Docker Compose có sẵn service `
 API chỉ đẩy task vào Redis qua `task.delay(...)`, không chờ worker xử lý.
 """
 
+import logging
 from typing import Any
 
 from celery import Celery
-from celery.signals import worker_init
+from celery.signals import after_setup_logger, after_setup_task_logger, worker_init
 
 from app import models as _models  # noqa: F401 (nạp đủ model trước khi SQLAlchemy nối quan hệ)
 from app.core.config import get_settings
@@ -49,6 +50,14 @@ celery_app.conf.update(
 def _configure_worker_logging(**_: Any) -> None:
     # Chạy ở process chính trước khi tạo process con, process con kế thừa cấu hình.
     configure_logging(settings.log_level, json_logs=settings.json_logs)
+
+
+@after_setup_logger.connect
+@after_setup_task_logger.connect
+def _use_app_log_level(logger: logging.Logger, **_: Any) -> None:
+    # Log của Celery theo LOG_LEVEL như log của app, không theo cờ --loglevel (mặc định WARNING):
+    # một chỗ đặt mức log cho cả worker.
+    logger.setLevel(settings.log_level)
 
 
 def retry_countdown(retries: int) -> int:

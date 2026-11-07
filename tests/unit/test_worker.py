@@ -1,3 +1,9 @@
+import logging
+
+import pytest
+from celery.signals import after_setup_logger, after_setup_task_logger
+from celery.utils.dispatch import Signal
+
 from app.core.config import get_settings
 from app.core.constants import REDIS_TIMEOUT_SECONDS, TASK_MAX_RETRIES, TASK_RETRY_BACKOFF_SECONDS
 from app.modules.notifications.tasks import send_email
@@ -31,3 +37,20 @@ def test_retry_countdown_doubles_each_attempt() -> None:
         TASK_RETRY_BACKOFF_SECONDS * 2,
         TASK_RETRY_BACKOFF_SECONDS * 4,
     ]
+
+
+@pytest.mark.parametrize(
+    "signal", [after_setup_logger, after_setup_task_logger], ids=["root", "task"]
+)
+def test_celery_loggers_follow_app_log_level(
+    monkeypatch: pytest.MonkeyPatch, signal: Signal
+) -> None:
+    # Celery đặt mức log theo cờ --loglevel (mặc định WARNING) rồi phát signal; mức thật phải là
+    # LOG_LEVEL, một chỗ cấu hình cho cả log của Celery và log của app.
+    monkeypatch.setattr(get_settings(), "log_level", "DEBUG")
+    logger = logging.getLogger(f"test.celery.{id(signal)}")
+    logger.setLevel(logging.WARNING)
+
+    signal.send(sender=None, logger=logger, loglevel=logging.WARNING)
+
+    assert logger.level == logging.DEBUG

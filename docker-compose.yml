@@ -38,7 +38,7 @@ services:
   # Celery worker gửi email. Không tự reload khi sửa code: docker compose restart worker.
   worker:
     build: .
-    command: celery -A app.worker worker --loglevel=INFO
+    command: celery -A app.worker worker
     environment:
       ENVIRONMENT: local
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
