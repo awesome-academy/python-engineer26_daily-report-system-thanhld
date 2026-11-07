@@ -17,6 +17,7 @@
 - Không có thứ bậc role: ADMIN gọi `/manager` cũng nhận 403, vì chức năng manager gắn với bộ phận mình quản lý.
 - Thứ tự kiểm tra: token (401) → role (403) → tham số trên URL sai định dạng (422, ví dụ id không phải số hoặc ngoài 1 đến 2^63 − 1) → phạm vi dữ liệu trong service (404) → body sai (422). Client gặp 422 ở `path.*` là lỗi của chính URL, chưa xét tới quyền trên bản ghi; body chỉ được xét khi đã có quyền.
 - Phạm vi của manager là các bộ phận admin đã gán cho manager đó (bảng `department_managers`), không phải bộ phận manager là thành viên. Một chỗ duy nhất định nghĩa phạm vi: `DepartmentService.get_managed_department` kiểm tra một bộ phận, `DepartmentRepository.managed_department_ids` lọc danh sách. Mọi endpoint dưới `/manager/departments/{department_id}` nhận bộ phận qua dependency `ManagedDepartment` (endpoint ghi dùng `ManagedDepartmentForShare`, cùng policy nhưng khóa dòng bộ phận `FOR SHARE`); tên path param bắt buộc là `department_id` (dependency đọc đúng tên này, tên khác thì mọi request trả 422). Test chặn endpoint không dùng dependency hoặc đặt sai tên.
+- Danh sách `/manager` lọc theo `department_id` trên query (nhân viên M4, báo cáo M3) kiểm tra bộ phận lọc bằng cùng policy, trong dependency nhận cả bộ query: ngoài phạm vi trả đúng lỗi 404 như trên URL, sau lỗi 422 của các tham số query khác. Câu truy vấn vẫn luôn lọc theo phạm vi, không chỉ trông vào bước kiểm tra này.
 - Ngoài phạm vi trả 404 giống hệt bộ phận không tồn tại hoặc đã xóa (`NOT_FOUND`, `details.field = "department_id"`), để không dò được id nào là bộ phận có thật. Phạm vi đọc từ DB ở mỗi request: bị gỡ khỏi bộ phận thì mất quyền ngay.
 - Role đọc từ user trong DB ở mỗi request, không từ claim `role` của token, nên đổi role có hiệu lực ngay.
 
@@ -154,7 +155,7 @@ Báo cáo hằng ngày (U3):
 | GET | `/manager/employees` | M4 | `keyword`, `department_id`, phân trang |
 | GET | `/manager/employees/{user_id}` | M4 | |
 | GET | `/manager/reports` | M3 | `keyword`, `date_from`, `date_to`, `department_id`, `sort`, phân trang |
-| GET | `/manager/reports/{id}` | M3 | |
+| GET | `/manager/reports/{report_id}` | M3 | Gồm người viết, bộ phận lúc viết, người nhận |
 | GET | `/manager/reports/export` | M5 | `date`, `department_id`, trả file .xlsx |
 
 Bộ phận của tôi (M1):
@@ -177,6 +178,14 @@ Nhân viên của tôi (M4):
 - Mỗi người gồm `id`, `email`, `full_name`, `phone`, `date_of_birth`, `role`, `is_active`, `last_login_at`, `created_at`, `department_id`; không có mật khẩu, `token_version`.
 - `GET /manager/employees`: nhân viên mọi bộ phận mình quản lý, sắp theo họ tên như danh sách thành viên. `keyword` tìm một phần họ tên không dấu hoặc email như `GET /admin/users`, chỉ trong phạm vi. `department_id` lọc một bộ phận: bộ phận không tồn tại, đã xóa hoặc không do mình quản lý trả 404 `NOT_FOUND`, `details.field = "department_id"`, như các endpoint `/manager/departments/{department_id}`. Tham số query sai (`page`, `keyword`, `department_id` ngoài 1 đến 2^63 − 1) trả 422 trước khi xét phạm vi.
 - `GET /manager/employees/{user_id}`: người không tồn tại, đã bị xóa, không phải role USER, chưa thuộc bộ phận nào hoặc thuộc bộ phận ngoài phạm vi cùng trả 404, `details.field = "user_id"`, để không dò được id nào là tài khoản có thật.
+
+Báo cáo của nhân viên (M3):
+
+- Phạm vi theo bộ phận lúc viết (`daily_reports.department_id`), không theo bộ phận hiện tại của người viết: nhân viên chuyển khỏi bộ phận thì báo cáo cũ vẫn thuộc bộ phận cũ, báo cáo viết ở bộ phận mới thì không. Manager thấy mọi báo cáo của bộ phận mình quản lý, kể cả báo cáo viết trước khi được gán và báo cáo không gửi cho mình. Bộ phận đã xóa ra khỏi phạm vi, báo cáo của bộ phận đó không còn hiện.
+- `GET /manager/reports` lọc bằng index `(department_id, report_date)`. `keyword` tìm một phần họ tên người viết, không dấu, không phân biệt hoa thường (`nguyen` khớp `Nguyễn`), `%`, `_` là ký tự thường; không tìm theo email. `date_from`, `date_to` như `GET /me/reports` (tính cả hai ngày, `date_to` trước `date_from` trả 422 ở `query.date_to`). `department_id` chỉ lấy một bộ phận trong phạm vi, ngoài phạm vi trả 404 `department_id`.
+- `sort`: `-report_date` (mặc định, ngày mới nhất trước), `report_date`, `author_name`, `-author_name` (họ tên không dấu như danh sách thành viên); giá trị khác trả 422. Cùng ngày thì sắp theo họ tên người viết, cùng người thì ngày mới trước, nên thứ tự cố định giữa các trang.
+- Mỗi phần tử có nội dung báo cáo, `department_id` và `author` (`id`, `full_name`, `email`, `is_deleted`). Báo cáo của người đã bị khóa, bị xóa vẫn hiện; người đã xóa có `is_deleted` là `true` và `email` là `null`, như người nhận ở `GET /me/reports/{id}`. Một trang lấy bằng một câu SQL (kèm câu đếm), không đổi theo số báo cáo.
+- `GET /manager/reports/{report_id}` thêm `department` (bộ phận lúc viết) và `recipients` như `GET /me/reports/{id}`. Báo cáo không tồn tại hoặc ngoài phạm vi cùng trả 404, `details` là `{"field": "report_id"}`.
 
 ### /admin: role ADMIN (15)
 
