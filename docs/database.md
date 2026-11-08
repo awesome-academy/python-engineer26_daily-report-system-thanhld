@@ -92,7 +92,7 @@ erDiagram
 | --- | --- | --- |
 | report_id | bigint | PK, FK → daily_reports.id, on delete cascade |
 | recipient_id | bigint | PK, FK → users.id, on delete restrict |
-| notified_at | timestamptz | null, ghi khi đã gửi mail S1 |
+| notified_at | timestamptz | null, ghi khi đã gửi mail S1 cho người này (cùng commit với dòng `email_logs`); task chạy lại bỏ qua người đã có giá trị |
 
 ### refresh_tokens (Ngày 2; `session_id` thêm ở Ngày 3)
 
