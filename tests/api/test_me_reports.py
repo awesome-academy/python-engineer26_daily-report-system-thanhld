@@ -3,8 +3,11 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
+import structlog
 from fastapi import FastAPI
 from httpx import AsyncClient
+from kombu.exceptions import OperationalError
+from redis.asyncio import Redis
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,8 +22,10 @@ from app.core.constants import (
 )
 from app.modules.departments.models import Department
 from app.modules.reports.models import DailyReport, ReportRecipient
+from app.modules.reports.tasks import send_report_notification
 from app.modules.users.models import User, UserRole
 from tests.factories import auth_headers, create_department, create_report, create_user
+from tests.helpers import QueuedTask, queued_tasks
 
 API = get_settings().api_v1_prefix
 RECIPIENTS_URL = f"{API}/me/recipients"
@@ -224,6 +229,58 @@ async def test_create_report_sends_only_to_chosen_recipients(
 
     assert response.status_code == 201
     assert [r["id"] for r in response.json()["recipients"]] == [chosen]
+
+
+# Email cho người nhận (S1): API chỉ đẩy task; worker gửi, test ở test_report_notification_task.py.
+
+
+async def test_create_report_queues_email_task_for_saved_report(
+    client: AsyncClient, redis: Redis, db_session: AsyncSession, headers: dict[str, str]
+) -> None:
+    response = await client.post(REPORTS_URL, json=report_body(), headers=headers)
+
+    assert response.status_code == 201
+    report_id = response.json()["id"]
+    assert await queued_tasks(redis) == [QueuedTask(send_report_notification.name, [report_id], {})]
+    assert await db_session.get(DailyReport, report_id) is not None
+
+
+async def test_create_report_still_succeeds_when_queue_is_down(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    author: User,
+    headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def broker_down(*_: Any) -> None:
+        raise OperationalError("Error 111 connecting to redis:6379. Connection refused.")
+
+    monkeypatch.setattr(send_report_notification, "delay", broker_down)
+
+    with structlog.testing.capture_logs() as logs:
+        response = await client.post(REPORTS_URL, json=report_body(), headers=headers)
+
+    # Báo cáo đã lưu: mất email thông báo còn hơn báo lỗi khiến nhân viên gửi lại.
+    assert response.status_code == 201
+    assert await count_reports(db_session, author) == 1
+    [error] = [log for log in logs if log["event"] == "task_enqueue_failed"]
+    assert error["log_level"] == "error"
+    assert error["task"] == send_report_notification.name
+
+
+async def test_rejected_report_queues_no_email_task(
+    client: AsyncClient,
+    redis: Redis,
+    db_session: AsyncSession,
+    author: User,
+    department: Department,
+) -> None:
+    await create_report(db_session, author=author, department=department, report_date=TODAY)
+
+    response = await client.post(REPORTS_URL, json=report_body(), headers=auth_headers(author))
+
+    assert response.status_code == 409
+    assert await queued_tasks(redis) == []
 
 
 @pytest.mark.parametrize("reason", [None, "", "   "], ids=["null", "empty", "spaces"])
