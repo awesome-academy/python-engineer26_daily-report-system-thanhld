@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% macro section(title, content) %}
+<h3 style="margin:24px 0 8px;font-size:15px;">{{ title }}</h3>
+<p style="margin:0;white-space:pre-line;">{{ content }}</p>
+{% endmacro %}
+{% block content %}
+<p>Xin chào {{ recipient_name }},</p>
+<p><strong>{{ author_name }}</strong> (bộ phận {{ department_name }}) vừa gửi báo cáo ngày <strong>{{ report_date }}</strong>.</p>
+{{ section("Công việc dự định", planned_work) }}
+{{ section("Công việc thực tế", actual_work) }}
+{% if incomplete_reason %}
+{{ section("Lý do chưa hoàn thành", incomplete_reason) }}
+{% endif %}
+{{ section("Dự định ngày tiếp theo", next_day_plan) }}
+{% endblock %}

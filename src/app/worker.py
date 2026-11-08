@@ -27,7 +27,7 @@ celery_app = Celery(
     # Cùng DB Redis với API (blacklist token, đếm đăng nhập sai); key của Celery có tên riêng
     # (`celery`, `_kombu.*`, `unacked*`) nên không lẫn với key `auth:*`.
     broker=settings.redis_url,
-    include=["app.modules.notifications.tasks"],
+    include=["app.modules.notifications.tasks", "app.modules.reports.tasks"],
 )
 celery_app.conf.update(
     task_serializer="json",

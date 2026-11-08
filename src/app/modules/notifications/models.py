@@ -24,6 +24,7 @@ class EmailTemplate(StrEnum):
     """
 
     TEST = "test"
+    REPORT_CREATED = "report_created"
 
 
 class EmailLog(CreatedAtMixin, Base):

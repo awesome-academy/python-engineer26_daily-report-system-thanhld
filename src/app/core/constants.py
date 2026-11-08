@@ -103,3 +103,5 @@ TASK_RETRY_BACKOFF_SECONDS = 30
 SMTP_TIMEOUT_SECONDS = 10
 # Cột email_logs.error là text: chỉ giữ đoạn đầu của thông báo lỗi.
 EMAIL_ERROR_MAX_LENGTH = 1000
+# Ngày hiển thị trong email (ngày báo cáo).
+EMAIL_DATE_FORMAT = "%d/%m/%Y"

@@ -23,7 +23,9 @@ from app.modules.reports.schemas import (
     ReportCreate,
     ReportDetailOut,
 )
+from app.modules.reports.tasks import send_report_notification
 from app.modules.users.models import User
+from app.worker import enqueue_task
 
 
 class ReportService:
@@ -75,6 +77,8 @@ class ReportService:
     async def create_report(self, author: User, data: ReportCreate, *, today: date) -> DailyReport:
         """Lưu báo cáo cùng người nhận trong một lần commit: lỗi ở bước nào thì không lưu gì.
 
+        Lưu xong thì đẩy task gửi email cho người nhận (S1); Redis lỗi vẫn trả báo cáo đã lưu.
+
         `today` tính theo múi giờ nghiệp vụ, do router truyền vào để test cố định được ngày.
         """
         # Không báo cáo cho ngày trước khi có tài khoản: ngày đó không thuộc kỳ làm việc của user,
@@ -97,6 +101,9 @@ class ReportService:
         await commit_unique(
             self.session, REPORT_AUTHOR_DATE_UNIQUE, ReportAlreadyExistsError(data.report_date)
         )
+        # Sau commit mới đẩy task (S1): worker đọc báo cáo bằng kết nối khác, chưa commit thì
+        # không thấy.
+        await enqueue_task(send_report_notification, report.id)
         return report
 
     async def _resolve_recipients(

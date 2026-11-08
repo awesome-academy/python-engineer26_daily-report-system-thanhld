@@ -4,7 +4,7 @@ from typing import Any
 
 from sqlalchemy import ColumnElement, Select, exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import InstrumentedAttribute, contains_eager, joinedload
+from sqlalchemy.orm import InstrumentedAttribute, Session, contains_eager, joinedload
 
 from app.core.pagination import DateRange, DateRangePageParams, paginate
 from app.modules.departments.models import DepartmentManager
@@ -133,3 +133,27 @@ class ReportRepository:
 
     def add(self, report: DailyReport) -> None:
         self.session.add(report)
+
+
+class ReportNotificationRepository:
+    """Truy vấn cho email S1 bằng session đồng bộ (Celery worker)."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def get_with_author(self, report_id: int) -> DailyReport | None:
+        return self.session.scalar(
+            select(DailyReport)
+            .where(DailyReport.id == report_id)
+            .options(joinedload(DailyReport.author), joinedload(DailyReport.department))
+        )
+
+    def list_unnotified_recipients(self, report_id: int) -> Sequence[ReportRecipient]:
+        """Người nhận chưa được gửi email, kèm tài khoản; task chạy lại thì bỏ qua người đã gửi."""
+        statement = (
+            select(ReportRecipient)
+            .where(ReportRecipient.report_id == report_id, ReportRecipient.notified_at.is_(None))
+            .options(joinedload(ReportRecipient.recipient))
+            .order_by(ReportRecipient.recipient_id)
+        )
+        return self.session.scalars(statement).all()
