@@ -1,6 +1,5 @@
 """Celery task gửi email."""
 
-import smtplib
 from typing import Any
 
 import structlog
@@ -9,15 +8,12 @@ from celery import Task
 from app.core.config import get_settings
 from app.core.constants import TASK_MAX_RETRIES
 from app.core.database import sync_session
-from app.modules.notifications.mailer import SmtpMailer
+from app.modules.notifications.mailer import RETRYABLE_ERRORS, SmtpMailer
 from app.modules.notifications.models import EmailTemplate
 from app.modules.notifications.service import EmailService
-from app.worker import celery_app, retry_countdown
+from app.worker import celery_app, retry_or_give_up
 
 logger = structlog.get_logger(__name__)
-
-# Lỗi có thể hết khi thử lại: SMTP server tạm từ chối, mất kết nối, timeout (OSError).
-RETRYABLE_ERRORS = (smtplib.SMTPException, OSError)
 
 
 @celery_app.task(bind=True, name="notifications.send_email", max_retries=TASK_MAX_RETRIES)
@@ -36,10 +32,7 @@ def send_email(self: Task[Any, Any], to_email: str, template: str, context: dict
         try:
             service.send(to_email, email_template, context)
         except RETRYABLE_ERRORS as exc:
-            if self.request.retries < TASK_MAX_RETRIES:
-                countdown = retry_countdown(self.request.retries)
-                log.warning("email_retry", error=repr(exc), countdown=countdown)
-                raise self.retry(exc=exc, countdown=countdown) from exc
+            retry_or_give_up(self, exc)
             log.exception("email_failed")
             service.record_failure(to_email, email_template, exc)
             return

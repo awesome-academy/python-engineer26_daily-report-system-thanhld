@@ -20,18 +20,29 @@ class EmailService:
 
     def send(self, to_email: str, template: EmailTemplate, context: Mapping[str, Any]) -> EmailLog:
         """Gửi rồi ghi log SENT. Gửi lỗi thì ném lỗi ra, không ghi log: task còn thử lại."""
+        log = self.deliver(to_email, template, context)
+        self.session.commit()
+        return log
+
+    def deliver(
+        self, to_email: str, template: EmailTemplate, context: Mapping[str, Any]
+    ) -> EmailLog:
+        """Như `send` nhưng không commit: người gọi commit log SENT cùng dữ liệu của mình.
+
+        Ví dụ S1 ghi `notified_at` của người nhận trong cùng commit, để log và `notified_at`
+        không lệch nhau khi worker dừng giữa hai lần commit.
+        """
         self.mailer.send(to_email, render_email(template, context))
-        return self._record(to_email, template, EmailStatus.SENT)
+        log = EmailLog(to_email=to_email, template=template, status=EmailStatus.SENT)
+        self.logs.add(log)
+        return log
 
     def record_failure(self, to_email: str, template: EmailTemplate, error: Exception) -> EmailLog:
         """Ghi log FAILED khi đã hết lượt thử lại."""
         message = f"{type(error).__name__}: {error}"[:EMAIL_ERROR_MAX_LENGTH]
-        return self._record(to_email, template, EmailStatus.FAILED, error=message)
-
-    def _record(
-        self, to_email: str, template: EmailTemplate, status: EmailStatus, error: str | None = None
-    ) -> EmailLog:
-        log = EmailLog(to_email=to_email, template=template, status=status, error=error)
+        log = EmailLog(
+            to_email=to_email, template=template, status=EmailStatus.FAILED, error=message
+        )
         self.logs.add(log)
         self.session.commit()
         return log

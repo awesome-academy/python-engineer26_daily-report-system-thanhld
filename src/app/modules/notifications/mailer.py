@@ -11,6 +11,9 @@ from app.core.config import Settings
 from app.core.constants import SMTP_TIMEOUT_SECONDS
 from app.modules.notifications.rendering import RenderedEmail
 
+# Lỗi `Mailer.send` có thể hết khi thử lại: SMTP server tạm từ chối, mất kết nối, timeout (OSError).
+RETRYABLE_ERRORS = (smtplib.SMTPException, OSError)
+
 
 class Mailer(Protocol):
     def send(self, to_email: str, email: RenderedEmail) -> None: ...
