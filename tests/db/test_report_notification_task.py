@@ -1,26 +1,25 @@
 """Task email S1 chạy như trong worker: đọc dữ liệu đã commit bằng session đồng bộ riêng."""
 
 import smtplib
-from collections.abc import Iterator, MutableMapping
+from collections.abc import MutableMapping
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
 import pytest
-import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.core.config import get_settings
 from app.core.constants import TASK_MAX_RETRIES
 from app.modules.notifications.models import EmailLog, EmailStatus, EmailTemplate
-from app.modules.reports import tasks
+from app.modules.reports import notifications, tasks
 from app.modules.reports.models import ReportRecipient
 from app.modules.reports.tasks import send_report_notification
 from app.modules.users.models import User, UserRole
 from app.worker import celery_app, retry_countdown
 from tests.factories import create_department, create_report, create_user
-from tests.helpers import FakeMailer
+from tests.helpers import FakeMailer, capture_module_logs
 
 pytestmark = pytest.mark.usefixtures("clean_after")
 
@@ -59,9 +58,8 @@ def countdowns(monkeypatch: pytest.MonkeyPatch) -> list[int | None]:
 
 
 @pytest.fixture
-def logs() -> Iterator[list[MutableMapping[str, Any]]]:
-    with structlog.testing.capture_logs() as captured:
-        yield captured
+def logs(monkeypatch: pytest.MonkeyPatch) -> list[MutableMapping[str, Any]]:
+    return capture_module_logs(monkeypatch, notifications)
 
 
 async def make_scene(

@@ -3,7 +3,6 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
-import structlog
 from fastapi import FastAPI
 from httpx import AsyncClient
 from kombu.exceptions import OperationalError
@@ -11,6 +10,7 @@ from redis.asyncio import Redis
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import worker
 from app.core.clock import local_today
 from app.core.config import get_settings
 from app.core.constants import (
@@ -25,7 +25,7 @@ from app.modules.reports.models import DailyReport, ReportRecipient
 from app.modules.reports.tasks import send_report_notification
 from app.modules.users.models import User, UserRole
 from tests.factories import auth_headers, create_department, create_report, create_user
-from tests.helpers import QueuedTask, queued_tasks
+from tests.helpers import QueuedTask, capture_module_logs, queued_tasks
 
 API = get_settings().api_v1_prefix
 RECIPIENTS_URL = f"{API}/me/recipients"
@@ -256,9 +256,9 @@ async def test_create_report_still_succeeds_when_queue_is_down(
         raise OperationalError("Error 111 connecting to redis:6379. Connection refused.")
 
     monkeypatch.setattr(send_report_notification, "delay", broker_down)
+    logs = capture_module_logs(monkeypatch, worker)
 
-    with structlog.testing.capture_logs() as logs:
-        response = await client.post(REPORTS_URL, json=report_body(), headers=headers)
+    response = await client.post(REPORTS_URL, json=report_body(), headers=headers)
 
     # Báo cáo đã lưu: mất email thông báo còn hơn báo lỗi khiến nhân viên gửi lại.
     assert response.status_code == 201

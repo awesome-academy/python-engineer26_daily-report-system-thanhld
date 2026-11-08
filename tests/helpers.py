@@ -3,18 +3,21 @@
 import asyncio
 import base64
 import json
-from collections.abc import Awaitable, Callable, Iterator
+from collections.abc import Awaitable, Callable, Iterator, MutableMapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from types import ModuleType
 from typing import Any
 
 import jwt
 import pytest
+import structlog
 from httpx import AsyncClient, Response
 from redis.asyncio import Redis
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession
+from structlog.testing import LogCapture
 from typer.testing import CliRunner, Result
 
 from app.cli import cli
@@ -73,6 +76,20 @@ class FakeMailer:
         if self.errors:
             raise self.errors.pop(0)
         self.sent.append((to_email, email))
+
+
+def capture_module_logs(
+    monkeypatch: pytest.MonkeyPatch, module: ModuleType
+) -> list[MutableMapping[str, Any]]:
+    """Ghi lại log mà `module.logger` ghi trong test.
+
+    Không dùng `structlog.testing.capture_logs()`: nó sửa list processors của cấu hình hiện tại,
+    còn logger đã dùng trước đó (cache_logger_on_first_use) giữ list cũ nếu giữa chừng có test
+    gọi `create_app()` (configure_logging tạo list mới), nên log bị lọt tùy thứ tự chạy test.
+    """
+    capture = LogCapture()
+    monkeypatch.setattr(module, "logger", structlog.wrap_logger(None, processors=[capture]))
+    return capture.entries
 
 
 async def invoke(*args: str) -> Result:
