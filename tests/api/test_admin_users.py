@@ -8,6 +8,7 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import worker
 from app.core.config import get_settings
 from app.core.constants import BIGINT_MAX, KEYWORD_MAX_LENGTH, MAX_PAGE_SIZE
 from app.modules.auth.models import UserToken
@@ -21,7 +22,15 @@ from tests.factories import (
     create_setup_token,
     create_user,
 )
-from tests.helpers import QueuedTask, bearer, login, login_tokens, queued_tasks, refresh
+from tests.helpers import (
+    QueuedTask,
+    bearer,
+    capture_module_logs,
+    login,
+    login_tokens,
+    queued_tasks,
+    refresh,
+)
 
 API = get_settings().api_v1_prefix
 USERS_URL = f"{API}/admin/users"
@@ -215,11 +224,15 @@ async def test_create_user_succeeds_when_queue_is_down(
         raise OperationalError("Error 111 connecting to redis:6379. Connection refused.")
 
     monkeypatch.setattr(send_account_setup_email, "delay", broker_down)
+    logs = capture_module_logs(monkeypatch, worker)
 
     response = await client.post(USERS_URL, json=NEW_USER, headers=headers)
 
     assert response.status_code == 201
     assert (await get_user_row(db_session, response.json()["id"])).email == NEW_USER["email"]
+    [error] = [log for log in logs if log["event"] == "task_enqueue_failed"]
+    assert error["log_level"] == "error"
+    assert error["task"] == send_account_setup_email.name
 
 
 async def test_create_user_rejects_duplicate_email_ignoring_case(

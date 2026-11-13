@@ -115,7 +115,6 @@ async def create_setup_token(
     user: User,
     *,
     expires_at: datetime | None = None,
-    used_at: datetime | None = None,
 ) -> str:
     """Lưu token đặt mật khẩu (dạng hash) như worker, trả token gốc như trên link trong email."""
     token = create_one_time_token()
@@ -126,7 +125,6 @@ async def create_setup_token(
             purpose=UserTokenPurpose.SETUP_PASSWORD,
             expires_at=expires_at
             or datetime.now(UTC) + timedelta(hours=SETUP_PASSWORD_TOKEN_EXPIRE_HOURS),
-            used_at=used_at,
         )
     )
     await session.flush()
