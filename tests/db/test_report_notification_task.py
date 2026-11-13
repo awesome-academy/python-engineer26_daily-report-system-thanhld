@@ -7,11 +7,12 @@ from datetime import date
 from typing import Any
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.core.config import get_settings
 from app.core.constants import TASK_MAX_RETRIES
+from app.modules.departments.models import DepartmentManager
 from app.modules.notifications.models import EmailLog, EmailStatus, EmailTemplate
 from app.modules.reports import notifications, tasks
 from app.modules.reports.models import ReportRecipient
@@ -137,31 +138,57 @@ async def test_task_run_again_does_not_email_twice(engine: AsyncEngine, mailer: 
     assert await email_logs(engine) == sent_logs(scene.emails)
 
 
+async def assert_second_recipient_skipped(
+    engine: AsyncEngine, mailer: FakeMailer, logs: list[MutableMapping[str, Any]], scene: Scene
+) -> None:
+    """Chỉ người nhận đầu được gửi; người thứ hai bị bỏ qua, có warning, không có email_logs."""
+    active, skipped = scene.emails
+    assert [to_email for to_email, _ in mailer.sent] == [active]
+    assert await notified_emails(engine, scene.report_id) == {active}
+    assert skipped not in {to_email for to_email, _, _ in await email_logs(engine)}
+    assert any(
+        log["event"] == "report_notification_skipped" and log["reason"] == "recipient_unavailable"
+        for log in logs
+    )
+
+
 @pytest.mark.parametrize(
     "fields",
-    [{"is_active": False}, {"deleted": True}],
-    ids=["locked", "deleted"],
+    [{"is_active": False}, {"deleted": True}, {"password": None}, {"role": UserRole.USER}],
+    ids=["locked", "deleted", "password-not-set", "no-longer-manager"],
 )
-async def test_task_skips_recipient_who_can_no_longer_log_in(
+async def test_task_skips_recipient_who_can_no_longer_read_report(
     engine: AsyncEngine,
     mailer: FakeMailer,
     logs: list[MutableMapping[str, Any]],
     fields: dict[str, Any],
 ) -> None:
-    # Tạo báo cáo xong, admin khóa hay xóa manager trước khi worker kịp gửi.
+    # Tạo báo cáo xong, admin khóa, xóa hay hạ role manager trước khi worker kịp gửi: họ không
+    # còn đọc được báo cáo trên hệ thống thì email cũng không được lộ nội dung báo cáo.
     scene = await make_scene(engine, ({"full_name": "Trần Bình"}, fields))
-    active, unavailable = scene.emails
 
     result = send_report_notification.apply(args=(scene.report_id,))
 
     assert result.successful()
-    assert [to_email for to_email, _ in mailer.sent] == [active]
-    assert await notified_emails(engine, scene.report_id) == {active}
-    assert unavailable not in {to_email for to_email, _, _ in await email_logs(engine)}
-    assert any(
-        log["event"] == "report_notification_skipped" and log["reason"] == "recipient_unavailable"
-        for log in logs
-    )
+    await assert_second_recipient_skipped(engine, mailer, logs, scene)
+
+
+async def test_task_skips_manager_removed_from_department(
+    engine: AsyncEngine, mailer: FakeMailer, logs: list[MutableMapping[str, Any]]
+) -> None:
+    scene = await make_scene(engine)
+    removed = scene.emails[1]
+    async with AsyncSession(engine) as session:
+        removed_id = await session.scalar(select(User.id).where(User.email == removed))
+        await session.execute(
+            delete(DepartmentManager).where(DepartmentManager.user_id == removed_id)
+        )
+        await session.commit()
+
+    result = send_report_notification.apply(args=(scene.report_id,))
+
+    assert result.successful()
+    await assert_second_recipient_skipped(engine, mailer, logs, scene)
 
 
 async def test_task_skips_missing_report_with_warning(

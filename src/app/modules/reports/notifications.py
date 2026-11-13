@@ -42,11 +42,13 @@ class ReportNotifier:
             # Báo cáo chưa có API xóa; gặp trường hợp này là dữ liệu bị xóa tay sau khi đẩy task.
             logger.warning("report_notification_skipped", report_id=report_id, reason="not_found")
             return []
+        # Từ lúc tạo báo cáo, người nhận có thể đã bị khóa, xóa, hạ role hay gỡ khỏi bộ phận: họ
+        # không còn đọc được báo cáo trên hệ thống thì email cũng không gửi nội dung báo cáo.
+        eligible = self.reports.eligible_recipient_ids(report.department_id)
         failures: list[FailedEmail] = []
         for item in self.reports.list_unnotified_recipients(report_id):
             recipient = item.recipient
-            # Người nhận bị khóa, bị xóa sau khi báo cáo được tạo thì không còn đọc được báo cáo.
-            if not recipient.can_log_in:
+            if recipient.id not in eligible:
                 logger.warning(
                     "report_notification_skipped",
                     report_id=report_id,

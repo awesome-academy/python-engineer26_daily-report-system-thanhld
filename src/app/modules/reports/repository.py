@@ -33,6 +33,24 @@ def _in_date_range(statement: Select[Any], date_range: DateRange) -> Select[Any]
     return statement
 
 
+def _eligible_recipients(department_id: int) -> Select[User]:
+    """Manager của bộ phận còn nhận được báo cáo: còn liên kết, đúng role, đăng nhập được để đọc.
+
+    Manager chưa đặt mật khẩu, bị khóa hay bị xóa không đọc được báo cáo, nên không là
+    người nhận. Xét lại role: liên kết manager là dữ liệu riêng, user đổi role thì liên kết vẫn
+    còn. Dùng chung cho lúc tạo báo cáo (API) và lúc gửi email S1 (worker).
+    """
+    return (
+        select(User)
+        .join(DepartmentManager, DepartmentManager.user_id == User.id)
+        .where(
+            DepartmentManager.department_id == department_id,
+            User.role == UserRole.MANAGER,
+            User.can_log_in,
+        )
+    )
+
+
 class ReportRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -49,23 +67,7 @@ class ReportRepository:
         )
 
     async def list_recipients(self, department_id: int) -> Sequence[User]:
-        """Manager của bộ phận còn nhận được báo cáo: đúng role, đăng nhập được để đọc.
-
-        Manager chưa đặt mật khẩu, bị khóa hay bị xóa không đọc được báo cáo, nên không là
-        người nhận.
-
-        Xét lại role: liên kết manager là dữ liệu riêng, user đổi role thì liên kết vẫn còn.
-        """
-        statement = (
-            select(User)
-            .join(DepartmentManager, DepartmentManager.user_id == User.id)
-            .where(
-                DepartmentManager.department_id == department_id,
-                User.role == UserRole.MANAGER,
-                User.can_log_in,
-            )
-            .order_by(*order_by_full_name())
-        )
+        statement = _eligible_recipients(department_id).order_by(*order_by_full_name())
         return (await self.session.scalars(statement)).all()
 
     async def search_by_author(
@@ -147,6 +149,11 @@ class ReportNotificationRepository:
             .where(DailyReport.id == report_id)
             .options(joinedload(DailyReport.author), joinedload(DailyReport.department))
         )
+
+    def eligible_recipient_ids(self, department_id: int) -> set[int]:
+        """Id manager còn nhận được báo cáo của bộ phận, cùng điều kiện với lúc tạo báo cáo."""
+        statement = _eligible_recipients(department_id).with_only_columns(User.id)
+        return set(self.session.scalars(statement))
 
     def list_unnotified_recipients(self, report_id: int) -> Sequence[ReportRecipient]:
         """Người nhận chưa được gửi email, kèm tài khoản; task chạy lại thì bỏ qua người đã gửi."""
