@@ -17,6 +17,7 @@ from httpx import AsyncClient, Response
 from redis.asyncio import Redis
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 from structlog.testing import LogCapture
 from typer.testing import CliRunner, Result
 
@@ -90,6 +91,21 @@ def capture_module_logs(
     capture = LogCapture()
     monkeypatch.setattr(module, "logger", structlog.wrap_logger(None, processors=[capture]))
     return capture.entries
+
+
+def use_test_worker(
+    monkeypatch: pytest.MonkeyPatch, tasks_module: ModuleType, session: Session
+) -> FakeMailer:
+    """Task trong `tasks_module` dùng session test (rollback sau test) và mailer giả thay SMTP."""
+    fake = FakeMailer()
+
+    @contextmanager
+    def test_session() -> Iterator[Session]:
+        yield session
+
+    monkeypatch.setattr(tasks_module, "sync_session", test_session)
+    monkeypatch.setattr(tasks_module, "SmtpMailer", lambda _settings: fake)
+    return fake
 
 
 async def invoke(*args: str) -> Result:

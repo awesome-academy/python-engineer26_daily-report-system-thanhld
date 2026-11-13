@@ -1,6 +1,4 @@
 import smtplib
-from collections.abc import Iterator
-from contextlib import contextmanager
 from typing import Any
 
 import pytest
@@ -12,23 +10,14 @@ from app.modules.notifications import tasks
 from app.modules.notifications.models import EmailLog, EmailStatus, EmailTemplate
 from app.modules.notifications.tasks import send_email
 from app.worker import celery_app, retry_countdown
-from tests.helpers import FakeMailer
+from tests.helpers import FakeMailer, use_test_worker
 
 ARGS = ("an@example.com", EmailTemplate.TEST.value, {"requested_at": "08:30:00 06/11/2026"})
 
 
 @pytest.fixture
 def mailer(monkeypatch: pytest.MonkeyPatch, sync_db_session: Session) -> FakeMailer:
-    """Task dùng session test (rollback sau test) và mailer giả thay cho SMTP thật."""
-    fake = FakeMailer()
-
-    @contextmanager
-    def session() -> Iterator[Session]:
-        yield sync_db_session
-
-    monkeypatch.setattr(tasks, "sync_session", session)
-    monkeypatch.setattr(tasks, "SmtpMailer", lambda _settings: fake)
-    return fake
+    return use_test_worker(monkeypatch, tasks, sync_db_session)
 
 
 def _logs(session: Session) -> list[EmailLog]:
