@@ -15,6 +15,14 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-daily_report}:${POSTGRES_PASSWORD:-daily_report}@postgres:5432/${POSTGRES_DB:-daily_report}
       REDIS_URL: redis://redis:6379/0
+      # Lưu trữ file: đặt trong .env (xem .env.example) để đổi sang S3.
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+      LOCAL_STORAGE_BASE_URL: ${LOCAL_STORAGE_BASE_URL:-http://localhost:${API_PORT:-8001}/media}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_REGION: ${S3_REGION:-}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
     ports:
       - "${API_PORT:-8001}:8000"
       # Chỉ mở trên 127.0.0.1: ai attach được debugpy là chạy được code tùy ý trong container.
@@ -23,6 +31,8 @@ services:
       - ./src:/app/src
       - ./migrations:/app/migrations
       - ./scripts:/app/scripts
+      # Ảnh đại diện (STORAGE_BACKEND=local) còn lại sau khi dựng lại container.
+      - media-data:/app/media
     depends_on:
       postgres:
         condition: service_healthy
@@ -93,3 +103,4 @@ services:
 
 volumes:
   postgres-data:
+  media-data:

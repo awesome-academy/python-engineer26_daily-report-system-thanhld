@@ -1,6 +1,7 @@
 """Cấu hình ứng dụng, đọc từ biến môi trường và file .env."""
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal, Self
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -12,10 +13,13 @@ from app.core.constants import (
     JWT_SECRET_MIN_LENGTH,
     REFRESH_TOKEN_EXPIRE_DAYS,
     Environment,
+    StorageBackend,
 )
 
 # Chỉ dùng khi dev và test. Production bắt buộc đặt JWT_SECRET_KEY riêng.
 DEV_JWT_SECRET_KEY = "dev-only-secret-key-change-me-in-production"  # noqa: S105
+# Validator của Settings và build_storage (core/storage.py) cùng báo lỗi này.
+S3_BUCKET_REQUIRED = "STORAGE_BACKEND=s3 cần đặt S3_BUCKET."
 
 
 class Settings(BaseSettings):
@@ -54,6 +58,20 @@ class Settings(BaseSettings):
     # Địa chỉ frontend, dùng để ghép link trong email (đặt mật khẩu lần đầu).
     frontend_url: HttpUrl = HttpUrl("http://localhost:3000")
 
+    # Lưu trữ file (ảnh đại diện). Đổi backend chỉ cần đổi STORAGE_BACKEND và các biến của backend.
+    storage_backend: StorageBackend = StorageBackend.LOCAL
+    # Backend local: thư mục lưu file (tương đối thì tính từ thư mục chạy app) và URL công khai
+    # tương ứng; API phục vụ thư mục này tại LOCAL_STORAGE_URL_PATH (/media).
+    local_storage_dir: Path = Path("media")
+    local_storage_base_url: HttpUrl = HttpUrl("http://localhost:8001/media")
+    # Backend S3 (AWS S3 hoặc dịch vụ tương thích như MinIO: đặt S3_ENDPOINT_URL). Không đặt khóa
+    # truy cập thì boto3 tự tìm theo chuỗi mặc định (biến AWS_*, IAM role).
+    s3_bucket: str | None = None
+    s3_region: str | None = None
+    s3_endpoint_url: HttpUrl | None = None
+    s3_access_key_id: str | None = None
+    s3_secret_access_key: SecretStr | None = None
+
     # Múi giờ nghiệp vụ: dùng để tính "hôm nay" cho ngày báo cáo và thống kê tháng.
     timezone: str = "Asia/Ho_Chi_Minh"
     cors_origins: list[str] = Field(default_factory=list)
@@ -80,6 +98,30 @@ class Settings(BaseSettings):
         # `SMTP_USERNAME=` để trống (như .env.example) đọc ra "": coi là không đặt, nếu không
         # worker đăng nhập bằng chuỗi rỗng và Mailpit (không có đăng nhập) từ chối mọi email.
         return value or None
+
+    @field_validator(
+        "s3_bucket",
+        "s3_region",
+        "s3_endpoint_url",
+        "s3_access_key_id",
+        "s3_secret_access_key",
+        mode="before",
+    )
+    @classmethod
+    def _blank_s3_setting_to_none(cls, value: object) -> object:
+        # Biến để trống như .env.example: coi là không đặt, để boto3 dùng giá trị mặc định
+        # (endpoint của AWS, chuỗi tìm khóa) thay vì chuỗi rỗng.
+        return value or None
+
+    @model_validator(mode="after")
+    def _require_s3_settings(self) -> Self:
+        # Kiểm tra lúc khởi động: thiếu bucket thì app không chạy, thay vì mọi lần upload lỗi 500.
+        if self.storage_backend is StorageBackend.S3 and self.s3_bucket is None:
+            raise ValueError(S3_BUCKET_REQUIRED)
+        if (self.s3_access_key_id is None) != (self.s3_secret_access_key is None):
+            msg = "S3_ACCESS_KEY_ID và S3_SECRET_ACCESS_KEY phải cùng được đặt hoặc cùng bỏ trống."
+            raise ValueError(msg)
+        return self
 
     @model_validator(mode="after")
     def _require_smtp_credentials_in_pairs(self) -> Self:

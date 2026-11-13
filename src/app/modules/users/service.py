@@ -1,12 +1,18 @@
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
+from uuid import uuid4
 
+import structlog
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.constants import AVATAR_KEY_PREFIX, IMAGE_EXTENSIONS
 from app.core.database import commit_unique
-from app.core.exceptions import AppError, ServiceUnavailableError
+from app.core.exceptions import AppError, ServiceUnavailableError, UnauthorizedError
 from app.core.security import hash_password
+from app.core.storage import FileStorage, StorageError
+from app.core.uploads import UploadedImage
 from app.modules.auth.models import UserTokenPurpose
 from app.modules.auth.repository import UserTokenRepository
 from app.modules.auth.tasks import send_account_setup_email
@@ -32,6 +38,8 @@ from app.modules.users.schemas import (
     UserProfileUpdate,
 )
 from app.worker import enqueue_task
+
+logger = structlog.get_logger(__name__)
 
 
 class UserService:
@@ -222,3 +230,47 @@ class UserService:
         self.users.add(user)
         # Hai request tạo cùng email chạy song song đều qua được bước kiểm tra email ở trên.
         await commit_unique(self.session, USER_EMAIL_UNIQUE_INDEX, EmailAlreadyExistsError())
+
+
+class AvatarService:
+    """Ảnh đại diện: file nằm ở kho lưu trữ (local hoặc S3), DB chỉ giữ key."""
+
+    def __init__(self, session: AsyncSession, storage: FileStorage) -> None:
+        self.session = session
+        self.storage = storage
+        self.users = UserRepository(session)
+
+    async def update(self, user: User, image: UploadedImage) -> User:
+        """Lưu ảnh mới, trỏ user sang ảnh mới rồi mới xóa ảnh cũ.
+
+        Mỗi lần đổi một key mới: lỗi giữa chừng thì user vẫn giữ ảnh cũ còn nguyên, không có lúc
+        nào DB trỏ vào file chưa ghi xong hay đã bị xóa.
+        """
+        key = f"{AVATAR_KEY_PREFIX}/{user.id}/{uuid4().hex}.{IMAGE_EXTENSIONS[image.type]}"
+        # Ghi file trước khi khóa dòng user: không giữ khóa trong lúc chờ đĩa, mạng.
+        await self.storage.save(key, image.data, image.type.value)
+        try:
+            # Khóa dòng để đọc đúng key cũ: hai lần đổi ảnh cùng lúc thì lần sau xóa ảnh của lần
+            # trước, không để lại file không ai trỏ tới.
+            locked = await self.users.get_by_id_for_update(user.id)
+            if locked is None:
+                # User bị xóa trong lúc đang upload: phiên đăng nhập không còn hiệu lực.
+                raise UnauthorizedError
+            old_key = locked.avatar_key
+            locked.avatar_key = key
+            await self.session.commit()
+        except (AppError, SQLAlchemyError):
+            await self.session.rollback()
+            await self._delete_quietly(key)
+            raise
+        if old_key is not None:
+            await self._delete_quietly(old_key)
+        return locked
+
+    async def _delete_quietly(self, key: str) -> None:
+        # DB đã trỏ sang ảnh khác (hoặc chưa từng trỏ tới file này): xóa không được chỉ để lại file
+        # thừa trong kho, không làm request lỗi. Log để còn dọn tay.
+        try:
+            await self.storage.delete(key)
+        except StorageError:
+            logger.warning("avatar_delete_failed", key=key, exc_info=True)
