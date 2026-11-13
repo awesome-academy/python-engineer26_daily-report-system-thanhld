@@ -9,6 +9,13 @@ class Environment(StrEnum):
     PRODUCTION = "production"
 
 
+class StorageBackend(StrEnum):
+    """Nơi lưu file người dùng tải lên (ảnh đại diện), chọn bằng cấu hình STORAGE_BACKEND."""
+
+    LOCAL = "local"
+    S3 = "s3"
+
+
 # Phân trang
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
@@ -105,6 +112,15 @@ REDIS_LOGIN_ATTEMPTS_PREFIX = "auth:login-attempts:"
 # Mật khẩu người dùng nhập
 PASSWORD_MIN_LENGTH = 8
 PASSWORD_MAX_LENGTH = 128
+
+# Lưu trữ file. Backend local: API phục vụ file đã lưu tại đường dẫn này (StaticFiles).
+LOCAL_STORAGE_URL_PATH = "/media"
+# Backend S3: bucket private, URL trả cho client là URL ký sẵn, hết hạn sau chừng này giây.
+S3_PRESIGNED_URL_EXPIRE_SECONDS = 60 * 60
+# S3 treo thì request upload báo lỗi sau chừng này giây, không chờ vô hạn. Số lần thử gồm lần đầu.
+S3_CONNECT_TIMEOUT_SECONDS = 5
+S3_READ_TIMEOUT_SECONDS = 10
+S3_MAX_ATTEMPTS = 3
 
 # Celery task gặp lỗi tạm thời (SMTP, mất kết nối) thì thử lại tối đa TASK_MAX_RETRIES lần, lần
 # thứ n chờ TASK_RETRY_BACKOFF_SECONDS * 2**n giây (30s, 60s, 120s). Mọi task dùng chung.

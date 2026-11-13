@@ -11,6 +11,7 @@ bên trong fixture `app`.
 
 import asyncio
 import os
+import tempfile
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -36,6 +37,10 @@ TEST_REDIS_URL = _settings.test_redis_url
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ["REDIS_URL"] = TEST_REDIS_URL
 os.environ["ENVIRONMENT"] = "test"
+# Ảnh đại diện test upload ghi vào thư mục tạm (tự xóa khi kết thúc), không vào media/ của repo.
+_local_storage_dir = tempfile.TemporaryDirectory(prefix="daily-report-media-")
+os.environ["STORAGE_BACKEND"] = "local"
+os.environ["LOCAL_STORAGE_DIR"] = _local_storage_dir.name
 
 
 def _redis_target(url: str) -> tuple[str | None, int | None, int]:

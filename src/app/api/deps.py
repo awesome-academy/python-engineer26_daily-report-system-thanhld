@@ -13,6 +13,7 @@ from app.core.database import get_db_session
 from app.core.exceptions import ForbiddenError, UnauthorizedError
 from app.core.redis import get_redis
 from app.core.security import AccessTokenClaims, decode_access_token, oauth2_scheme
+from app.core.storage import FileStorage, get_storage
 from app.core.validators import Id
 from app.modules.auth.blacklist import is_session_blacklisted
 from app.modules.users.models import User, UserRole
@@ -20,6 +21,8 @@ from app.modules.users.repository import UserRepository
 
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
 RedisClient = Annotated[Redis, Depends(get_redis)]
+# Kho lưu file theo cấu hình STORAGE_BACKEND. Test thay bằng app.dependency_overrides[get_storage].
+Storage = Annotated[FileStorage, Depends(get_storage)]
 # Id trên URL, cùng ràng buộc với id trong body, query (xem Id).
 IdPath = Annotated[Id, Path()]
 # Hôm nay theo múi giờ nghiệp vụ. Nhận qua dependency để test cố định được ngày (mốc qua tháng).

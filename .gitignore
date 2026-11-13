@@ -225,3 +225,6 @@ __marimo__/
 
 # Thư mục tạm của Playwright MCP
 .playwright-mcp/
+
+# Ảnh đại diện lưu local khi dev (LOCAL_STORAGE_DIR)
+/media/
