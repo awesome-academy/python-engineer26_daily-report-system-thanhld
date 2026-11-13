@@ -2,12 +2,14 @@
 
 import uuid
 from collections.abc import Sequence
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from itertools import count
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import create_access_token, hash_password
+from app.core.constants import SETUP_PASSWORD_TOKEN_EXPIRE_HOURS
+from app.core.security import create_access_token, create_one_time_token, hash_password
+from app.modules.auth.models import UserToken, UserTokenPurpose
 from app.modules.departments.models import Department, DepartmentManager
 from app.modules.reports.models import DailyReport, ReportRecipient
 from app.modules.users.models import User, UserRole
@@ -106,3 +108,26 @@ def auth_headers(user: User) -> dict[str, str]:
         session_id=uuid.uuid4().hex,
     )
     return {"Authorization": f"Bearer {token.token}"}
+
+
+async def create_setup_token(
+    session: AsyncSession,
+    user: User,
+    *,
+    expires_at: datetime | None = None,
+    used_at: datetime | None = None,
+) -> str:
+    """Lưu token đặt mật khẩu (dạng hash) như worker, trả token gốc như trên link trong email."""
+    token = create_one_time_token()
+    session.add(
+        UserToken(
+            user_id=user.id,
+            token_hash=token.token_hash,
+            purpose=UserTokenPurpose.SETUP_PASSWORD,
+            expires_at=expires_at
+            or datetime.now(UTC) + timedelta(hours=SETUP_PASSWORD_TOKEN_EXPIRE_HOURS),
+            used_at=used_at,
+        )
+    )
+    await session.flush()
+    return token.token

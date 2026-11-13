@@ -21,16 +21,25 @@ from app.core.security import (
     create_one_time_token,
     create_refresh_token,
     decode_refresh_token,
+    hash_one_time_token,
     hash_password,
     verify_dummy_password,
     verify_password,
 )
 from app.modules.auth.blacklist import blacklist_session
-from app.modules.auth.exceptions import CurrentPasswordIncorrectError, InvalidCredentialsError
+from app.modules.auth.exceptions import (
+    CurrentPasswordIncorrectError,
+    InvalidCredentialsError,
+    SetupTokenInvalidError,
+)
 from app.modules.auth.login_attempts import LoginAttempts
 from app.modules.auth.models import RefreshToken, UserToken, UserTokenPurpose
-from app.modules.auth.repository import RefreshTokenRepository, UserTokenSyncRepository
-from app.modules.auth.schemas import TokenResponse
+from app.modules.auth.repository import (
+    RefreshTokenRepository,
+    UserTokenRepository,
+    UserTokenSyncRepository,
+)
+from app.modules.auth.schemas import PasswordSetup, TokenResponse
 from app.modules.users.models import User
 from app.modules.users.repository import UserRepository, UserSyncRepository
 from app.modules.users.schemas import PasswordChange
@@ -44,6 +53,7 @@ class AuthService:
         self.redis = redis
         self.users = UserRepository(session)
         self.refresh_tokens = RefreshTokenRepository(session)
+        self.user_tokens = UserTokenRepository(session)
         self.login_attempts = LoginAttempts(redis)
 
     async def login(self, email: str, password: str) -> TokenResponse:
@@ -132,6 +142,36 @@ class AuthService:
         locked.password_hash = await hash_password(data.new_password)
         locked.token_version += 1
         return await self._issue_tokens(locked, session_id=session_id)
+
+    async def setup_password(self, data: PasswordSetup) -> None:
+        """Đặt mật khẩu lần đầu bằng token trong link email (S2). Token chỉ dùng được một lần."""
+        token_hash = hash_one_time_token(data.token)
+        purpose = UserTokenPurpose.SETUP_PASSWORD
+        now = datetime.now(UTC)
+        # Kiểm tra trước khi khóa và trước khi băm: token sai không tốn Argon2, khóa giữ ngắn.
+        token = await self.user_tokens.get_by_hash(token_hash, purpose)
+        if token is None or not token.is_usable(now):
+            raise SetupTokenInvalidError
+        password_hash = await hash_password(data.password)
+
+        # Khóa user rồi mới khóa token, cùng thứ tự với worker cấp link mới (AccountSetupService),
+        # để hai bên không chờ khóa của nhau (deadlock). Kiểm tra lại sau khi có khóa: request
+        # khác cùng token có thể vừa dùng xong, worker có thể vừa thay link mới.
+        user = await self.users.get_by_id_for_update(token.user_id)
+        locked_token = await self.user_tokens.get_by_hash(token_hash, purpose, for_update=True)
+        if (
+            user is None
+            or locked_token is None
+            or not locked_token.is_usable(now)
+            or not user.is_active
+            or user.password_hash is not None
+        ):
+            await self.session.rollback()
+            raise SetupTokenInvalidError
+
+        user.password_hash = password_hash
+        locked_token.used_at = now
+        await self.session.commit()
 
     async def _revoke_all_sessions(self, user_id: int, now: datetime) -> None:
         """Refresh token đã thu hồi quá khoảng ân hạn bị gửi lại: token có thể đã lộ.

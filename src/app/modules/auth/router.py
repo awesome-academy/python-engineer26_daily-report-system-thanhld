@@ -4,10 +4,14 @@ from fastapi import APIRouter, Depends, status
 from fastapi.security import OAuth2PasswordRequestForm
 
 from app.api.deps import CurrentTokenClaims, CurrentUser
-from app.core.constants import LOGIN_ATTEMPT_WINDOW_MINUTES, LOGIN_MAX_FAILED_ATTEMPTS
+from app.core.constants import (
+    LOGIN_ATTEMPT_WINDOW_MINUTES,
+    LOGIN_MAX_FAILED_ATTEMPTS,
+    SETUP_PASSWORD_TOKEN_EXPIRE_HOURS,
+)
 from app.core.exceptions import error_responses
 from app.modules.auth.dependencies import AuthServiceDep
-from app.modules.auth.schemas import RefreshTokenRequest, TokenResponse
+from app.modules.auth.schemas import PasswordSetup, RefreshTokenRequest, TokenResponse
 
 router = APIRouter(prefix="/auth", tags=["Xác thực"])
 
@@ -55,3 +59,19 @@ async def refresh(data: RefreshTokenRequest, auth_service: AuthServiceDep) -> To
 )
 async def logout(_: CurrentUser, claims: CurrentTokenClaims, auth_service: AuthServiceDep) -> None:
     await auth_service.logout(claims)
+
+
+@router.post(
+    "/setup-password",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Đặt mật khẩu lần đầu bằng link trong email",
+    description=(
+        "Tài khoản do admin tạo chưa có mật khẩu; email gửi cho user có link chứa `token`. "
+        f"Link dùng được một lần, hết hạn sau {SETUP_PASSWORD_TOKEN_EXPIRE_HOURS} giờ. "
+        "Token sai, đã dùng, hết hạn, hoặc tài khoản bị khóa, đã có mật khẩu: 400 "
+        "`SETUP_TOKEN_INVALID`. Đặt xong thì đăng nhập bằng email và mật khẩu mới."
+    ),
+    responses=error_responses(status.HTTP_400_BAD_REQUEST, status.HTTP_422_UNPROCESSABLE_CONTENT),
+)
+async def setup_password(data: PasswordSetup, auth_service: AuthServiceDep) -> None:
+    await auth_service.setup_password(data)

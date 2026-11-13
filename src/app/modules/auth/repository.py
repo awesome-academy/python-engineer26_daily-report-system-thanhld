@@ -40,6 +40,22 @@ class RefreshTokenRepository:
         )
 
 
+class UserTokenRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def get_by_hash(
+        self, token_hash: str, purpose: UserTokenPurpose, *, for_update: bool = False
+    ) -> UserToken | None:
+        statement = select(UserToken).where(
+            UserToken.token_hash == token_hash, UserToken.purpose == purpose
+        )
+        if for_update:
+            # populate_existing: token đã đọc trước khi chờ khóa được nạp lại bản mới nhất.
+            statement = statement.with_for_update().execution_options(populate_existing=True)
+        return await self.session.scalar(statement)
+
+
 class UserTokenSyncRepository:
     """Ghi bảng user_tokens bằng session đồng bộ (Celery worker cấp link đặt mật khẩu)."""
 
