@@ -55,6 +55,8 @@ Lỗi validate (422) có `details` là danh sách `{ "field": "body.report_date"
 | 403 | Sai role |
 | 404 | Không tồn tại hoặc ngoài phạm vi quyền |
 | 409 | Trùng dữ liệu |
+| 413 | File tải lên quá dung lượng |
+| 415 | Loại file tải lên không được hỗ trợ |
 | 422 | Dữ liệu không hợp lệ |
 | 429 | Quá số lần thử |
 | 500 | Lỗi hệ thống |
@@ -89,6 +91,8 @@ Lỗi validate (422) có `details` là danh sách `{ "field": "body.report_date"
 | `SETUP_TOKEN_INVALID` | 400 | 7 |
 | `PASSWORD_ALREADY_SET` | 409 | 7 |
 | `SERVICE_UNAVAILABLE` | 503 | 7 |
+| `FILE_TOO_LARGE` | 413 | 8 |
+| `UNSUPPORTED_FILE_TYPE` | 415 | 8 |
 | `IMPORT_VALIDATION_FAILED` | 422 | 8 |
 
 ## Danh sách endpoint
@@ -118,10 +122,10 @@ Phiên đăng nhập:
 
 | Method | Endpoint | Mã | Ghi chú |
 | --- | --- | --- | --- |
-| GET | `/me` | U2 | Gồm role và bộ phận |
+| GET | `/me` | U2 | Gồm role và bộ phận, `avatar_url` |
 | PATCH | `/me` | U2 | Sửa `full_name`, `phone`, `date_of_birth`. Không tự đổi được email, role |
 | PUT | `/me/password` | U2 | Cần mật khẩu cũ. Trả cặp token mới cho phiên hiện tại |
-| PUT | `/me/avatar` | U2 | `multipart/form-data`, JPEG hoặc PNG, tối đa 2 MB |
+| PUT | `/me/avatar` | U2 | `multipart/form-data` field `file`, JPEG hoặc PNG, tối đa 2 MB. Trả hồ sơ như `GET /me` |
 | GET | `/me/recipients` | U3 | Manager của bộ phận mình |
 | POST | `/me/reports` | U3, S1 | Tạo báo cáo, kích hoạt email |
 | GET | `/me/reports` | U3 | `date_from`, `date_to`, phân trang |
@@ -133,6 +137,15 @@ Hồ sơ cá nhân:
 - `phone`: chỉ chữ số, có thể có `+` đầu, 9 đến 15 chữ số. `date_of_birth`: ngày trong quá khứ.
 - Mật khẩu người dùng tự chọn (đổi mật khẩu, `create-admin`, đặt mật khẩu lần đầu): 8 đến 128 ký tự, có chữ thường, chữ hoa, chữ số và ký tự đặc biệt. Không đạt thì 422 ở field đó. Mật khẩu khi đăng nhập và mật khẩu hiện tại không xét quy tắc này.
 - `PUT /me/password` body `current_password`, `new_password` (phải khác mật khẩu hiện tại). Sai mật khẩu hiện tại trả 400 `CURRENT_PASSWORD_INCORRECT` (không dùng 401 để client không hiểu nhầm là hết phiên), đếm chung với đăng nhập sai nên quá 5 lần trong 15 phút trả 429.
+- `GET /me`, `PATCH /me`, `PUT /me/avatar` trả cùng một dạng hồ sơ, có `avatar_url` (`null` khi chưa có ảnh).
+
+Ảnh đại diện:
+
+- `PUT /me/avatar` nhận `multipart/form-data`, field `file`. Loại ảnh xét theo các byte đầu của nội dung (magic bytes), không theo đuôi tên file hay `Content-Type` client gửi: đổi đuôi `.png` cho file khác vẫn bị từ chối, ảnh PNG đặt tên `.jpg` vẫn nhận và lưu đúng đuôi `.png`.
+- Quá 2 MB trả 413 `FILE_TOO_LARGE`, `details` là `{"field": "file", "max_bytes": 2097152}`. Không phải JPEG, PNG (kể cả file rỗng) trả 415 `UNSUPPORTED_FILE_TYPE`, `details` là `{"field": "file", "allowed_types": ["image/jpeg", "image/png"]}`. Thiếu field `file` trả 422.
+- Mỗi lần đổi ảnh lưu một file mới (`avatars/{user_id}/{chuỗi ngẫu nhiên}.{jpg|png}`), commit rồi mới xóa file cũ, nên lỗi giữa chừng không làm mất ảnh đang dùng. Xóa file cũ lỗi chỉ ghi log cảnh báo, request vẫn thành công.
+- Nơi lưu chọn bằng cấu hình `STORAGE_BACKEND`, client không cần biết: `local` (mặc định) thì API phục vụ file tại `/media/...`, không cần token (key có chuỗi ngẫu nhiên nên không đoán được); `s3` thì bucket private, `avatar_url` là URL ký sẵn hết hạn sau 1 giờ, client lấy URL mới qua `GET /me`.
+
 - Đổi mật khẩu tăng `token_version`: mọi access token, refresh token cũ (cả của phiên hiện tại) hết hiệu lực, response trả cặp token mới cho phiên hiện tại. Nếu trong lúc xử lý phiên đã hết hiệu lực (request đổi mật khẩu khác chạy trước, tài khoản bị khóa) thì trả 401. Refresh token cũ không bị đánh dấu thu hồi, để thiết bị khác refresh bằng token cũ chỉ nhận 401, không bị coi là token bị lộ (việc đó sẽ đăng xuất cả phiên vừa đổi mật khẩu).
 
 Báo cáo hằng ngày (U3):
