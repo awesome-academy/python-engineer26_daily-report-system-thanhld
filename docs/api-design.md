@@ -109,6 +109,7 @@ Phiên đăng nhập:
 - `POST /auth/setup-password` (S2, không cần đăng nhập): body `token` (giá trị trên link trong email), `password` (quy tắc mật khẩu tự chọn ở mục hồ sơ cá nhân). Đặt được thì trả 204, user đăng nhập bằng email và mật khẩu mới. Field lạ trả 422; `token` sai định dạng (ngoài ký tự base64url, dài quá 128) trả 422 ở `body.token`.
 - Link dùng một lần, hết hạn sau 24 giờ. Token sai, đã dùng, hết hạn, hoặc tài khoản bị khóa, đã xóa, đã có mật khẩu: cùng một lỗi 400 `SETUP_TOKEN_INVALID`, `details` là `{"field": "token"}`, không cho biết trường hợp nào (không dò được token từng tồn tại). Link chỉ để đặt mật khẩu lần đầu, không dùng để đổi mật khẩu.
 - Hai request cùng một link chạy song song: request sau chờ request trước xong rồi nhận 400, mật khẩu không bị ghi đè.
+- Mỗi lần task gửi email chạy (kể cả thử lại sau lỗi SMTP, worker giao lại task) đều cấp link mới và hủy link cũ, vì token gốc không lưu ở đâu để gửi lại. Đánh đổi: SMTP báo lỗi dù email đã tới thì link trong email đó không còn dùng được, user dùng link trong email gửi sau.
 - Khóa tạm đăng nhập đếm theo email (không phân biệt hoa thường, kể cả email không tồn tại), cửa sổ 15 phút tính từ lần thử đầu. Lần thứ 6 trả 429 `TOO_MANY_ATTEMPTS` kèm header `Retry-After` (số giây còn lại), không kiểm tra mật khẩu. Đăng nhập đúng thì xóa bộ đếm.
 
 ### /me: mọi user đã đăng nhập; báo cáo chỉ cho role USER (8)
@@ -228,6 +229,7 @@ Quản lý user (A1):
 - `POST` nhận `email`, `full_name`, `phone`, `date_of_birth`, `role` (mặc định `USER`), `department_id`; không nhận mật khẩu. User mới có `password_hash` null nên chưa đăng nhập được đến khi tự đặt mật khẩu qua link trong email (S2). Email gửi qua Celery sau khi lưu user; Redis lỗi lúc đẩy task thì API vẫn trả 201 (user đã lưu) và ghi log `task_enqueue_failed`.
 - Email không phân biệt hoa thường, trùng với user chưa bị xóa trả 409 `EMAIL_ALREADY_EXISTS` (tạo và sửa). Email của user đã xóa mềm dùng lại được.
 - `PATCH` cập nhật từng phần, sửa được mọi field của `POST` và `is_active`. `null` xóa `phone`, `date_of_birth`, `department_id` (gỡ khỏi bộ phận); `email`, `full_name`, `role`, `is_active` không nhận `null`. Field lạ trả 422.
+- User chưa đặt mật khẩu (S2): đổi `email` hoặc `is_active` thì link đặt mật khẩu đã gửi bị hủy ngay (link tới email gõ nhầm, link cấp trước khi bị khóa không dùng được nữa, kể cả khi mở khóa lại). Sau khi lưu, user còn hoạt động thì nhận link mới ở email hiện tại.
 - `department_id` không tồn tại hoặc bộ phận đã xóa: 404 `NOT_FOUND`, `details` là `{"field": "department_id"}`. Gán bộ phận khóa dòng bộ phận (`FOR SHARE`) đến khi lưu xong, nên không chạy xen được với lệnh xóa bộ phận: xóa trước thì lệnh gán nhận 404, gán trước thì lệnh xóa thấy bộ phận còn thành viên. User không tồn tại hoặc đã xóa: 404, `details` là `{"field": "user_id"}`.
 - Khóa (`is_active: false`) và xóa tăng `token_version`: mọi access token, refresh token đã cấp hết hiệu lực ngay. Không ghi `revoked_at` cho refresh token, để thiết bị của user refresh chỉ nhận 401, không bị coi là token bị lộ.
 - `DELETE` là xóa mềm (`deleted_at`), giữ `department_id` và báo cáo của user. Xóa lại user đã xóa trả 404.

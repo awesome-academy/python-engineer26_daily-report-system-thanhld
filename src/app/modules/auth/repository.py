@@ -55,6 +55,11 @@ class UserTokenRepository:
             statement = statement.with_for_update().execution_options(populate_existing=True)
         return await self.session.scalar(statement)
 
+    async def delete_for_user(self, user_id: int, purpose: UserTokenPurpose) -> None:
+        await self.session.execute(
+            delete(UserToken).where(UserToken.user_id == user_id, UserToken.purpose == purpose)
+        )
+
 
 class UserTokenSyncRepository:
     """Ghi bảng user_tokens bằng session đồng bộ (Celery worker cấp link đặt mật khẩu)."""

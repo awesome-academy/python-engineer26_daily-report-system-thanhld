@@ -7,6 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import commit_unique
 from app.core.exceptions import AppError
 from app.core.security import hash_password
+from app.modules.auth.models import UserTokenPurpose
+from app.modules.auth.repository import UserTokenRepository
 from app.modules.auth.tasks import send_account_setup_email
 from app.modules.departments.exceptions import DepartmentNotFoundError
 from app.modules.departments.repository import DepartmentRepository
@@ -35,6 +37,7 @@ class UserService:
         self.session = session
         self.users = UserRepository(session)
         self.departments = DepartmentRepository(session)
+        self.user_tokens = UserTokenRepository(session)
 
     async def create_user(self, data: UserCreate) -> User:
         await self._ensure_email_available(data.email)
@@ -117,9 +120,20 @@ class UserService:
         if user.is_active and changes.get("is_active") is False:
             # Khóa tài khoản: mọi access token, refresh token đã cấp hết hiệu lực ngay.
             user.token_version += 1
+        # User chưa đặt mật khẩu (S2): link đã gửi tới email cũ (admin gõ nhầm) hoặc cấp trước khi
+        # bị khóa thì hủy ngay, không đợi lúc dùng mới chặn (mở khóa lại không làm link cũ sống
+        # lại). Còn hoạt động thì gửi link mới tới email hiện tại sau commit.
+        setup_link_outdated = user.password_hash is None and any(
+            field in changes and changes[field] != getattr(user, field)
+            for field in ("email", "is_active")
+        )
         for field, value in changes.items():
             setattr(user, field, value)
+        if setup_link_outdated:
+            await self.user_tokens.delete_for_user(user.id, UserTokenPurpose.SETUP_PASSWORD)
         await commit_unique(self.session, USER_EMAIL_UNIQUE_INDEX, EmailAlreadyExistsError())
+        if setup_link_outdated and user.is_active:
+            await enqueue_task(send_account_setup_email, user.id)
         return user
 
     async def delete_by_admin(self, admin: User, user_id: int) -> None:

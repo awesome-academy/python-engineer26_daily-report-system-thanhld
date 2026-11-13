@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.constants import BIGINT_MAX, KEYWORD_MAX_LENGTH, MAX_PAGE_SIZE
+from app.modules.auth.models import UserToken
 from app.modules.auth.tasks import send_account_setup_email
 from app.modules.users.models import User, UserRole
 from tests.factories import (
@@ -17,6 +18,7 @@ from tests.factories import (
     auth_headers,
     create_department,
     create_report,
+    create_setup_token,
     create_user,
 )
 from tests.helpers import QueuedTask, bearer, login, login_tokens, queued_tasks, refresh
@@ -566,6 +568,114 @@ async def test_update_user_returns_not_found_for_deleted_user(
     response = await client.patch(user_url(user.id), json={"full_name": "A"}, headers=headers)
 
     assert response.status_code == 404
+
+
+# Sửa user chưa đặt mật khẩu: link đặt mật khẩu (S2)
+
+
+async def setup_tokens(session: AsyncSession, user_id: int) -> list[UserToken]:
+    statement = (
+        select(UserToken)
+        .where(UserToken.user_id == user_id)
+        .execution_options(populate_existing=True)
+    )
+    return list(await session.scalars(statement))
+
+
+async def test_changing_email_cancels_old_link_and_sends_new_one(
+    client: AsyncClient, db_session: AsyncSession, redis: Redis, headers: dict[str, str]
+) -> None:
+    # Admin gõ nhầm email, link đã tới hộp thư người khác. Sửa email thì link đó không dùng được
+    # nữa, email đúng nhận link mới.
+    user = await create_user(db_session, email="binh@exampel.com", password=None)
+    await create_setup_token(db_session, user)
+
+    response = await client.patch(
+        user_url(user.id), json={"email": "binh@example.com"}, headers=headers
+    )
+
+    assert response.status_code == 200
+    assert await setup_tokens(db_session, user.id) == []
+    assert await queued_tasks(redis) == [
+        QueuedTask(name=send_account_setup_email.name, args=[user.id], kwargs={})
+    ]
+
+
+async def test_locking_user_cancels_link(
+    client: AsyncClient, db_session: AsyncSession, redis: Redis, headers: dict[str, str]
+) -> None:
+    # Link phải hết dùng được ngay, không phải chỉ bị chặn khi còn khóa: mở khóa lại không làm
+    # link cũ dùng được trở lại.
+    user = await create_user(db_session, password=None)
+    await create_setup_token(db_session, user)
+
+    response = await client.patch(user_url(user.id), json={"is_active": False}, headers=headers)
+
+    assert response.status_code == 200
+    assert await setup_tokens(db_session, user.id) == []
+    assert await queued_tasks(redis) == []
+
+
+async def test_unlocking_user_without_password_sends_new_link(
+    client: AsyncClient, db_session: AsyncSession, redis: Redis, headers: dict[str, str]
+) -> None:
+    user = await create_user(db_session, password=None, is_active=False)
+
+    response = await client.patch(user_url(user.id), json={"is_active": True}, headers=headers)
+
+    assert response.status_code == 200
+    assert await queued_tasks(redis) == [
+        QueuedTask(name=send_account_setup_email.name, args=[user.id], kwargs={})
+    ]
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [{"full_name": "Trần Thị Bình"}, {"email": "an@example.com"}, {"is_active": True}],
+    ids=["other-field", "same-email", "same-status"],
+)
+async def test_update_keeping_email_and_status_keeps_link(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    redis: Redis,
+    headers: dict[str, str],
+    changes: dict[str, Any],
+) -> None:
+    user = await create_user(db_session, email="an@example.com", password=None)
+    await create_setup_token(db_session, user)
+
+    response = await client.patch(user_url(user.id), json=changes, headers=headers)
+
+    assert response.status_code == 200
+    assert len(await setup_tokens(db_session, user.id)) == 1
+    assert await queued_tasks(redis) == []
+
+
+async def test_changing_email_to_taken_one_sends_no_link(
+    client: AsyncClient, db_session: AsyncSession, redis: Redis, headers: dict[str, str]
+) -> None:
+    await create_user(db_session, email="binh@example.com")
+    user = await create_user(db_session, email="binh@exampel.com", password=None)
+
+    response = await client.patch(
+        user_url(user.id), json={"email": "binh@example.com"}, headers=headers
+    )
+
+    assert response.status_code == 409
+    assert await queued_tasks(redis) == []
+
+
+async def test_changing_email_of_user_with_password_sends_no_link(
+    client: AsyncClient, db_session: AsyncSession, redis: Redis, headers: dict[str, str]
+) -> None:
+    user = await create_user(db_session, email="an@example.com")
+
+    response = await client.patch(
+        user_url(user.id), json={"email": "an.nguyen@example.com"}, headers=headers
+    )
+
+    assert response.status_code == 200
+    assert await queued_tasks(redis) == []
 
 
 # Xóa
