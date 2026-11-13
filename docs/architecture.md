@@ -57,7 +57,8 @@ Phụ thuộc một chiều: router → service → repository → model. Module
 │   │   ├── exceptions.py      # AppError, ErrorCode, exception handler
 │   │   ├── logging.py         # structlog, middleware request-id
 │   │   ├── pagination.py      # PageParams, Page, paginate()
-│   │   └── redis.py           # client Redis
+│   │   ├── redis.py           # client Redis
+│   │   └── storage.py         # FileStorage: LocalFileStorage, S3FileStorage, chọn theo STORAGE_BACKEND
 │   ├── api/
 │   │   ├── deps.py            # dependency dùng chung (DB session, Redis)
 │   │   ├── health.py          # GET /health
@@ -86,6 +87,7 @@ Phụ thuộc một chiều: router → service → repository → model. Module
 | 4 | Nhóm API theo vai trò (`/me`, `/manager`, `/admin`) | Khớp requirement, service không rẽ nhánh theo role, test phân quyền đơn giản. |
 | 5 | Import Excel đồng bộ, "tất cả hoặc không", tối đa 1.000 dòng | Quy mô nhỏ, đơn giản. Vượt giới hạn thì chuyển sang job nền. |
 | 6 | Test chạy trên PostgreSQL thật (DB riêng), rollback sau mỗi test | Bắt được lỗi riêng của PostgreSQL (unaccent, partial index) mà SQLite bỏ sót. |
+| 7 | Lưu file qua interface `FileStorage`; DB chỉ lưu key, URL tính lúc trả response | Đổi local sang S3 chỉ bằng cấu hình. S3 dùng boto3 (đồng bộ) chạy trong thread, bucket private, URL ký sẵn có hạn. |
 
 ## Môi trường local
 

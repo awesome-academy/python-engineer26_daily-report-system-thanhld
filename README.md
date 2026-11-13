@@ -68,6 +68,15 @@ Tài khoản admin tạo (`POST /api/v1/admin/users`) chưa có mật khẩu; wo
 
 Worker không tự reload khi sửa code: `docker compose restart worker`. Xem log: `make logs`; mức log của worker (cả log của Celery) lấy từ `LOG_LEVEL`.
 
+## Lưu trữ file
+
+File người dùng tải lên (ảnh đại diện) lưu theo `STORAGE_BACKEND`:
+
+- `local` (mặc định): thư mục `LOCAL_STORAGE_DIR`, API phục vụ tại http://localhost:8001/media/. Trong Docker, file nằm ở volume `media-data`.
+- `s3`: đặt `S3_BUCKET` (và `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` nếu cần). Dịch vụ tương thích S3 như MinIO thì đặt thêm `S3_ENDPOINT_URL`.
+
+Đổi backend chỉ cần sửa `.env` (xem `.env.example`) rồi `make dev`, không sửa code.
+
 ## Dữ liệu mẫu
 
 ```bash
