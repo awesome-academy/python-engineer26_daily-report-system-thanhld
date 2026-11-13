@@ -47,6 +47,8 @@ class ErrorCode(StrEnum):
     SETUP_TOKEN_INVALID = "SETUP_TOKEN_INVALID"  # noqa: S105 (mã lỗi, không phải mật khẩu)
     PASSWORD_ALREADY_SET = "PASSWORD_ALREADY_SET"  # noqa: S105 (mã lỗi, không phải mật khẩu)
     SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
+    FILE_TOO_LARGE = "FILE_TOO_LARGE"
+    UNSUPPORTED_FILE_TYPE = "UNSUPPORTED_FILE_TYPE"
 
 
 class AppError(Exception):

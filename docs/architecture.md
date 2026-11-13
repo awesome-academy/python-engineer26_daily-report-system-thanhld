@@ -58,7 +58,8 @@ Phụ thuộc một chiều: router → service → repository → model. Module
 │   │   ├── logging.py         # structlog, middleware request-id
 │   │   ├── pagination.py      # PageParams, Page, paginate()
 │   │   ├── redis.py           # client Redis
-│   │   └── storage.py         # FileStorage: LocalFileStorage, S3FileStorage, chọn theo STORAGE_BACKEND
+│   │   ├── storage.py         # FileStorage: LocalFileStorage, S3FileStorage, chọn theo STORAGE_BACKEND
+│   │   └── uploads.py         # đọc UploadFile có giới hạn dung lượng, nhận diện ảnh theo nội dung
 │   ├── api/
 │   │   ├── deps.py            # dependency dùng chung (DB session, Redis)
 │   │   ├── health.py          # GET /health
