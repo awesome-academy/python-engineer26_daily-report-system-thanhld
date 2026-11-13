@@ -19,6 +19,19 @@ class CurrentPasswordIncorrectError(AppError):
         super().__init__(details={"field": "current_password"})
 
 
+class SetupTokenInvalidError(AppError):
+    # Một lỗi chung cho token sai, đã dùng, hết hạn, tài khoản bị khóa hay đã có mật khẩu: không cho
+    # dò token nào từng tồn tại. 400 thay vì 401: request này không dùng phiên đăng nhập.
+    code = ErrorCode.SETUP_TOKEN_INVALID
+    message = (
+        "Link đặt mật khẩu không hợp lệ, đã được dùng hoặc đã hết hạn. "
+        "Liên hệ quản trị viên để nhận link mới."
+    )
+
+    def __init__(self) -> None:
+        super().__init__(details={"field": "token"})
+
+
 class TooManyAttemptsError(AppError):
     status_code = status.HTTP_429_TOO_MANY_REQUESTS
     code = ErrorCode.TOO_MANY_ATTEMPTS

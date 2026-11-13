@@ -84,6 +84,16 @@ JWT_SECRET_MIN_LENGTH = 32
 # Refresh token client gửi lên trong body. JWT của project dài khoảng 300 ký tự.
 JWT_MAX_LENGTH = 1024
 
+# Link đặt mật khẩu lần đầu gửi qua email (S2): token ngẫu nhiên 32 byte (256 bit), hết hạn sau
+# SETUP_PASSWORD_TOKEN_EXPIRE_HOURS giờ. Token gửi lên dài 43 ký tự (base64url); giới hạn rộng hơn
+# chút để chặn chuỗi quá dài trước khi băm.
+ONE_TIME_TOKEN_BYTES = 32
+ONE_TIME_TOKEN_MAX_LENGTH = 128
+ONE_TIME_TOKEN_PATTERN = r"^[A-Za-z0-9_-]+$"  # noqa: S105 (ký tự của base64url, không phải mật khẩu)
+SETUP_PASSWORD_TOKEN_EXPIRE_HOURS = 24
+# Trang đặt mật khẩu của frontend, ghép sau FRONTEND_URL.
+SETUP_PASSWORD_PATH = "/setup-password"  # noqa: S105 (đường dẫn, không phải mật khẩu)
+
 # Khóa tạm đăng nhập: quá số lần thử trong cửa sổ thời gian thì trả 429 đến khi hết cửa sổ.
 LOGIN_MAX_FAILED_ATTEMPTS = 5
 LOGIN_ATTEMPT_WINDOW_MINUTES = 15

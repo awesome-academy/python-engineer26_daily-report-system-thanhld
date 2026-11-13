@@ -1,7 +1,7 @@
 """Celery app: hàng đợi tác vụ nền (gửi email) trên Redis.
 
 Chạy worker: `celery -A app.worker worker` (Docker Compose có sẵn service `worker`).
-API chỉ đẩy task vào Redis qua `task.delay(...)`, không chờ worker xử lý.
+API chỉ đẩy task vào Redis qua `enqueue_task(...)`, không chờ worker xử lý.
 """
 
 import asyncio
@@ -27,7 +27,11 @@ celery_app = Celery(
     # Cùng DB Redis với API (blacklist token, đếm đăng nhập sai); key của Celery có tên riêng
     # (`celery`, `_kombu.*`, `unacked*`) nên không lẫn với key `auth:*`.
     broker=settings.redis_url,
-    include=["app.modules.notifications.tasks", "app.modules.reports.tasks"],
+    include=[
+        "app.modules.notifications.tasks",
+        "app.modules.reports.tasks",
+        "app.modules.auth.tasks",
+    ],
 )
 celery_app.conf.update(
     task_serializer="json",
@@ -87,14 +91,17 @@ def retry_or_give_up(task: Task[Any, Any], exc: Exception) -> None:
     raise task.retry(exc=exc, countdown=countdown)
 
 
-async def enqueue_task(task: Task[Any, Any], *args: Any) -> None:
-    """Đẩy task vào Redis từ code async, gọi sau khi commit.
+async def enqueue_task(task: Task[Any, Any], *args: Any) -> bool:
+    """Đẩy task vào Redis từ code async, gọi sau khi commit. Trả False khi không đẩy được.
 
     `delay()` là lệnh chặn (kết nối, gửi tới Redis) nên chạy ở thread khác để không chặn event
     loop. Redis lỗi thì chỉ ghi log: dữ liệu đã commit, request vẫn thành công, mất một tác vụ nền
-    (email) còn hơn báo lỗi cho thao tác đã lưu xong.
+    (email) còn hơn báo lỗi cho thao tác đã lưu xong. Nơi mà đẩy task là toàn bộ việc cần làm
+    (gửi lại link đặt mật khẩu) thì xem giá trị trả về để báo lỗi.
     """
     try:
         await asyncio.to_thread(task.delay, *args)
     except OperationalError:
         logger.exception("task_enqueue_failed", task=task.name)
+        return False
+    return True

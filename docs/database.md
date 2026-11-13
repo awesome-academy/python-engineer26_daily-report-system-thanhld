@@ -110,6 +110,8 @@ Mỗi lần refresh tạo một dòng mới cùng `session_id`, dòng cũ đư�
 
 ### user_tokens (Ngày 2)
 
+Link đặt mật khẩu lần đầu (S2, Ngày 7). Celery worker sinh token ngẫu nhiên 256 bit, chỉ lưu SHA-256; token gốc chỉ có trong email, không đi qua Redis. Gửi link mới thì xóa link cũ của user. Admin đổi email hoặc khóa, mở khóa user chưa đặt mật khẩu cũng xóa link cũ. Dùng xong ghi `used_at`.
+
 | Cột | Kiểu | Ràng buộc |
 | --- | --- | --- |
 | id | bigint | PK, identity |

@@ -1,29 +1,47 @@
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from urllib.parse import urlencode
 
 import structlog
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
-from app.core.constants import REFRESH_TOKEN_REUSE_GRACE_SECONDS
+from app.core.config import get_settings
+from app.core.constants import (
+    REFRESH_TOKEN_REUSE_GRACE_SECONDS,
+    SETUP_PASSWORD_PATH,
+    SETUP_PASSWORD_TOKEN_EXPIRE_HOURS,
+)
 from app.core.exceptions import UnauthorizedError
 from app.core.security import (
     AccessTokenClaims,
     create_access_token,
+    create_one_time_token,
     create_refresh_token,
     decode_refresh_token,
+    hash_one_time_token,
     hash_password,
     verify_dummy_password,
     verify_password,
 )
 from app.modules.auth.blacklist import blacklist_session
-from app.modules.auth.exceptions import CurrentPasswordIncorrectError, InvalidCredentialsError
+from app.modules.auth.exceptions import (
+    CurrentPasswordIncorrectError,
+    InvalidCredentialsError,
+    SetupTokenInvalidError,
+)
 from app.modules.auth.login_attempts import LoginAttempts
-from app.modules.auth.models import RefreshToken
-from app.modules.auth.repository import RefreshTokenRepository
-from app.modules.auth.schemas import TokenResponse
+from app.modules.auth.models import RefreshToken, UserToken, UserTokenPurpose
+from app.modules.auth.repository import (
+    RefreshTokenRepository,
+    UserTokenRepository,
+    UserTokenSyncRepository,
+)
+from app.modules.auth.schemas import PasswordSetup, TokenResponse
 from app.modules.users.models import User
-from app.modules.users.repository import UserRepository
+from app.modules.users.repository import UserRepository, UserSyncRepository
 from app.modules.users.schemas import PasswordChange
 
 logger = structlog.get_logger(__name__)
@@ -35,6 +53,7 @@ class AuthService:
         self.redis = redis
         self.users = UserRepository(session)
         self.refresh_tokens = RefreshTokenRepository(session)
+        self.user_tokens = UserTokenRepository(session)
         self.login_attempts = LoginAttempts(redis)
 
     async def login(self, email: str, password: str) -> TokenResponse:
@@ -124,6 +143,36 @@ class AuthService:
         locked.token_version += 1
         return await self._issue_tokens(locked, session_id=session_id)
 
+    async def setup_password(self, data: PasswordSetup) -> None:
+        """Đặt mật khẩu lần đầu bằng token trong link email (S2). Token chỉ dùng được một lần."""
+        token_hash = hash_one_time_token(data.token)
+        purpose = UserTokenPurpose.SETUP_PASSWORD
+        now = datetime.now(UTC)
+        # Kiểm tra trước khi khóa và trước khi băm: token sai không tốn Argon2, khóa giữ ngắn.
+        token = await self.user_tokens.get_by_hash(token_hash, purpose)
+        if token is None or not token.is_usable(now):
+            raise SetupTokenInvalidError
+        password_hash = await hash_password(data.password)
+
+        # Khóa user rồi mới khóa token, cùng thứ tự với worker cấp link mới (AccountSetupService),
+        # để hai bên không chờ khóa của nhau (deadlock). Kiểm tra lại sau khi có khóa: request
+        # khác cùng token có thể vừa dùng xong, worker có thể vừa thay link mới.
+        user = await self.users.get_by_id_for_update(token.user_id)
+        locked_token = await self.user_tokens.get_by_hash(token_hash, purpose, for_update=True)
+        if (
+            user is None
+            or locked_token is None
+            or not locked_token.is_usable(now)
+            or not user.is_active
+            or user.password_hash is not None
+        ):
+            await self.session.rollback()
+            raise SetupTokenInvalidError
+
+        user.password_hash = password_hash
+        locked_token.used_at = now
+        await self.session.commit()
+
     async def _revoke_all_sessions(self, user_id: int, now: datetime) -> None:
         """Refresh token đã thu hồi quá khoảng ân hạn bị gửi lại: token có thể đã lộ.
 
@@ -157,4 +206,57 @@ class AuthService:
         )
         return TokenResponse(
             access_token=access.token, refresh_token=refresh.token, expires_in=access.expires_in
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class AccountSetupLink:
+    email: str
+    full_name: str
+    url: str
+
+
+def setup_password_url(token: str) -> str:
+    base = str(get_settings().frontend_url).rstrip("/")
+    return f"{base}{SETUP_PASSWORD_PATH}?{urlencode({'token': token})}"
+
+
+class AccountSetupService:
+    """Cấp link đặt mật khẩu lần đầu (S2). Chạy trong Celery worker, session đồng bộ.
+
+    Token sinh ở worker, không ở API: token gốc không nằm trong message trên Redis, chỉ có trong
+    email; DB chỉ lưu SHA-256.
+    """
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+        self.users = UserSyncRepository(session)
+        self.tokens = UserTokenSyncRepository(session)
+
+    def issue_link(self, user_id: int, now: datetime) -> AccountSetupLink | None:
+        """Tạo link mới và xóa link cũ, nên chỉ link trong email gửi sau cùng còn dùng được.
+
+        Trả None khi user không còn cần đặt mật khẩu: đã bị xóa, bị khóa hoặc đã có mật khẩu
+        (task chạy lại sau khi user đặt xong).
+        """
+        # Khóa user: cấp link không chạy xen với lệnh đặt mật khẩu (cùng khóa user trước).
+        user = self.users.get_by_id_for_update(user_id)
+        if user is None or not user.is_active or user.password_hash is not None:
+            self.session.rollback()
+            return None
+
+        purpose = UserTokenPurpose.SETUP_PASSWORD
+        self.tokens.delete_for_user(user.id, purpose)
+        token = create_one_time_token()
+        self.tokens.add(
+            UserToken(
+                user_id=user.id,
+                token_hash=token.token_hash,
+                purpose=purpose,
+                expires_at=now + timedelta(hours=SETUP_PASSWORD_TOKEN_EXPIRE_HOURS),
+            )
+        )
+        self.session.commit()
+        return AccountSetupLink(
+            email=user.email, full_name=user.full_name, url=setup_password_url(token.token)
         )

@@ -43,6 +43,14 @@ class LastActiveAdminError(ConflictError):
     )
 
 
+class PasswordAlreadySetError(ConflictError):
+    code = ErrorCode.PASSWORD_ALREADY_SET
+    message = "Người dùng đã đặt mật khẩu, không cần link đặt mật khẩu."
+
+    def __init__(self) -> None:
+        super().__init__(details={"field": "user_id"})
+
+
 class UserInactiveError(UnprocessableError):
     code = ErrorCode.USER_INACTIVE
     message = "Tài khoản đang bị khóa, mở khóa trước khi thực hiện thao tác này."

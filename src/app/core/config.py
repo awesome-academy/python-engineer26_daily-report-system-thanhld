@@ -4,7 +4,7 @@ from functools import lru_cache
 from typing import Literal, Self
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field, NameEmail, SecretStr, field_validator, model_validator
+from pydantic import Field, HttpUrl, NameEmail, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.constants import (
@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     # Mailpit không có TLS. SMTP thật (Gmail, SES) dùng cổng 587 và bật STARTTLS.
     smtp_starttls: bool = False
     mail_from: NameEmail = NameEmail("Daily Report", "no-reply@example.com")
+
+    # Địa chỉ frontend, dùng để ghép link trong email (đặt mật khẩu lần đầu).
+    frontend_url: HttpUrl = HttpUrl("http://localhost:3000")
 
     # Múi giờ nghiệp vụ: dùng để tính "hôm nay" cho ngày báo cáo và thống kê tháng.
     timezone: str = "Asia/Ho_Chi_Minh"

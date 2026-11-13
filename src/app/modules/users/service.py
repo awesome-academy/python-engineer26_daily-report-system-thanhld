@@ -5,14 +5,19 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import commit_unique
-from app.core.exceptions import AppError
+from app.core.exceptions import AppError, ServiceUnavailableError
 from app.core.security import hash_password
+from app.modules.auth.models import UserTokenPurpose
+from app.modules.auth.repository import UserTokenRepository
+from app.modules.auth.tasks import send_account_setup_email
 from app.modules.departments.exceptions import DepartmentNotFoundError
 from app.modules.departments.repository import DepartmentRepository
 from app.modules.users.exceptions import (
     CannotModifyOwnAccountError,
     EmailAlreadyExistsError,
     LastActiveAdminError,
+    PasswordAlreadySetError,
+    UserInactiveError,
     UserManagesDepartmentsError,
     UserNotFoundError,
 )
@@ -26,6 +31,7 @@ from app.modules.users.schemas import (
     UserListParams,
     UserProfileUpdate,
 )
+from app.worker import enqueue_task
 
 
 class UserService:
@@ -33,6 +39,7 @@ class UserService:
         self.session = session
         self.users = UserRepository(session)
         self.departments = DepartmentRepository(session)
+        self.user_tokens = UserTokenRepository(session)
 
     async def create_user(self, data: UserCreate) -> User:
         await self._ensure_email_available(data.email)
@@ -84,12 +91,17 @@ class UserService:
         return user
 
     async def create_by_admin(self, data: AdminUserCreate) -> User:
-        """Tạo tài khoản chưa có mật khẩu: chưa đăng nhập được đến khi user đặt mật khẩu (S2)."""
+        """Tạo tài khoản chưa có mật khẩu, gửi email link đặt mật khẩu (S2).
+
+        Chưa đăng nhập được đến khi user tự đặt mật khẩu qua link.
+        """
         await self._ensure_email_available(data.email)
         if data.department_id is not None:
             await self._ensure_department_exists(data.department_id)
         user = User(**data.model_dump())
         await self._save_new(user)
+        # Sau commit: worker đọc được user vừa tạo.
+        await enqueue_task(send_account_setup_email, user.id)
         return user
 
     async def update_by_admin(self, admin: User, user_id: int, data: AdminUserUpdate) -> User:
@@ -110,10 +122,37 @@ class UserService:
         if user.is_active and changes.get("is_active") is False:
             # Khóa tài khoản: mọi access token, refresh token đã cấp hết hiệu lực ngay.
             user.token_version += 1
+        # User chưa đặt mật khẩu (S2): link đã gửi tới email cũ (admin gõ nhầm) hoặc cấp trước khi
+        # bị khóa thì hủy ngay, không đợi lúc dùng mới chặn (mở khóa lại không làm link cũ sống
+        # lại). Còn hoạt động thì gửi link mới tới email hiện tại sau commit.
+        setup_link_outdated = user.password_hash is None and any(
+            field in changes and changes[field] != getattr(user, field)
+            for field in ("email", "is_active")
+        )
         for field, value in changes.items():
             setattr(user, field, value)
+        if setup_link_outdated:
+            await self.user_tokens.delete_for_user(user.id, UserTokenPurpose.SETUP_PASSWORD)
         await commit_unique(self.session, USER_EMAIL_UNIQUE_INDEX, EmailAlreadyExistsError())
+        if setup_link_outdated and user.is_active:
+            await enqueue_task(send_account_setup_email, user.id)
         return user
+
+    async def send_setup_link(self, user_id: int) -> None:
+        """Gửi lại email link đặt mật khẩu (S2): link hết hạn, hay email trước không tới.
+
+        Chỉ đẩy task: worker cấp link mới và hủy link cũ, như lúc tạo user. User đặt mật khẩu,
+        bị khóa ngay sau bước kiểm tra này thì worker bỏ qua.
+        """
+        user = await self.users.get_by_id(user_id)
+        if user is None:
+            raise UserNotFoundError
+        if user.password_hash is not None:
+            raise PasswordAlreadySetError
+        if not user.is_active:
+            raise UserInactiveError
+        if not await enqueue_task(send_account_setup_email, user.id):
+            raise ServiceUnavailableError("Chưa gửi được email lúc này, vui lòng thử lại sau.")
 
     async def delete_by_admin(self, admin: User, user_id: int) -> None:
         """Xóa mềm, thu hồi mọi phiên. Báo cáo của user vẫn giữ để tra cứu, thống kê."""

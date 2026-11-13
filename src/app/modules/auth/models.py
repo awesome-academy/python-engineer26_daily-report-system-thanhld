@@ -66,3 +66,7 @@ class UserToken(CreatedAtMixin, Base):
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     user: Mapped["User"] = relationship(back_populates="tokens", lazy="raise")
+
+    def is_usable(self, now: datetime) -> bool:
+        """Chưa dùng và chưa hết hạn."""
+        return self.used_at is None and now < self.expires_at

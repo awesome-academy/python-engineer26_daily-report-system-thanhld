@@ -1,10 +1,12 @@
-"""Băm mật khẩu (Argon2) và tạo, kiểm tra access token (JWT).
+"""Băm mật khẩu (Argon2), tạo và kiểm tra access token (JWT), token dùng một lần gửi qua email.
 
 Băm và kiểm tra mật khẩu tốn CPU (khoảng vài chục ms), nên các hàm async ở đây chạy chúng
 trong thread riêng để không chặn event loop.
 """
 
 import asyncio
+import hashlib
+import secrets
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -16,6 +18,7 @@ from fastapi.security import OAuth2PasswordBearer
 from pwdlib import PasswordHash
 
 from app.core.config import get_settings
+from app.core.constants import ONE_TIME_TOKEN_BYTES
 from app.core.exceptions import UnauthorizedError
 
 ACCESS_TOKEN_TYPE = "access"  # noqa: S105
@@ -158,3 +161,22 @@ def decode_refresh_token(token: str) -> RefreshTokenClaims:
         )
     except (jwt.PyJWTError, KeyError, TypeError, ValueError) as exc:
         raise UnauthorizedError from exc
+
+
+@dataclass(frozen=True)
+class OneTimeToken:
+    """Token dùng một lần (link đặt mật khẩu): `token` chỉ gửi cho user, DB lưu `token_hash`."""
+
+    token: str
+    token_hash: str
+
+
+def create_one_time_token() -> OneTimeToken:
+    token = secrets.token_urlsafe(ONE_TIME_TOKEN_BYTES)
+    return OneTimeToken(token=token, token_hash=hash_one_time_token(token))
+
+
+def hash_one_time_token(token: str) -> str:
+    """SHA-256 dạng hex. Token ngẫu nhiên 256 bit, không đoán được như mật khẩu người dùng đặt,
+    nên không cần hàm băm chậm (Argon2): lộ bảng user_tokens cũng không suy ra được token."""
+    return hashlib.sha256(token.encode()).hexdigest()

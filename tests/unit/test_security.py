@@ -1,14 +1,19 @@
+import hashlib
+import re
 from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from app.core.config import get_settings
+from app.core.constants import ONE_TIME_TOKEN_MAX_LENGTH, ONE_TIME_TOKEN_PATTERN, TOKEN_HASH_LENGTH
 from app.core.exceptions import UnauthorizedError
 from app.core.security import (
     create_access_token,
+    create_one_time_token,
     create_refresh_token,
     decode_access_token,
     decode_refresh_token,
+    hash_one_time_token,
     hash_password,
     verify_password,
 )
@@ -73,3 +78,18 @@ def test_access_and_refresh_tokens_are_not_interchangeable() -> None:
         decode_refresh_token(access)
     with pytest.raises(UnauthorizedError):
         decode_access_token(refresh)
+
+
+def test_one_time_token_is_url_safe_and_stored_as_sha256() -> None:
+    issued = create_one_time_token()
+
+    # Token gốc nằm trên link, qua được schema của POST /auth/setup-password.
+    assert re.fullmatch(ONE_TIME_TOKEN_PATTERN, issued.token)
+    assert len(issued.token) <= ONE_TIME_TOKEN_MAX_LENGTH
+    assert issued.token_hash == hashlib.sha256(issued.token.encode()).hexdigest()
+    assert len(issued.token_hash) == TOKEN_HASH_LENGTH
+    assert hash_one_time_token(issued.token) == issued.token_hash
+
+
+def test_each_one_time_token_is_unique() -> None:
+    assert len({create_one_time_token().token for _ in range(100)}) == 100

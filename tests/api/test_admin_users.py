@@ -3,20 +3,34 @@ from typing import Any
 
 import pytest
 from httpx import AsyncClient
+from kombu.exceptions import OperationalError
+from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import worker
 from app.core.config import get_settings
 from app.core.constants import BIGINT_MAX, KEYWORD_MAX_LENGTH, MAX_PAGE_SIZE
+from app.modules.auth.models import UserToken
+from app.modules.auth.tasks import send_account_setup_email
 from app.modules.users.models import User, UserRole
 from tests.factories import (
     DEFAULT_PASSWORD,
     auth_headers,
     create_department,
     create_report,
+    create_setup_token,
     create_user,
 )
-from tests.helpers import bearer, login, login_tokens, refresh
+from tests.helpers import (
+    QueuedTask,
+    bearer,
+    capture_module_logs,
+    login,
+    login_tokens,
+    queued_tasks,
+    refresh,
+)
 
 API = get_settings().api_v1_prefix
 USERS_URL = f"{API}/admin/users"
@@ -26,6 +40,10 @@ NEW_USER = {"email": "binh@example.com", "full_name": "Trần Thị Bình"}
 
 def user_url(user_id: int) -> str:
     return f"{USERS_URL}/{user_id}"
+
+
+def setup_link_url(user_id: int) -> str:
+    return f"{USERS_URL}/{user_id}/setup-link"
 
 
 @pytest.fixture
@@ -188,8 +206,41 @@ async def test_created_user_cannot_log_in_before_setting_password(
     assert response.status_code == 401
 
 
+async def test_create_user_enqueues_setup_password_email(
+    client: AsyncClient, redis: Redis, headers: dict[str, str]
+) -> None:
+    response = await client.post(USERS_URL, json=NEW_USER, headers=headers)
+
+    # Chỉ đẩy id: token sinh ở worker, token gốc không nằm trong message trên Redis.
+    assert await queued_tasks(redis) == [
+        QueuedTask(name=send_account_setup_email.name, args=[response.json()["id"]], kwargs={})
+    ]
+
+
+async def test_create_user_succeeds_when_queue_is_down(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # User đã commit: trả lỗi lúc này thì admin tạo lại sẽ gặp 409, trong khi tài khoản đã có.
+    def broker_down(*_: Any) -> None:
+        raise OperationalError("Error 111 connecting to redis:6379. Connection refused.")
+
+    monkeypatch.setattr(send_account_setup_email, "delay", broker_down)
+    logs = capture_module_logs(monkeypatch, worker)
+
+    response = await client.post(USERS_URL, json=NEW_USER, headers=headers)
+
+    assert response.status_code == 201
+    assert (await get_user_row(db_session, response.json()["id"])).email == NEW_USER["email"]
+    [error] = [log for log in logs if log["event"] == "task_enqueue_failed"]
+    assert error["log_level"] == "error"
+    assert error["task"] == send_account_setup_email.name
+
+
 async def test_create_user_rejects_duplicate_email_ignoring_case(
-    client: AsyncClient, db_session: AsyncSession, headers: dict[str, str]
+    client: AsyncClient, db_session: AsyncSession, redis: Redis, headers: dict[str, str]
 ) -> None:
     await create_user(db_session, email="binh@example.com")
 
@@ -198,6 +249,7 @@ async def test_create_user_rejects_duplicate_email_ignoring_case(
     )
 
     assert response.status_code == 409
+    assert await queued_tasks(redis) == []
     assert response.json()["error"]["code"] == "EMAIL_ALREADY_EXISTS"
 
 
@@ -535,6 +587,196 @@ async def test_update_user_returns_not_found_for_deleted_user(
     assert response.status_code == 404
 
 
+# Sửa user chưa đặt mật khẩu: link đặt mật khẩu (S2)
+
+
+async def setup_tokens(session: AsyncSession, user_id: int) -> list[UserToken]:
+    statement = (
+        select(UserToken)
+        .where(UserToken.user_id == user_id)
+        .execution_options(populate_existing=True)
+    )
+    return list(await session.scalars(statement))
+
+
+async def test_changing_email_cancels_old_link_and_sends_new_one(
+    client: AsyncClient, db_session: AsyncSession, redis: Redis, headers: dict[str, str]
+) -> None:
+    # Admin gõ nhầm email, link đã tới hộp thư người khác. Sửa email thì link đó không dùng được
+    # nữa, email đúng nhận link mới.
+    user = await create_user(db_session, email="binh@exampel.com", password=None)
+    await create_setup_token(db_session, user)
+
+    response = await client.patch(
+        user_url(user.id), json={"email": "binh@example.com"}, headers=headers
+    )
+
+    assert response.status_code == 200
+    assert await setup_tokens(db_session, user.id) == []
+    assert await queued_tasks(redis) == [
+        QueuedTask(name=send_account_setup_email.name, args=[user.id], kwargs={})
+    ]
+
+
+async def test_locking_user_cancels_link(
+    client: AsyncClient, db_session: AsyncSession, redis: Redis, headers: dict[str, str]
+) -> None:
+    # Link phải hết dùng được ngay, không phải chỉ bị chặn khi còn khóa: mở khóa lại không làm
+    # link cũ dùng được trở lại.
+    user = await create_user(db_session, password=None)
+    await create_setup_token(db_session, user)
+
+    response = await client.patch(user_url(user.id), json={"is_active": False}, headers=headers)
+
+    assert response.status_code == 200
+    assert await setup_tokens(db_session, user.id) == []
+    assert await queued_tasks(redis) == []
+
+
+async def test_unlocking_user_without_password_sends_new_link(
+    client: AsyncClient, db_session: AsyncSession, redis: Redis, headers: dict[str, str]
+) -> None:
+    user = await create_user(db_session, password=None, is_active=False)
+
+    response = await client.patch(user_url(user.id), json={"is_active": True}, headers=headers)
+
+    assert response.status_code == 200
+    assert await queued_tasks(redis) == [
+        QueuedTask(name=send_account_setup_email.name, args=[user.id], kwargs={})
+    ]
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [{"full_name": "Trần Thị Bình"}, {"email": "an@example.com"}, {"is_active": True}],
+    ids=["other-field", "same-email", "same-status"],
+)
+async def test_update_keeping_email_and_status_keeps_link(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    redis: Redis,
+    headers: dict[str, str],
+    changes: dict[str, Any],
+) -> None:
+    user = await create_user(db_session, email="an@example.com", password=None)
+    await create_setup_token(db_session, user)
+
+    response = await client.patch(user_url(user.id), json=changes, headers=headers)
+
+    assert response.status_code == 200
+    assert len(await setup_tokens(db_session, user.id)) == 1
+    assert await queued_tasks(redis) == []
+
+
+async def test_changing_email_to_taken_one_sends_no_link(
+    client: AsyncClient, db_session: AsyncSession, redis: Redis, headers: dict[str, str]
+) -> None:
+    await create_user(db_session, email="binh@example.com")
+    user = await create_user(db_session, email="binh@exampel.com", password=None)
+
+    response = await client.patch(
+        user_url(user.id), json={"email": "binh@example.com"}, headers=headers
+    )
+
+    assert response.status_code == 409
+    assert await queued_tasks(redis) == []
+
+
+async def test_changing_email_of_user_with_password_sends_no_link(
+    client: AsyncClient, db_session: AsyncSession, redis: Redis, headers: dict[str, str]
+) -> None:
+    user = await create_user(db_session, email="an@example.com")
+
+    response = await client.patch(
+        user_url(user.id), json={"email": "an.nguyen@example.com"}, headers=headers
+    )
+
+    assert response.status_code == 200
+    assert await queued_tasks(redis) == []
+
+
+# Gửi lại link đặt mật khẩu (S2)
+
+
+async def test_send_setup_link_queues_email_for_user_without_password(
+    client: AsyncClient, db_session: AsyncSession, redis: Redis, headers: dict[str, str]
+) -> None:
+    # Link hết hạn, hay email lần trước không tới: worker cấp link mới, hủy link cũ.
+    user = await create_user(db_session, password=None)
+
+    response = await client.post(setup_link_url(user.id), headers=headers)
+
+    assert response.status_code == 202
+    assert response.content == b""
+    assert await queued_tasks(redis) == [
+        QueuedTask(name=send_account_setup_email.name, args=[user.id], kwargs={})
+    ]
+
+
+async def test_send_setup_link_rejects_user_with_password(
+    client: AsyncClient, db_session: AsyncSession, redis: Redis, headers: dict[str, str]
+) -> None:
+    user = await create_user(db_session)
+
+    response = await client.post(setup_link_url(user.id), headers=headers)
+
+    assert response.status_code == 409
+    assert response.json()["error"] == {
+        "code": "PASSWORD_ALREADY_SET",
+        "message": "Người dùng đã đặt mật khẩu, không cần link đặt mật khẩu.",
+        "details": {"field": "user_id"},
+    }
+    assert await queued_tasks(redis) == []
+
+
+async def test_send_setup_link_rejects_locked_user(
+    client: AsyncClient, db_session: AsyncSession, redis: Redis, headers: dict[str, str]
+) -> None:
+    user = await create_user(db_session, password=None, is_active=False)
+
+    response = await client.post(setup_link_url(user.id), headers=headers)
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "USER_INACTIVE"
+    assert await queued_tasks(redis) == []
+
+
+@pytest.mark.parametrize("deleted", [False, True], ids=["missing", "deleted"])
+async def test_send_setup_link_returns_not_found(
+    client: AsyncClient, db_session: AsyncSession, headers: dict[str, str], deleted: bool
+) -> None:
+    user_id = (await create_user(db_session, password=None, deleted=True)).id if deleted else 999
+
+    response = await client.post(setup_link_url(user_id), headers=headers)
+
+    assert response.status_code == 404
+    assert response.json()["error"]["details"] == {"field": "user_id"}
+
+
+async def test_send_setup_link_reports_queue_down(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Gửi email là toàn bộ việc của API này: không đẩy được task thì báo lỗi để admin thử lại,
+    # không trả 202 như đã gửi.
+    def broker_down(*_: Any) -> None:
+        raise OperationalError("Error 111 connecting to redis:6379. Connection refused.")
+
+    monkeypatch.setattr(send_account_setup_email, "delay", broker_down)
+    user = await create_user(db_session, password=None)
+
+    response = await client.post(setup_link_url(user.id), headers=headers)
+
+    assert response.status_code == 503
+    assert response.json()["error"] == {
+        "code": "SERVICE_UNAVAILABLE",
+        "message": "Chưa gửi được email lúc này, vui lòng thử lại sau.",
+        "details": None,
+    }
+
+
 # Xóa
 
 
@@ -622,6 +864,7 @@ ENDPOINTS = [
     ("GET", user_url(1)),
     ("PATCH", user_url(1)),
     ("DELETE", user_url(1)),
+    ("POST", setup_link_url(1)),
 ]
 
 
@@ -656,6 +899,11 @@ async def test_admin_users_endpoints_reject_other_roles(
         ("get", "/admin/users/{user_id}", {"401", "403", "404", "422"}),
         ("patch", "/admin/users/{user_id}", {"400", "401", "403", "404", "409", "422"}),
         ("delete", "/admin/users/{user_id}", {"400", "401", "403", "404", "409", "422"}),
+        (
+            "post",
+            "/admin/users/{user_id}/setup-link",
+            {"401", "403", "404", "409", "422", "503"},
+        ),
     ],
 )
 async def test_admin_users_endpoints_document_errors_in_swagger(

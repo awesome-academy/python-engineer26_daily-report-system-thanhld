@@ -64,6 +64,8 @@ docker compose exec api daily-report send-test-email ban@example.com   # hoặc:
 
 Khi dev, mọi email đều vào Mailpit (http://localhost:8026), không gửi ra ngoài. Gửi qua SMTP thật thì đặt `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_STARTTLS`, `MAIL_FROM` (xem `.env.example`).
 
+Tài khoản admin tạo (`POST /api/v1/admin/users`) chưa có mật khẩu; worker gửi email có link `FRONTEND_URL/setup-password?token=...` (hết hạn sau 24 giờ, dùng một lần). Chưa có frontend thì mở email trên Mailpit, chép giá trị `token` trên link, gọi `POST /api/v1/auth/setup-password` trên Swagger với body `{"token": "...", "password": "..."}`, rồi đăng nhập bằng email và mật khẩu vừa đặt. Link hết hạn hay email không tới thì admin gửi lại bằng `POST /api/v1/admin/users/{id}/setup-link`.
+
 Worker không tự reload khi sửa code: `docker compose restart worker`. Xem log: `make logs`; mức log của worker (cả log của Celery) lấy từ `LOG_LEVEL`.
 
 ## Dữ liệu mẫu
