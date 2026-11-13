@@ -46,6 +46,8 @@ services:
       REDIS_URL: redis://redis:6379/0
       SMTP_HOST: mailpit
       SMTP_PORT: 1025
+      # Gốc của link trong email (đặt mật khẩu lần đầu). .env không vào image (.dockerignore).
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
     volumes:
       - ./src:/app/src
     depends_on:
