@@ -2,6 +2,7 @@ from collections.abc import Sequence
 
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from app.core.pagination import PageParams, paginate
 from app.modules.users.models import User, UserRole, full_name_or_email_matches, order_by_full_name
@@ -131,3 +132,15 @@ class UserRepository:
 
     def add(self, user: User) -> None:
         self.session.add(user)
+
+
+class UserSyncRepository:
+    """Truy vấn bảng users bằng session đồng bộ (Celery worker). Bỏ qua user đã bị xóa mềm."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def get_by_id_for_update(self, user_id: int) -> User | None:
+        return self.session.scalar(
+            select(User).where(User.id == user_id, User.deleted_at.is_(None)).with_for_update()
+        )

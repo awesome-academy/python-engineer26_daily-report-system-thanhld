@@ -1,7 +1,7 @@
 """Celery app: hàng đợi tác vụ nền (gửi email) trên Redis.
 
 Chạy worker: `celery -A app.worker worker` (Docker Compose có sẵn service `worker`).
-API chỉ đẩy task vào Redis qua `task.delay(...)`, không chờ worker xử lý.
+API chỉ đẩy task vào Redis qua `enqueue_task(...)`, không chờ worker xử lý.
 """
 
 import asyncio
@@ -27,7 +27,11 @@ celery_app = Celery(
     # Cùng DB Redis với API (blacklist token, đếm đăng nhập sai); key của Celery có tên riêng
     # (`celery`, `_kombu.*`, `unacked*`) nên không lẫn với key `auth:*`.
     broker=settings.redis_url,
-    include=["app.modules.notifications.tasks", "app.modules.reports.tasks"],
+    include=[
+        "app.modules.notifications.tasks",
+        "app.modules.reports.tasks",
+        "app.modules.auth.tasks",
+    ],
 )
 celery_app.conf.update(
     task_serializer="json",

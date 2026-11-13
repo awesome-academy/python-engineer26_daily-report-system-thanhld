@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import commit_unique
 from app.core.exceptions import AppError
 from app.core.security import hash_password
+from app.modules.auth.tasks import send_account_setup_email
 from app.modules.departments.exceptions import DepartmentNotFoundError
 from app.modules.departments.repository import DepartmentRepository
 from app.modules.users.exceptions import (
@@ -26,6 +27,7 @@ from app.modules.users.schemas import (
     UserListParams,
     UserProfileUpdate,
 )
+from app.worker import enqueue_task
 
 
 class UserService:
@@ -84,12 +86,17 @@ class UserService:
         return user
 
     async def create_by_admin(self, data: AdminUserCreate) -> User:
-        """Tạo tài khoản chưa có mật khẩu: chưa đăng nhập được đến khi user đặt mật khẩu (S2)."""
+        """Tạo tài khoản chưa có mật khẩu, gửi email link đặt mật khẩu (S2).
+
+        Chưa đăng nhập được đến khi user tự đặt mật khẩu qua link.
+        """
         await self._ensure_email_available(data.email)
         if data.department_id is not None:
             await self._ensure_department_exists(data.department_id)
         user = User(**data.model_dump())
         await self._save_new(user)
+        # Sau commit: worker đọc được user vừa tạo.
+        await enqueue_task(send_account_setup_email, user.id)
         return user
 
     async def update_by_admin(self, admin: User, user_id: int, data: AdminUserUpdate) -> User:

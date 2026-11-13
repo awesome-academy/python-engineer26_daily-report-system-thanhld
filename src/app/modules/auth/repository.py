@@ -1,9 +1,10 @@
 from datetime import datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
-from app.modules.auth.models import RefreshToken
+from app.modules.auth.models import RefreshToken, UserToken, UserTokenPurpose
 
 
 class RefreshTokenRepository:
@@ -36,4 +37,20 @@ class RefreshTokenRepository:
             update(RefreshToken)
             .where(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None))
             .values(revoked_at=revoked_at)
+        )
+
+
+class UserTokenSyncRepository:
+    """Ghi bảng user_tokens bằng session đồng bộ (Celery worker cấp link đặt mật khẩu)."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add(self, token: UserToken) -> None:
+        self.session.add(token)
+        self.session.flush()
+
+    def delete_for_user(self, user_id: int, purpose: UserTokenPurpose) -> None:
+        self.session.execute(
+            delete(UserToken).where(UserToken.user_id == user_id, UserToken.purpose == purpose)
         )

@@ -33,6 +33,12 @@ REPORT_CONTEXT = {
 TEMPLATE_CONTEXTS: dict[EmailTemplate, dict[str, Any]] = {
     EmailTemplate.TEST: {"requested_at": "x"},
     EmailTemplate.REPORT_CREATED: REPORT_CONTEXT,
+    EmailTemplate.ACCOUNT_SETUP: {
+        "full_name": "Trần Thị Bình",
+        "email": "binh@example.com",
+        "setup_url": "http://localhost:3000/setup-password?token=x",
+        "expire_hours": 24,
+    },
 }
 
 

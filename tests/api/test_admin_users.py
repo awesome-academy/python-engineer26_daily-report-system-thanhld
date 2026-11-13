@@ -3,11 +3,14 @@ from typing import Any
 
 import pytest
 from httpx import AsyncClient
+from kombu.exceptions import OperationalError
+from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.constants import BIGINT_MAX, KEYWORD_MAX_LENGTH, MAX_PAGE_SIZE
+from app.modules.auth.tasks import send_account_setup_email
 from app.modules.users.models import User, UserRole
 from tests.factories import (
     DEFAULT_PASSWORD,
@@ -16,7 +19,7 @@ from tests.factories import (
     create_report,
     create_user,
 )
-from tests.helpers import bearer, login, login_tokens, refresh
+from tests.helpers import QueuedTask, bearer, login, login_tokens, queued_tasks, refresh
 
 API = get_settings().api_v1_prefix
 USERS_URL = f"{API}/admin/users"
@@ -188,8 +191,37 @@ async def test_created_user_cannot_log_in_before_setting_password(
     assert response.status_code == 401
 
 
+async def test_create_user_enqueues_setup_password_email(
+    client: AsyncClient, redis: Redis, headers: dict[str, str]
+) -> None:
+    response = await client.post(USERS_URL, json=NEW_USER, headers=headers)
+
+    # Chỉ đẩy id: token sinh ở worker, token gốc không nằm trong message trên Redis.
+    assert await queued_tasks(redis) == [
+        QueuedTask(name=send_account_setup_email.name, args=[response.json()["id"]], kwargs={})
+    ]
+
+
+async def test_create_user_succeeds_when_queue_is_down(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # User đã commit: trả lỗi lúc này thì admin tạo lại sẽ gặp 409, trong khi tài khoản đã có.
+    def broker_down(*_: Any) -> None:
+        raise OperationalError("Error 111 connecting to redis:6379. Connection refused.")
+
+    monkeypatch.setattr(send_account_setup_email, "delay", broker_down)
+
+    response = await client.post(USERS_URL, json=NEW_USER, headers=headers)
+
+    assert response.status_code == 201
+    assert (await get_user_row(db_session, response.json()["id"])).email == NEW_USER["email"]
+
+
 async def test_create_user_rejects_duplicate_email_ignoring_case(
-    client: AsyncClient, db_session: AsyncSession, headers: dict[str, str]
+    client: AsyncClient, db_session: AsyncSession, redis: Redis, headers: dict[str, str]
 ) -> None:
     await create_user(db_session, email="binh@example.com")
 
@@ -198,6 +230,7 @@ async def test_create_user_rejects_duplicate_email_ignoring_case(
     )
 
     assert response.status_code == 409
+    assert await queued_tasks(redis) == []
     assert response.json()["error"]["code"] == "EMAIL_ALREADY_EXISTS"
 
 

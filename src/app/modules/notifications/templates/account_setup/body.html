@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+<p>Xin chào {{ full_name }},</p>
+<p>Quản trị viên đã tạo tài khoản <strong>{{ app_name }}</strong> cho bạn với email đăng nhập <strong>{{ email }}</strong>. Bấm nút bên dưới để tự đặt mật khẩu, rồi đăng nhập bằng email trên.</p>
+<p style="margin:24px 0;">
+  <a href="{{ setup_url }}" style="display:inline-block;padding:12px 20px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:6px;">Đặt mật khẩu</a>
+</p>
+<p>Nút không bấm được thì sao chép link sau vào trình duyệt:<br><a href="{{ setup_url }}">{{ setup_url }}</a></p>
+<p>Link chỉ dùng được một lần và hết hạn sau {{ expire_hours }} giờ. Link hết hạn thì liên hệ quản trị viên để nhận link mới.</p>
+<p>Nếu bạn không biết về tài khoản này, hãy bỏ qua email.</p>
+{% endblock %}
