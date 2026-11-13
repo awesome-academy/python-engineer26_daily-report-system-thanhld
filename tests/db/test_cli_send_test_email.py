@@ -1,5 +1,3 @@
-import base64
-import json
 from typing import Any
 
 import pytest
@@ -8,10 +6,7 @@ from redis.asyncio import Redis
 
 from app.modules.notifications.models import EmailTemplate
 from app.modules.notifications.tasks import send_email
-from tests.helpers import invoke
-
-# Hàng đợi mặc định của Celery: một list trên Redis.
-CELERY_QUEUE = "celery"
+from tests.helpers import invoke, queued_tasks
 
 
 async def test_send_test_email_enqueues_task_on_redis(redis: Redis) -> None:
@@ -19,15 +14,13 @@ async def test_send_test_email_enqueues_task_on_redis(redis: Redis) -> None:
 
     assert result.exit_code == 0, result.output
     assert "an@example.com" in result.output.lower()
-    [raw] = await redis.lrange(CELERY_QUEUE, 0, -1)
-    message = json.loads(raw)
-    args, kwargs, _ = json.loads(base64.b64decode(message["body"]))
-    assert message["headers"]["task"] == send_email.name
-    to_email, template, context = args
+    [task] = await queued_tasks(redis)
+    assert task.name == send_email.name
+    to_email, template, context = task.args
     assert to_email.lower() == "an@example.com"
     assert template == EmailTemplate.TEST
     assert set(context) == {"requested_at"}
-    assert kwargs == {}
+    assert task.kwargs == {}
 
 
 async def test_send_test_email_rejects_invalid_address(redis: Redis) -> None:
@@ -35,7 +28,7 @@ async def test_send_test_email_rejects_invalid_address(redis: Redis) -> None:
 
     assert result.exit_code == 1
     assert "to:" in result.output
-    assert await redis.llen(CELERY_QUEUE) == 0
+    assert await queued_tasks(redis) == []
 
 
 async def test_send_test_email_reports_broker_error(monkeypatch: pytest.MonkeyPatch) -> None:

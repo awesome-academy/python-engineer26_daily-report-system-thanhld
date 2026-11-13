@@ -1,0 +1,1 @@
+[{{ app_name }}] Báo cáo ngày {{ report_date }} của {{ author_name }}

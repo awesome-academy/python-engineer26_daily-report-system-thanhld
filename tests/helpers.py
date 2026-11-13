@@ -1,17 +1,23 @@
 """Helper dùng chung cho test."""
 
 import asyncio
-from collections.abc import Awaitable, Callable, Iterator
+import base64
+import json
+from collections.abc import Awaitable, Callable, Iterator, MutableMapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from types import ModuleType
 from typing import Any
 
 import jwt
 import pytest
+import structlog
 from httpx import AsyncClient, Response
+from redis.asyncio import Redis
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession
+from structlog.testing import LogCapture
 from typer.testing import CliRunner, Result
 
 from app.cli import cli
@@ -30,20 +36,60 @@ REFRESH_URL = "/api/v1/auth/refresh"
 # trước khi transaction kia commit. Không có khóa thì lệnh đó đọc bản cũ, test đỏ.
 LOCK_WAIT_SECONDS = 0.3
 
+# Hàng đợi mặc định của Celery: một list trên Redis.
+CELERY_QUEUE = "celery"
+
 runner = CliRunner()
+
+
+@dataclass(frozen=True)
+class QueuedTask:
+    name: str
+    args: list[Any]
+    kwargs: dict[str, Any]
+
+
+async def queued_tasks(redis: Redis) -> list[QueuedTask]:
+    """Task đang chờ trên hàng đợi Celery (message JSON, body base64) theo thứ tự đẩy vào."""
+    tasks = []
+    for raw in reversed(await redis.lrange(CELERY_QUEUE, 0, -1)):
+        message = json.loads(raw)
+        args, kwargs, _ = json.loads(base64.b64decode(message["body"]))
+        tasks.append(QueuedTask(message["headers"]["task"], args, kwargs))
+    return tasks
 
 
 @dataclass
 class FakeMailer:
-    """Thay SmtpMailer trong test: ghi lại email đã gửi, ném lần lượt các lỗi trong `errors`."""
+    """Thay SmtpMailer trong test: ghi lại email đã gửi, ném lần lượt các lỗi trong `errors`.
+
+    `refused`: địa chỉ luôn gửi lỗi (mọi lần thử), để thử một người nhận lỗi giữa nhiều người.
+    """
 
     errors: list[Exception] = field(default_factory=list)
+    refused: dict[str, Exception] = field(default_factory=dict)
     sent: list[tuple[str, RenderedEmail]] = field(default_factory=list)
 
     def send(self, to_email: str, email: RenderedEmail) -> None:
+        if to_email in self.refused:
+            raise self.refused[to_email]
         if self.errors:
             raise self.errors.pop(0)
         self.sent.append((to_email, email))
+
+
+def capture_module_logs(
+    monkeypatch: pytest.MonkeyPatch, module: ModuleType
+) -> list[MutableMapping[str, Any]]:
+    """Ghi lại log mà `module.logger` ghi trong test.
+
+    Không dùng `structlog.testing.capture_logs()`: nó sửa list processors của cấu hình hiện tại,
+    còn logger đã dùng trước đó (cache_logger_on_first_use) giữ list cũ nếu giữa chừng có test
+    gọi `create_app()` (configure_logging tạo list mới), nên log bị lọt tùy thứ tự chạy test.
+    """
+    capture = LogCapture()
+    monkeypatch.setattr(module, "logger", structlog.wrap_logger(None, processors=[capture]))
+    return capture.entries
 
 
 async def invoke(*args: str) -> Result:

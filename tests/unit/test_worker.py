@@ -1,12 +1,15 @@
 import logging
+from typing import Any
 
 import pytest
+from celery import Task
 from celery.signals import after_setup_logger, after_setup_task_logger
 from celery.utils.dispatch import Signal
 
 from app.core.config import get_settings
 from app.core.constants import REDIS_TIMEOUT_SECONDS, TASK_MAX_RETRIES, TASK_RETRY_BACKOFF_SECONDS
 from app.modules.notifications.tasks import send_email
+from app.modules.reports.tasks import send_report_notification
 from app.worker import celery_app, retry_countdown
 
 
@@ -24,11 +27,12 @@ def test_celery_uses_redis_broker_with_json_and_timeouts() -> None:
     }
 
 
-def test_send_email_task_is_registered_with_retry_limit() -> None:
+@pytest.mark.parametrize("task", [send_email, send_report_notification], ids=lambda t: t.name)
+def test_tasks_are_registered_with_retry_limit(task: Task[Any, Any]) -> None:
     # Worker chỉ nạp task trong `include`: quên khai module thì worker từ chối task từ API.
     celery_app.loader.import_default_modules()
 
-    assert celery_app.tasks[send_email.name].max_retries == TASK_MAX_RETRIES
+    assert celery_app.tasks[task.name].max_retries == TASK_MAX_RETRIES
 
 
 def test_retry_countdown_doubles_each_attempt() -> None:

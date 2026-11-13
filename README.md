@@ -54,6 +54,8 @@ Mật khẩu tối thiểu 8 ký tự, có chữ thường, chữ hoa, chữ s�
 
 API không gửi email trực tiếp: đẩy task vào Redis, Celery worker (container `worker`) dựng nội dung từ template Jinja2 (`src/app/modules/notifications/templates/`), gửi qua SMTP, ghi kết quả vào bảng `email_logs`. Lỗi kết nối, lỗi SMTP thì thử lại tối đa 3 lần (chờ 30s, 60s, 120s); vẫn lỗi thì ghi `FAILED` kèm lý do.
 
+Email hệ thống gửi: báo cáo mới cho người nhận (S1, sau `POST /api/v1/me/reports`).
+
 Gửi thử một email để kiểm tra worker và SMTP:
 
 ```bash

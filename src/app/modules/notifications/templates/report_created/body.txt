@@ -1,0 +1,20 @@
+Xin chào {{ recipient_name }},
+
+{{ author_name }} (bộ phận {{ department_name }}) vừa gửi báo cáo ngày {{ report_date }}.
+
+Công việc dự định:
+{{ planned_work }}
+
+Công việc thực tế:
+{{ actual_work }}
+{% if incomplete_reason %}
+
+Lý do chưa hoàn thành:
+{{ incomplete_reason }}
+{% endif %}
+
+Dự định ngày tiếp theo:
+{{ next_day_plan }}
+
+--
+Email tự động từ {{ app_name }}, vui lòng không trả lời.
