@@ -45,6 +45,8 @@ class ErrorCode(StrEnum):
     INVALID_MEMBER_CANDIDATE = "INVALID_MEMBER_CANDIDATE"
     EMPLOYEE_ROLE_REQUIRED = "EMPLOYEE_ROLE_REQUIRED"
     SETUP_TOKEN_INVALID = "SETUP_TOKEN_INVALID"  # noqa: S105 (mã lỗi, không phải mật khẩu)
+    PASSWORD_ALREADY_SET = "PASSWORD_ALREADY_SET"  # noqa: S105 (mã lỗi, không phải mật khẩu)
+    SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
 
 
 class AppError(Exception):
@@ -92,6 +94,14 @@ class ConflictError(AppError):
     status_code = status.HTTP_409_CONFLICT
     code = ErrorCode.CONFLICT
     message = "Dữ liệu bị trùng."
+
+
+class ServiceUnavailableError(AppError):
+    """Thành phần bên ngoài (Redis, hàng đợi task) đang lỗi: client thử lại sau."""
+
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    code = ErrorCode.SERVICE_UNAVAILABLE
+    message = "Hệ thống tạm thời không xử lý được yêu cầu, vui lòng thử lại sau."
 
 
 class UnprocessableError(AppError):

@@ -5,7 +5,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import commit_unique
-from app.core.exceptions import AppError
+from app.core.exceptions import AppError, ServiceUnavailableError
 from app.core.security import hash_password
 from app.modules.auth.models import UserTokenPurpose
 from app.modules.auth.repository import UserTokenRepository
@@ -16,6 +16,8 @@ from app.modules.users.exceptions import (
     CannotModifyOwnAccountError,
     EmailAlreadyExistsError,
     LastActiveAdminError,
+    PasswordAlreadySetError,
+    UserInactiveError,
     UserManagesDepartmentsError,
     UserNotFoundError,
 )
@@ -135,6 +137,22 @@ class UserService:
         if setup_link_outdated and user.is_active:
             await enqueue_task(send_account_setup_email, user.id)
         return user
+
+    async def send_setup_link(self, user_id: int) -> None:
+        """Gửi lại email link đặt mật khẩu (S2): link hết hạn, hay email trước không tới.
+
+        Chỉ đẩy task: worker cấp link mới và hủy link cũ, như lúc tạo user. User đặt mật khẩu,
+        bị khóa ngay sau bước kiểm tra này thì worker bỏ qua.
+        """
+        user = await self.users.get_by_id(user_id)
+        if user is None:
+            raise UserNotFoundError
+        if user.password_hash is not None:
+            raise PasswordAlreadySetError
+        if not user.is_active:
+            raise UserInactiveError
+        if not await enqueue_task(send_account_setup_email, user.id):
+            raise ServiceUnavailableError("Chưa gửi được email lúc này, vui lòng thử lại sau.")
 
     async def delete_by_admin(self, admin: User, user_id: int) -> None:
         """Xóa mềm, thu hồi mọi phiên. Báo cáo của user vẫn giữ để tra cứu, thống kê."""

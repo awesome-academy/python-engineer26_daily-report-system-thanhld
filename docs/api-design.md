@@ -87,6 +87,8 @@ Lỗi validate (422) có `details` là danh sách `{ "field": "body.report_date"
 | `INVALID_MEMBER_CANDIDATE` | 422 | 6 |
 | `EMPLOYEE_ROLE_REQUIRED` | 422 | 6 |
 | `SETUP_TOKEN_INVALID` | 400 | 7 |
+| `PASSWORD_ALREADY_SET` | 409 | 7 |
+| `SERVICE_UNAVAILABLE` | 503 | 7 |
 | `IMPORT_VALIDATION_FAILED` | 422 | 8 |
 
 ## Danh sách endpoint
@@ -202,6 +204,7 @@ Báo cáo của nhân viên (M3):
 | GET | `/admin/users/{id}` | A1 | |
 | PATCH | `/admin/users/{id}` | A1 | Gồm gán bộ phận, khóa tài khoản |
 | DELETE | `/admin/users/{id}` | A1 | Xóa mềm, thu hồi mọi phiên |
+| POST | `/admin/users/{id}/setup-link` | S2 | Gửi lại email link đặt mật khẩu |
 | GET | `/admin/users/import-template` | A4 | Tải file Excel mẫu |
 | POST | `/admin/users/import` | A4 | Upload .xlsx |
 | GET | `/admin/departments` | A2 | `keyword`, phân trang |
@@ -226,10 +229,11 @@ Bộ phận (A2):
 Quản lý user (A1):
 
 - Danh sách chỉ gồm user chưa bị xóa, sắp theo `id`. `keyword` tìm trong họ tên (không phân biệt dấu, hoa thường: "nguyen van" khớp "Nguyễn Văn An") hoặc email; `%`, `_` trong từ khóa là ký tự thường. Lọc thêm `role`, `department_id`.
-- `POST` nhận `email`, `full_name`, `phone`, `date_of_birth`, `role` (mặc định `USER`), `department_id`; không nhận mật khẩu. User mới có `password_hash` null nên chưa đăng nhập được đến khi tự đặt mật khẩu qua link trong email (S2). Email gửi qua Celery sau khi lưu user; Redis lỗi lúc đẩy task thì API vẫn trả 201 (user đã lưu) và ghi log `task_enqueue_failed`.
+- `POST` nhận `email`, `full_name`, `phone`, `date_of_birth`, `role` (mặc định `USER`), `department_id`; không nhận mật khẩu. User mới có `password_hash` null nên chưa đăng nhập được đến khi tự đặt mật khẩu qua link trong email (S2). Email gửi qua Celery sau khi lưu user; Redis lỗi lúc đẩy task thì API vẫn trả 201 (user đã lưu) và ghi log `task_enqueue_failed`; admin gửi lại bằng `POST /admin/users/{id}/setup-link`.
 - Email không phân biệt hoa thường, trùng với user chưa bị xóa trả 409 `EMAIL_ALREADY_EXISTS` (tạo và sửa). Email của user đã xóa mềm dùng lại được.
 - `PATCH` cập nhật từng phần, sửa được mọi field của `POST` và `is_active`. `null` xóa `phone`, `date_of_birth`, `department_id` (gỡ khỏi bộ phận); `email`, `full_name`, `role`, `is_active` không nhận `null`. Field lạ trả 422.
 - User chưa đặt mật khẩu (S2): đổi `email` hoặc `is_active` thì link đặt mật khẩu đã gửi bị hủy ngay (link tới email gõ nhầm, link cấp trước khi bị khóa không dùng được nữa, kể cả khi mở khóa lại). Sau khi lưu, user còn hoạt động thì nhận link mới ở email hiện tại.
+- `POST /admin/users/{id}/setup-link` (S2): gửi lại link cho user chưa đặt mật khẩu (link hết hạn, email trước không tới). Trả 202, worker cấp link mới và hủy link cũ. User không tồn tại, đã xóa: 404; đã đặt mật khẩu: 409 `PASSWORD_ALREADY_SET`; bị khóa: 422 `USER_INACTIVE` (mở khóa sẽ tự gửi link). Không đẩy được task (Redis lỗi): 503 `SERVICE_UNAVAILABLE`, khác `POST /admin/users` vì gửi email là toàn bộ việc của endpoint này.
 - `department_id` không tồn tại hoặc bộ phận đã xóa: 404 `NOT_FOUND`, `details` là `{"field": "department_id"}`. Gán bộ phận khóa dòng bộ phận (`FOR SHARE`) đến khi lưu xong, nên không chạy xen được với lệnh xóa bộ phận: xóa trước thì lệnh gán nhận 404, gán trước thì lệnh xóa thấy bộ phận còn thành viên. User không tồn tại hoặc đã xóa: 404, `details` là `{"field": "user_id"}`.
 - Khóa (`is_active: false`) và xóa tăng `token_version`: mọi access token, refresh token đã cấp hết hiệu lực ngay. Không ghi `revoked_at` cho refresh token, để thiết bị của user refresh chỉ nhận 401, không bị coi là token bị lộ.
 - `DELETE` là xóa mềm (`deleted_at`), giữ `department_id` và báo cáo của user. Xóa lại user đã xóa trả 404.

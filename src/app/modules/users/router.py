@@ -1,7 +1,11 @@
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Response, status
 
 from app.api.deps import CurrentTokenClaims, CurrentUser, IdPath
-from app.core.constants import LOGIN_ATTEMPT_WINDOW_MINUTES, LOGIN_MAX_FAILED_ATTEMPTS
+from app.core.constants import (
+    LOGIN_ATTEMPT_WINDOW_MINUTES,
+    LOGIN_MAX_FAILED_ATTEMPTS,
+    SETUP_PASSWORD_TOKEN_EXPIRE_HOURS,
+)
 from app.core.exceptions import error_responses
 from app.core.pagination import Page
 from app.modules.auth.dependencies import AuthServiceDep
@@ -133,6 +137,28 @@ async def update_user(
     user_id: IdPath, data: AdminUserUpdate, admin: CurrentUser, user_service: UserServiceDep
 ) -> AdminUserOut:
     return AdminUserOut.model_validate(await user_service.update_by_admin(admin, user_id, data))
+
+
+@admin_users_router.post(
+    "/{user_id}/setup-link",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_class=Response,
+    summary="Gửi lại email link đặt mật khẩu",
+    description=(
+        "Cho user chưa đặt mật khẩu: link cũ hết hạn hoặc email trước không tới. Worker gửi link "
+        f"mới (hết hạn sau {SETUP_PASSWORD_TOKEN_EXPIRE_HOURS} giờ) và hủy link cũ. User đã đặt "
+        "mật khẩu: 409; bị khóa: 422, mở khóa sẽ tự gửi link. Không đẩy được việc gửi email "
+        "(Redis lỗi): 503, thử lại sau."
+    ),
+    responses=error_responses(
+        status.HTTP_404_NOT_FOUND,
+        status.HTTP_409_CONFLICT,
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+        status.HTTP_503_SERVICE_UNAVAILABLE,
+    ),
+)
+async def send_setup_link(user_id: IdPath, user_service: UserServiceDep) -> None:
+    await user_service.send_setup_link(user_id)
 
 
 @admin_users_router.delete(
