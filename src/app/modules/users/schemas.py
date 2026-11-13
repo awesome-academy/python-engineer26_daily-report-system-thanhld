@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Annotated
+from typing import Annotated, Self
 
 from fastapi import Query
 from pydantic import (
@@ -25,8 +25,9 @@ from app.core.constants import (
     PHONE_PATTERN,
 )
 from app.core.pagination import PageParams
+from app.core.storage import FileStorage
 from app.core.validators import Id, Keyword, NoNul, reject_null
-from app.modules.users.models import UserRole
+from app.modules.users.models import User, UserRole
 
 
 def _check_password_strength(password: str) -> str:
@@ -76,6 +77,20 @@ class UserOut(BaseModel):
     is_active: bool
     last_login_at: datetime | None
     created_at: datetime
+
+
+class ProfileOut(UserOut):
+    """Hồ sơ của chính mình (`/me`), kèm URL ảnh đại diện."""
+
+    avatar_url: str | None = Field(
+        description="Null khi chưa có ảnh. Backend S3 trả URL ký sẵn có hạn: lấy lại qua GET /me"
+    )
+
+    @classmethod
+    def from_user(cls, user: User, storage: FileStorage) -> Self:
+        # DB chỉ lưu key; URL phụ thuộc backend lưu trữ (local hay S3) nên tính lúc trả response.
+        avatar_url = storage.url(user.avatar_key) if user.avatar_key else None
+        return cls(**UserOut.model_validate(user).model_dump(), avatar_url=avatar_url)
 
 
 class AdminUserOut(UserOut):

@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Response, status
 
-from app.api.deps import CurrentTokenClaims, CurrentUser, IdPath
+from app.api.deps import CurrentTokenClaims, CurrentUser, IdPath, Storage
 from app.core.constants import (
+    AVATAR_MAX_MB,
+    AVATAR_TYPES_LABEL,
     LOGIN_ATTEMPT_WINDOW_MINUTES,
     LOGIN_MAX_FAILED_ATTEMPTS,
     SETUP_PASSWORD_TOKEN_EXPIRE_HOURS,
@@ -10,15 +12,20 @@ from app.core.exceptions import error_responses
 from app.core.pagination import Page
 from app.modules.auth.dependencies import AuthServiceDep
 from app.modules.auth.schemas import TokenResponse
-from app.modules.users.dependencies import EmployeeListQuery, UserServiceDep
+from app.modules.users.dependencies import (
+    AvatarImage,
+    AvatarServiceDep,
+    EmployeeListQuery,
+    UserServiceDep,
+)
 from app.modules.users.schemas import (
     AdminUserCreate,
     AdminUserOut,
     AdminUserUpdate,
     EmployeeOut,
     PasswordChange,
+    ProfileOut,
     UserListQuery,
-    UserOut,
     UserProfileUpdate,
 )
 
@@ -34,8 +41,8 @@ manager_employees_router = APIRouter(prefix="/employees", tags=["Manager: nhân 
     summary="Xem thông tin tài khoản đang đăng nhập",
     responses=error_responses(status.HTTP_401_UNAUTHORIZED),
 )
-async def get_me(user: CurrentUser) -> UserOut:
-    return UserOut.model_validate(user)
+async def get_me(user: CurrentUser, storage: Storage) -> ProfileOut:
+    return ProfileOut.from_user(user, storage)
 
 
 @me_router.patch(
@@ -48,9 +55,31 @@ async def get_me(user: CurrentUser) -> UserOut:
     responses=error_responses(status.HTTP_401_UNAUTHORIZED, status.HTTP_422_UNPROCESSABLE_CONTENT),
 )
 async def update_me(
-    data: UserProfileUpdate, user: CurrentUser, user_service: UserServiceDep
-) -> UserOut:
-    return UserOut.model_validate(await user_service.update_profile(user, data))
+    data: UserProfileUpdate, user: CurrentUser, user_service: UserServiceDep, storage: Storage
+) -> ProfileOut:
+    return ProfileOut.from_user(await user_service.update_profile(user, data), storage)
+
+
+@me_router.put(
+    "/avatar",
+    summary="Đổi ảnh đại diện",
+    description=(
+        f"`multipart/form-data`, field `file`: ảnh {AVATAR_TYPES_LABEL}, tối đa {AVATAR_MAX_MB} "
+        "MB. Loại ảnh xét theo nội dung file, không theo đuôi tên file hay Content-Type. Quá dung "
+        f"lượng nhận 413, không phải {AVATAR_TYPES_LABEL} nhận 415. Đổi thành công thì ảnh cũ bị "
+        "xóa."
+    ),
+    responses=error_responses(
+        status.HTTP_401_UNAUTHORIZED,
+        status.HTTP_413_CONTENT_TOO_LARGE,
+        status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+    ),
+)
+async def update_my_avatar(
+    user: CurrentUser, image: AvatarImage, avatar_service: AvatarServiceDep, storage: Storage
+) -> ProfileOut:
+    return ProfileOut.from_user(await avatar_service.update(user, image), storage)
 
 
 @me_router.put(
