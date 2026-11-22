@@ -1,12 +1,14 @@
+import asyncio
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Any
+from typing import IO, Any
 from uuid import uuid4
 
 import structlog
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import messages
 from app.core.constants import AVATAR_KEY_PREFIX, IMAGE_EXTENSIONS
 from app.core.database import commit_unique
 from app.core.exceptions import AppError, ServiceUnavailableError, UnauthorizedError
@@ -21,11 +23,19 @@ from app.modules.departments.repository import DepartmentRepository
 from app.modules.users.exceptions import (
     CannotModifyOwnAccountError,
     EmailAlreadyExistsError,
+    ImportRowError,
+    ImportValidationError,
     LastActiveAdminError,
     PasswordAlreadySetError,
     UserInactiveError,
     UserManagesDepartmentsError,
     UserNotFoundError,
+)
+from app.modules.users.importing import (
+    UserImportRow,
+    parse_import_file,
+    sort_errors,
+    write_import_template,
 )
 from app.modules.users.models import USER_EMAIL_UNIQUE_INDEX, User, UserRole
 from app.modules.users.repository import UserRepository
@@ -230,6 +240,82 @@ class UserService:
         self.users.add(user)
         # Hai request tạo cùng email chạy song song đều qua được bước kiểm tra email ở trên.
         await commit_unique(self.session, USER_EMAIL_UNIQUE_INDEX, EmailAlreadyExistsError())
+
+
+class UserImportService:
+    """Import nhân viên từ file Excel (A4): kiểm tra cả file rồi mới ghi, có lỗi thì không ghi."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+        self.users = UserRepository(session)
+        self.departments = DepartmentRepository(session)
+
+    async def template(self) -> IO[bytes]:
+        """File Excel mẫu để admin điền."""
+        # Bước xác thực đã đọc DB bằng session của request, mà session chỉ đóng sau khi gửi xong
+        # file (StreamingResponse). Kết thúc transaction đọc để trả kết nối về pool ngay như export
+        # M5; commit chứ không rollback vì rollback làm hết hạn user đang đăng nhập đã load.
+        await self.session.commit()
+        return await asyncio.to_thread(write_import_template)
+
+    async def import_users(self, data: bytes) -> list[User]:
+        """Tạo tài khoản cho mọi dòng của file, gửi email link đặt mật khẩu (S2) cho từng người.
+
+        Ô sai quy tắc, email trùng (trong file hay với tài khoản đã có), mã bộ phận không có: trả
+        mọi lỗi theo dòng (422) trong một lần, không tạo tài khoản nào. Tài khoản tạo như
+        `POST /admin/users`: chưa có mật khẩu, chưa đăng nhập được đến khi tự đặt qua link.
+        """
+        parsed = await asyncio.to_thread(parse_import_file, data)
+        # Khóa FOR SHARE đến khi commit như gán bộ phận ở A1: lệnh xóa bộ phận chạy cùng lúc phải
+        # chờ rồi mới đếm thành viên (thấy user vừa import, trả 409).
+        departments = await self.departments.get_many_by_code_for_share(
+            {row.department_code for row in parsed.rows if row.department_code is not None}
+        )
+        department_ids = {department.code.upper(): department.id for department in departments}
+        taken = await self.users.taken_emails(
+            {row.email for row in parsed.rows if row.email is not None}
+        )
+        errors = list(parsed.errors)
+        for row in parsed.rows:
+            if row.email is not None and row.email in taken:
+                errors.append(ImportRowError(row.row, "email", EmailAlreadyExistsError.message))
+            if row.department_code is not None and row.department_code not in department_ids:
+                errors.append(
+                    ImportRowError(row.row, "department_code", messages.IMPORT_DEPARTMENT_NOT_FOUND)
+                )
+        if errors:
+            await self.session.rollback()
+            raise ImportValidationError(sort_errors(errors))
+
+        users = [
+            self._new_user(row.user, department_ids) for row in parsed.rows if row.user is not None
+        ]
+        self.users.add_all(users)
+        # Import khác, POST /admin/users chạy song song cùng email đều qua được bước kiểm tra trên.
+        await commit_unique(self.session, USER_EMAIL_UNIQUE_INDEX, EmailAlreadyExistsError())
+        await self._enqueue_setup_emails(users)
+        return users
+
+    @staticmethod
+    def _new_user(data: UserImportRow, department_ids: dict[str, int]) -> User:
+        department_id = (
+            None if data.department_code is None else department_ids[data.department_code]
+        )
+        return User(**data.model_dump(exclude={"department_code"}), department_id=department_id)
+
+    @staticmethod
+    async def _enqueue_setup_emails(users: Sequence[User]) -> None:
+        # Sau commit: worker đọc được user vừa tạo. Mỗi user một task như POST /admin/users.
+        for position, user in enumerate(users):
+            if not await enqueue_task(send_account_setup_email, user.id):
+                # Redis lỗi thì các lần sau cũng lỗi, mỗi lần chờ timeout: 1.000 lần là treo
+                # request. Dừng ở đây, ghi lại user chưa được gửi để admin gửi lại bằng
+                # POST /admin/users/{id}/setup-link.
+                logger.error(
+                    "account_setup_emails_not_queued",
+                    user_ids=[pending.id for pending in users[position:]],
+                )
+                return
 
 
 class AvatarService:

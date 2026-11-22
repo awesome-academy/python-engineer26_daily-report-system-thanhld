@@ -97,6 +97,13 @@ class AdminUserOut(UserOut):
     department_id: int | None
 
 
+class UserImportResult(BaseModel):
+    """Kết quả import: mọi dòng của file đã thành tài khoản, theo thứ tự dòng."""
+
+    created_count: int
+    users: list[AdminUserOut]
+
+
 class EmployeeOut(UserOut):
     # Nhân viên luôn thuộc một bộ phận manager quản lý; manager quản lý nhiều bộ phận thì cần
     # biết người này ở bộ phận nào.

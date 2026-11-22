@@ -31,6 +31,7 @@ from app.core.exceptions import AppError, ForbiddenError, UnauthorizedError
 from app.modules.departments.exceptions import DepartmentNotFoundError
 from app.modules.departments.models import Department
 from app.modules.notifications.rendering import RenderedEmail
+from app.modules.users.importing import COLUMNS as USER_IMPORT_COLUMNS
 from app.modules.users.models import UserRole
 from tests.factories import DEFAULT_PASSWORD, auth_headers, create_department, create_user
 
@@ -42,6 +43,9 @@ LOCK_WAIT_SECONDS = 0.3
 
 # Hàng đợi mặc định của Celery: một list trên Redis.
 CELERY_QUEUE = "celery"
+
+# Dòng tiêu đề đúng như file mẫu import user (A4).
+USER_IMPORT_HEADER = [column.excel.header for column in USER_IMPORT_COLUMNS]
 
 runner = CliRunner()
 
@@ -56,6 +60,11 @@ def xlsx_file(rows: Iterable[Sequence[object]]) -> bytes:
     buffer = BytesIO()
     workbook.save(buffer)
     return buffer.getvalue()
+
+
+def user_import_file(*rows: Sequence[object]) -> bytes:
+    """File import user: dòng tiêu đề của file mẫu rồi tới `rows`."""
+    return xlsx_file([USER_IMPORT_HEADER, *rows])
 
 
 @dataclass(frozen=True)

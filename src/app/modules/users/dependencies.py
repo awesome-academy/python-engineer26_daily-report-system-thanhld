@@ -8,11 +8,14 @@ from app.core.constants import (
     AVATAR_MAX_BYTES,
     AVATAR_MAX_MB,
     AVATAR_TYPES_LABEL,
+    USER_IMPORT_MAX_BYTES,
+    USER_IMPORT_MAX_MB,
+    USER_IMPORT_MAX_ROWS,
 )
-from app.core.uploads import UploadedImage, read_image
+from app.core.uploads import UploadedImage, read_image, read_upload
 from app.modules.departments.dependencies import DepartmentServiceDep
 from app.modules.users.schemas import EmployeeListParams
-from app.modules.users.service import AvatarService, UserService
+from app.modules.users.service import AvatarService, UserImportService, UserService
 
 
 def get_user_service(session: DbSession) -> UserService:
@@ -20,6 +23,29 @@ def get_user_service(session: DbSession) -> UserService:
 
 
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
+
+
+def get_user_import_service(session: DbSession) -> UserImportService:
+    return UserImportService(session)
+
+
+UserImportServiceDep = Annotated[UserImportService, Depends(get_user_import_service)]
+
+
+async def get_user_import_file(
+    file: Annotated[
+        UploadFile,
+        File(
+            description=f"File .xlsx theo mẫu, tối đa {USER_IMPORT_MAX_MB} MB, "
+            f"{USER_IMPORT_MAX_ROWS} dòng"
+        ),
+    ],
+) -> bytes:
+    return await read_upload(file, USER_IMPORT_MAX_BYTES)
+
+
+# Nội dung file import đã kiểm tra dung lượng (413). Loại file (415) xét lúc đọc file.
+UserImportFile = Annotated[bytes, Depends(get_user_import_file)]
 
 
 def get_avatar_service(session: DbSession, storage: Storage) -> AvatarService:

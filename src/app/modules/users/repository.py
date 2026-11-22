@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -70,6 +70,21 @@ class UserRepository:
             select(User).where(func.lower(User.email) == email.lower(), User.deleted_at.is_(None))
         )
 
+    async def taken_emails(self, emails: Collection[str]) -> set[str]:
+        """Các email trong `emails` đã thuộc user chưa xóa, chữ thường (không phân biệt hoa thường).
+
+        Một câu cho cả danh sách (import), khớp unique index `lower(email)` như get_by_email.
+        """
+        if not emails:
+            return set()
+        lowered = func.lower(User.email)
+        rows = await self.session.scalars(
+            select(lowered).where(
+                lowered.in_([email.lower() for email in emails]), User.deleted_at.is_(None)
+            )
+        )
+        return set(rows)
+
     async def search(
         self,
         params: PageParams,
@@ -132,6 +147,9 @@ class UserRepository:
 
     def add(self, user: User) -> None:
         self.session.add(user)
+
+    def add_all(self, users: Sequence[User]) -> None:
+        self.session.add_all(users)
 
 
 class UserSyncRepository:

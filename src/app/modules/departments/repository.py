@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from datetime import datetime
 
 from sqlalchemy import Select, delete, exists, func, or_, select
@@ -96,6 +96,22 @@ class DepartmentRepository:
         return await self.session.scalar(
             self._active().where(func.lower(Department.code) == func.lower(code))
         )
+
+    async def get_many_by_code_for_share(self, codes: Collection[str]) -> Sequence[Department]:
+        """Bộ phận chưa xóa có mã trong `codes` (không phân biệt hoa thường), khóa FOR SHARE.
+
+        Như get_by_id_for_share, cho thao tác xếp nhiều user vào bộ phận (import). Khóa theo thứ tự
+        id như các chỗ khóa nhiều dòng khác.
+        """
+        if not codes:
+            return []
+        rows = await self.session.scalars(
+            self._active()
+            .where(func.lower(Department.code).in_([code.lower() for code in codes]))
+            .order_by(Department.id)
+            .with_for_update(read=True)
+        )
+        return rows.all()
 
     async def count_members(self, department_id: int) -> int:
         return (
