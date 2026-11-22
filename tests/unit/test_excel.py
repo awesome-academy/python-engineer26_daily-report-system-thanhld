@@ -50,7 +50,8 @@ async def test_iter_file_reads_in_chunks_and_closes_file() -> None:
     assert file.closed
 
 
-async def test_iter_file_closes_file_when_client_disconnects() -> None:
+async def test_iter_file_closes_file_when_stream_is_closed_early() -> None:
+    # Client ngắt: Starlette hủy việc gửi, asyncio đóng generator (aclose) khi thu gom nó.
     file = BytesIO(b"x" * (DOWNLOAD_CHUNK_BYTES + 1))
     chunks = iter_file(file)
 

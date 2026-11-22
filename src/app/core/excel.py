@@ -60,7 +60,11 @@ def save_workbook(workbook: Workbook) -> IO[bytes]:
 
 
 async def iter_file(file: IO[bytes]) -> AsyncGenerator[bytes]:
-    """Đọc file từng đoạn cho StreamingResponse; đóng (xóa file tạm) khi gửi xong, client ngắt."""
+    """Đọc file từng đoạn cho StreamingResponse; đóng (xóa file tạm) khi gửi xong, dừng giữa chừng.
+
+    Client ngắt thì Starlette chỉ hủy việc gửi, không đóng generator; asyncio đóng nó (chạy tới
+    `finally`) khi thu gom. File tạm không đóng thì cũng bị xóa khi object bị thu gom.
+    """
     try:
         while chunk := await asyncio.to_thread(file.read, DOWNLOAD_CHUNK_BYTES):
             yield chunk

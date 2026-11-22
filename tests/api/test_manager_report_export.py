@@ -4,9 +4,9 @@ Bộ lọc `department_id` ngoài phạm vi (bộ phận khác, đã xóa, role 
 quyền ở tests/api/test_department_scope.py; ở đây là nội dung file.
 """
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, tzinfo
 from io import BytesIO
-from typing import IO, Any
+from typing import IO, Any, Self
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -17,6 +17,7 @@ from openpyxl.cell.cell import Cell, MergedCell
 from openpyxl.worksheet.worksheet import Worksheet
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import clock
 from app.core.clock import local_today
 from app.core.config import get_settings
 from app.core.constants import EXCEL_DATETIME_FORMAT, XLSX_MEDIA_TYPE
@@ -401,15 +402,28 @@ async def test_export_defaults_to_today(
     assert summary(sheet_rows(response)) == [("KT", "Trần Bình", SUBMITTED)]
 
 
+class LateEveningUtc(datetime):
+    """Đồng hồ dừng ở 17:30 UTC ngày 4/3, đã là 00:30 ngày 5/3 giờ Việt Nam."""
+
+    @classmethod
+    def now(cls, tz: tzinfo | None = None) -> Self:
+        return cls(2026, 3, 4, 17, 30, tzinfo=UTC).astimezone(tz)
+
+
 async def test_export_uses_business_timezone_today(
-    app: FastAPI, client: AsyncClient, headers: dict[str, str]
+    app: FastAPI, client: AsyncClient, headers: dict[str, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # Bỏ ngày cố định, lấy hôm nay từ local_today() với đồng hồ lúc hai múi giờ khác ngày: tính
+    # theo UTC thì ra ngày 4/3.
     del app.dependency_overrides[local_today]
+    monkeypatch.setattr(clock, "datetime", LateEveningUtc)
 
     response = await client.get(EXPORT_URL, headers=headers)
 
     assert response.status_code == 200
-    assert f"bao-cao-{local_today().isoformat()}.xlsx" in response.headers["content-disposition"]
+    assert (
+        response.headers["content-disposition"] == 'attachment; filename="bao-cao-2026-03-05.xlsx"'
+    )
 
 
 async def test_export_rejects_future_date(
