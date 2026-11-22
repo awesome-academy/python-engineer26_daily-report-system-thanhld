@@ -27,6 +27,7 @@ from app.core.database import engine
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import REQUEST_ID_HEADER, RequestContextMiddleware, configure_logging
 from app.core.redis import redis_client
+from app.modules.reports.schemas import EXAMPLE_REPORT_DATE
 from app.seed_data import (
     EXAMPLE_ADMIN,
     EXAMPLE_DEPARTMENT,
@@ -54,8 +55,10 @@ cho USER; `/me` cho mọi role.
 
 Ví dụ request, response dùng dữ liệu mẫu: seed vào DB trống thì bộ phận {EXAMPLE_DEPARTMENT.code} \
 có id {seed_id(EXAMPLE_DEPARTMENT)}, `{EXAMPLE_MANAGER.email}` id {seed_id(EXAMPLE_MANAGER)}, \
-`{EXAMPLE_EMPLOYEE.email}` id {seed_id(EXAMPLE_EMPLOYEE)}. Ví dụ không hiện field có giá trị \
-`null` (FastAPI bỏ `null` khi xuất OpenAPI): field nào nhận, trả `null` xem ở tab Schema.
+`{EXAMPLE_EMPLOYEE.email}` id {seed_id(EXAMPLE_EMPLOYEE)}. Ngày trong ví dụ cố định \
+(`{EXAMPLE_REPORT_DATE}`): thử tạo báo cáo thì đổi `report_date` thành hôm nay (seed không tạo báo \
+cáo hôm nay). Ví dụ không hiện field có giá trị `null` (FastAPI bỏ `null` khi xuất OpenAPI): field \
+nào nhận, trả `null` xem ở tab Schema.
 
 **Quy ước**
 
