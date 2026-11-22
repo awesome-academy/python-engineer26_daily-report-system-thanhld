@@ -42,10 +42,11 @@ def test_celery_uses_redis_broker_with_json_and_timeouts() -> None:
     ids=lambda t: t.name,
 )
 def test_tasks_are_registered_with_retry_limit(task: Task[Any, Any]) -> None:
-    # Worker chỉ nạp task trong `include`: quên khai module thì worker từ chối task từ API.
-    celery_app.loader.import_default_modules()
-
-    assert celery_app.tasks[task.name].max_retries == TASK_MAX_RETRIES
+    # Worker chỉ nạp module trong `include`: quên khai thì worker từ chối task từ API, Beat. Test
+    # này import sẵn module task nên `celery_app.tasks` luôn có task, phải xét chính `include`.
+    registered = celery_app.tasks[task.name]
+    assert registered.__module__ in celery_app.conf.include
+    assert registered.max_retries == TASK_MAX_RETRIES
 
 
 def test_beat_runs_monthly_summary_at_8am_on_first_day_vietnam_time(
