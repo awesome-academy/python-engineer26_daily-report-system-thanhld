@@ -1,0 +1,2295 @@
+{
+  "info": {
+    "_postman_id": "341d27cf-73b5-5654-96b6-7676b3f5d200",
+    "name": "Daily Report API",
+    "description": "Mọi endpoint của Daily Report API, xếp theo thứ tự chạy được từ trên xuống trên dữ liệu seed.\n\n**Chuẩn bị**\n\n1. `make dev`, rồi tạo dữ liệu mẫu với mật khẩu khớp biến `password`:\n   `docker compose exec api daily-report seed --password Matkhau@123`.\n2. Import file này vào Postman (File → Import).\n\n**Chạy**\n\n- Cả collection: chuột phải collection → Run collection → Run. Các request tự đăng nhập, lưu\n  token, id vào biến collection, tạo rồi xóa dữ liệu thử (bộ phận, user mới).\n- Từng request: chạy folder **Xác thực** trước để có token. Folder của role nào tự gắn token\n  của role đó (`adminToken`, `managerToken`, `userToken`).\n- Request cần file (đổi ảnh đại diện, import Excel) bị bỏ qua khi chưa chọn file ở tab Body.\n\n**Biến** (tab Variables của collection): `baseUrl`, `mailpitUrl` (đổi khi đổi cổng trong `.env`),\n`password` (mật khẩu đã dùng khi seed), email ba tài khoản seed. Các biến còn lại do script ghi.\n",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "noauth"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Ngày hôm nay theo giờ Việt Nam (UTC+7) cho báo cáo, export.",
+          "const vietnamNow = new Date(Date.now() + 7 * 60 * 60 * 1000);",
+          "pm.collectionVariables.set(\"today\", vietnamNow.toISOString().slice(0, 10));"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test(\"Không lỗi 5xx\", () => pm.expect(pm.response.code).to.be.below(500));"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "id": "83336ca5-f124-505a-8bbb-03797ee07889",
+      "name": "Hệ thống",
+      "description": "Kiểm tra API, PostgreSQL, Redis đã sẵn sàng.",
+      "item": [
+        {
+          "id": "a7749989-1188-56a3-8066-2b179259a824",
+          "name": "Kiểm tra trạng thái hệ thống",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"DB, Redis ok\", () => pm.expect(pm.response.json().status).to.eql(\"ok\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "auth": {
+        "type": "noauth"
+      }
+    },
+    {
+      "id": "4b910009-1eb5-5c6f-bda1-3e89eaa993fe",
+      "name": "Xác thực",
+      "description": "Đăng nhập ba tài khoản seed, lưu token theo role. Chạy folder này trước các folder khác.",
+      "item": [
+        {
+          "id": "a0452da5-c73a-5d2f-bfe2-03374da0a579",
+          "name": "Đăng nhập: admin",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "OAuth2 password flow: form `username` (là email), `password`. Script lưu access token vào biến `adminToken`, các folder của role này tự gắn token.",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "username",
+                  "value": "{{adminEmail}}",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{password}}",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set(\"adminToken\", body.access_token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "9509ed10-a479-51ec-8bc3-474cea939722",
+          "name": "Đăng nhập: manager",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "OAuth2 password flow: form `username` (là email), `password`. Script lưu access token vào biến `managerToken`, các folder của role này tự gắn token.",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "username",
+                  "value": "{{managerEmail}}",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{password}}",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set(\"managerToken\", body.access_token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "150e6e7b-fd16-548e-b289-64fc58866ed6",
+          "name": "Đăng nhập: nhân viên",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "OAuth2 password flow: form `username` (là email), `password`. Script lưu access token vào biến `userToken`, các folder của role này tự gắn token.",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "username",
+                  "value": "{{userEmail}}",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{password}}",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set(\"userToken\", body.access_token);",
+                  "pm.collectionVariables.set(\"userRefreshToken\", body.refresh_token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "9af59aec-7a4e-57a6-8ae7-e378eb890e4d",
+          "name": "Lấy cặp token mới bằng refresh token",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "refresh"
+              ]
+            },
+            "description": "Refresh token dùng một lần: script lưu cặp token mới của nhân viên.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{userRefreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set(\"userToken\", pm.response.json().access_token);",
+                  "pm.collectionVariables.set(\"userRefreshToken\", pm.response.json().refresh_token);"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "auth": {
+        "type": "noauth"
+      }
+    },
+    {
+      "id": "bcc6ad93-b75b-5045-bf12-e5643d15f5da",
+      "name": "Cá nhân",
+      "description": "Hồ sơ của tài khoản đang đăng nhập (nhân viên `userEmail`).",
+      "item": [
+        {
+          "id": "c8b5f70e-197b-596e-b19f-975ca16c35e9",
+          "name": "Xem thông tin tài khoản đang đăng nhập",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "98a2cd51-2ae8-5b54-a840-c7110f87b6fd",
+          "name": "Sửa hồ sơ cá nhân",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me"
+              ]
+            },
+            "description": "Cập nhật từng phần; gửi `null` để xóa số điện thoại, ngày sinh.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"0912345678\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "09c740c0-aca4-583b-8990-bce41e5b728c",
+          "name": "Đổi ảnh đại diện",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/avatar",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me",
+                "avatar"
+              ]
+            },
+            "description": "Chọn file ảnh JPEG hoặc PNG (tối đa 2 MB) ở field `file` của tab Body rồi gửi. Chưa chọn file thì request bị bỏ qua khi chạy cả collection.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Chưa chọn file ở tab Body thì bỏ qua request này (khi chạy cả collection).",
+                  "const file = pm.request.body.formdata.find((param) => param.key === \"file\");",
+                  "if (!file || !file.src || (Array.isArray(file.src) && file.src.length === 0)) {",
+                  "    console.log(`Bỏ qua \"${pm.info.requestName}\": chưa chọn file.`);",
+                  "    pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "6d76d51c-e94b-5be7-beeb-fe8bfbe69658",
+          "name": "Đổi mật khẩu",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me",
+                "password"
+              ]
+            },
+            "description": "Các phiên khác bị đăng xuất, response trả cặp token mới cho phiên này. Request sau đổi lại mật khẩu cũ để chạy lại collection được.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"current_password\": \"{{password}}\",\n  \"new_password\": \"{{newPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set(\"userToken\", pm.response.json().access_token);",
+                  "pm.collectionVariables.set(\"userRefreshToken\", pm.response.json().refresh_token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "e1258f17-b54f-5683-9657-75aed7362117",
+          "name": "Đổi lại mật khẩu cũ",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me",
+                "password"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"current_password\": \"{{newPassword}}\",\n  \"new_password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set(\"userToken\", pm.response.json().access_token);",
+                  "pm.collectionVariables.set(\"userRefreshToken\", pm.response.json().refresh_token);"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{userToken}}",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "bd0371b8-af06-5216-99b7-f6f2dbab1a0f",
+      "name": "Cá nhân: báo cáo",
+      "description": "Nhân viên (role USER) tạo và xem báo cáo của mình.",
+      "item": [
+        {
+          "id": "53824ebd-34f3-558f-95b6-5b7276f1b201",
+          "name": "Danh sách người nhận báo cáo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/recipients",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me",
+                "recipients"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set(\"recipientId\", pm.response.json()[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "e3ffe866-eb46-5816-b10e-08491f31d2f6",
+          "name": "Tạo báo cáo hằng ngày",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/reports",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me",
+                "reports"
+              ]
+            },
+            "description": "Báo cáo cho hôm nay (`today`, giờ Việt Nam, script của collection tự tính). Mỗi ngày một báo cáo: chạy lại trong ngày nhận 409 `REPORT_ALREADY_EXISTS`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"report_date\": \"{{today}}\",\n  \"planned_work\": \"Viết tài liệu API\",\n  \"actual_work\": \"Xong ví dụ Swagger, Postman collection\",\n  \"incomplete_reason\": null,\n  \"next_day_plan\": \"Rà soát README\",\n  \"recipient_ids\": [\n    {{recipientId}}\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201 hoặc 409\", () => pm.expect(pm.response.code).to.be.oneOf([201, 409]));",
+                  "if (pm.response.code === 409) {",
+                  "    pm.test(\"Đã có báo cáo hôm nay\", () => pm.expect(pm.response.json().error.code).to.eql(\"REPORT_ALREADY_EXISTS\"));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "56a76444-fa56-5542-88bf-384df0f0027e",
+          "name": "Lịch sử báo cáo của tôi",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/reports?page=1&page_size=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me",
+                "reports"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set(\"reportId\", pm.response.json().data[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "0108ebd2-abb8-52a3-8e1f-2e8b3dc801a7",
+          "name": "Xem báo cáo của tôi",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/reports/:report_id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me",
+                "reports",
+                ":report_id"
+              ],
+              "variable": [
+                {
+                  "key": "report_id",
+                  "value": "{{reportId}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{userToken}}",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "6796ee0d-ed7a-5451-9af4-7c10fb8796dc",
+      "name": "Admin: người dùng",
+      "description": "Admin tạo tài khoản mới (chưa có mật khẩu, nhận email link đặt mật khẩu).",
+      "item": [
+        {
+          "id": "d650974e-b96b-5734-9011-4287f5e48353",
+          "name": "Danh sách user",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/users?keyword={{managerEmail}}&role=MANAGER",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "keyword",
+                  "value": "{{managerEmail}}"
+                },
+                {
+                  "key": "role",
+                  "value": "MANAGER"
+                }
+              ]
+            },
+            "description": "Tìm manager seed để gán vào bộ phận mới ở folder sau."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set(\"managerUserId\", pm.response.json().data[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "6c6ba34a-ad1e-51a8-831b-5b139d756526",
+          "name": "Tạo user",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "users"
+              ]
+            },
+            "description": "Email mới mỗi lần chạy (script). User chưa thuộc bộ phận nào.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{newUserEmail}}\",\n  \"full_name\": \"Nhân viên Thử\",\n  \"role\": \"USER\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"newUserEmail\", `nv.${Date.now()}@example.com`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"newUserId\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "76db2f15-ef2f-5e25-9ec3-c59455086776",
+          "name": "Xem user",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/users/:user_id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "users",
+                ":user_id"
+              ],
+              "variable": [
+                {
+                  "key": "user_id",
+                  "value": "{{newUserId}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "9aa3ffc6-d64d-54a5-b57e-fc4642c6728f",
+          "name": "Sửa user, gán bộ phận, khóa tài khoản",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/users/:user_id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "users",
+                ":user_id"
+              ],
+              "variable": [
+                {
+                  "key": "user_id",
+                  "value": "{{newUserId}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"0987654321\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "ae9002b6-1331-591f-984b-c0a1d3a68db5",
+          "name": "Tải file Excel mẫu để import user",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/users/import-template",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "users",
+                "import-template"
+              ]
+            },
+            "description": "Bấm Send and Download để lưu file mẫu, điền rồi dùng ở request sau."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "b3569b47-f142-5460-a137-bd513b5e9e99",
+          "name": "Import user từ file Excel",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/users/import",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "users",
+                "import"
+              ]
+            },
+            "description": "Chọn file .xlsx đã điền theo mẫu ở field `file` của tab Body rồi gửi. Chưa chọn file thì request bị bỏ qua khi chạy cả collection.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Chưa chọn file ở tab Body thì bỏ qua request này (khi chạy cả collection).",
+                  "const file = pm.request.body.formdata.find((param) => param.key === \"file\");",
+                  "if (!file || !file.src || (Array.isArray(file.src) && file.src.length === 0)) {",
+                  "    console.log(`Bỏ qua \"${pm.info.requestName}\": chưa chọn file.`);",
+                  "    pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{adminToken}}",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "8e0fff37-5173-503b-8a92-19614f7e0147",
+      "name": "Đặt mật khẩu lần đầu",
+      "description": "User admin vừa tạo lấy link trong email (Mailpit, chỉ có khi dev bằng `make dev`), đặt mật khẩu rồi đăng nhập. Hai request đầu gọi API của Mailpit, không phải của Daily Report.",
+      "item": [
+        {
+          "id": "67223b72-0ae2-58c1-8960-05af11c87ee4",
+          "name": "Mailpit: tìm email đặt mật khẩu",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{mailpitUrl}}/api/v1/search?query=to:{{newUserEmail}}",
+              "host": [
+                "{{mailpitUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "query",
+                  "value": "to:{{newUserEmail}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Worker gửi email sau khi API trả response: chờ một chút để email tới Mailpit.",
+                  "setTimeout(() => {}, 2000);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Có email gửi tới user mới\", () => pm.expect(pm.response.json().messages.length).to.be.above(0));",
+                  "pm.collectionVariables.set(\"mailId\", pm.response.json().messages[0].ID);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "59044e2c-de94-5dfc-99d1-29a1b80cbc6e",
+          "name": "Mailpit: lấy token trong link",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{mailpitUrl}}/api/v1/message/:id",
+              "host": [
+                "{{mailpitUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "message",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{mailId}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const match = pm.response.json().Text.match(/token=([A-Za-z0-9_-]+)/);",
+                  "pm.test(\"Email có link đặt mật khẩu\", () => pm.expect(match).to.not.be.null);",
+                  "pm.collectionVariables.set(\"setupToken\", match[1]);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "296393d6-cc0d-5a27-8640-b0b30d726efb",
+          "name": "Đặt mật khẩu lần đầu bằng link trong email",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/setup-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "setup-password"
+              ]
+            },
+            "description": "`token` là giá trị `token` trên link trong email.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{setupToken}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "6782135e-672c-52eb-81a8-427d367e14ed",
+          "name": "Đăng nhập: user mới",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "OAuth2 password flow: form `username` (là email), `password`. Script lưu access token vào biến `newUserToken`, các folder của role này tự gắn token.",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "username",
+                  "value": "{{newUserEmail}}",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{password}}",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set(\"newUserToken\", body.access_token);"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "auth": {
+        "type": "noauth"
+      }
+    },
+    {
+      "id": "e5a05fb4-9576-5c38-bb1b-1b2abf40b7ce",
+      "name": "Admin: bộ phận",
+      "description": "Admin tạo bộ phận mới và gán manager seed quản lý bộ phận đó.",
+      "item": [
+        {
+          "id": "843245c9-81de-596a-bde8-55364ced13a6",
+          "name": "Danh sách bộ phận",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/departments?keyword=phát triển",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "departments"
+              ],
+              "query": [
+                {
+                  "key": "keyword",
+                  "value": "phát triển"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "f8c87d99-1503-5022-b00d-a2eae57eda2e",
+          "name": "Tạo bộ phận",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/departments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "departments"
+              ]
+            },
+            "description": "Mã mới mỗi lần chạy (script), vì mã không được trùng.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"{{departmentCode}}\",\n  \"name\": \"Phòng Thử nghiệm\",\n  \"description\": \"Tạo từ Postman\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"departmentCode\", `T${Date.now().toString(36).toUpperCase()}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"departmentId\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "2cf49008-fe84-527b-ae04-79cb7727ff4c",
+          "name": "Xem bộ phận",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/departments/:department_id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "departments",
+                ":department_id"
+              ],
+              "variable": [
+                {
+                  "key": "department_id",
+                  "value": "{{departmentId}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "28be3499-dbf8-5ff9-a5ef-dbc7b632feca",
+          "name": "Sửa bộ phận",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/departments/:department_id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "departments",
+                ":department_id"
+              ],
+              "variable": [
+                {
+                  "key": "department_id",
+                  "value": "{{departmentId}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Sửa từ Postman\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "796de489-ff14-5bd1-a690-762ad394a409",
+          "name": "Xem thành viên bộ phận",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/departments/:department_id/members",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "departments",
+                ":department_id",
+                "members"
+              ],
+              "variable": [
+                {
+                  "key": "department_id",
+                  "value": "{{departmentId}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "c09150f0-7997-5c7d-86fe-4bc1f28164e8",
+          "name": "Gán manager cho bộ phận",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/departments/:department_id/managers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "departments",
+                ":department_id",
+                "managers"
+              ],
+              "variable": [
+                {
+                  "key": "department_id",
+                  "value": "{{departmentId}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": {{managerUserId}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "d7a245c9-5937-560f-82ff-3ebb5199b1c5",
+          "name": "Xem manager của bộ phận",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/departments/:department_id/managers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "departments",
+                ":department_id",
+                "managers"
+              ],
+              "variable": [
+                {
+                  "key": "department_id",
+                  "value": "{{departmentId}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{adminToken}}",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "47971f33-59cd-5b32-b823-2cefcda50dfd",
+      "name": "Manager: bộ phận",
+      "description": "Manager seed thêm, gỡ user mới khỏi bộ phận vừa được gán quản lý.",
+      "item": [
+        {
+          "id": "84668ead-ad85-5d00-af13-7ddd88b4ee02",
+          "name": "Bộ phận tôi quản lý",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/manager/departments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "manager",
+                "departments"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "41c8f539-5a39-5433-a8d4-c4d717c3638e",
+          "name": "Xem bộ phận tôi quản lý",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/manager/departments/:department_id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "manager",
+                "departments",
+                ":department_id"
+              ],
+              "variable": [
+                {
+                  "key": "department_id",
+                  "value": "{{departmentId}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "7fdec029-a655-5a05-9ffb-ea6d3edd6033",
+          "name": "Ứng viên thêm vào bộ phận",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/manager/candidates?keyword={{newUserEmail}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "manager",
+                "candidates"
+              ],
+              "query": [
+                {
+                  "key": "keyword",
+                  "value": "{{newUserEmail}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"User mới là ứng viên\", () => pm.expect(pm.response.json().data.map((u) => u.id)).to.include(Number(pm.collectionVariables.get(\"newUserId\"))));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "1852b6e2-d246-5935-8c30-f52730c6efe1",
+          "name": "Thêm nhân viên vào bộ phận",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/manager/departments/:department_id/members",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "manager",
+                "departments",
+                ":department_id",
+                "members"
+              ],
+              "variable": [
+                {
+                  "key": "department_id",
+                  "value": "{{departmentId}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_ids\": [\n    {{newUserId}}\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "9fd3dee0-8895-5b6e-a3b2-a5a492f5ab3b",
+          "name": "Thành viên bộ phận tôi quản lý",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/manager/departments/:department_id/members",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "manager",
+                "departments",
+                ":department_id",
+                "members"
+              ],
+              "variable": [
+                {
+                  "key": "department_id",
+                  "value": "{{departmentId}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "bd4e0de9-90a8-56b9-b902-8fa64ba32a1f",
+          "name": "Gỡ nhân viên khỏi bộ phận",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/manager/departments/:department_id/members/:user_id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "manager",
+                "departments",
+                ":department_id",
+                "members",
+                ":user_id"
+              ],
+              "variable": [
+                {
+                  "key": "department_id",
+                  "value": "{{departmentId}}"
+                },
+                {
+                  "key": "user_id",
+                  "value": "{{newUserId}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{managerToken}}",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "8b701c16-3a18-5be3-9ad4-489f67dc0ffc",
+      "name": "Manager: nhân viên",
+      "description": "Nhân viên của các bộ phận manager quản lý.",
+      "item": [
+        {
+          "id": "917d4af6-8f1a-5365-8c7f-e5a42d9d011e",
+          "name": "Danh sách nhân viên các bộ phận mình quản lý",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/manager/employees",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "manager",
+                "employees"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set(\"employeeId\", pm.response.json().data[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "43d49fcb-323a-5b89-8dd7-91cd21510735",
+          "name": "Xem nhân viên",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/manager/employees/:user_id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "manager",
+                "employees",
+                ":user_id"
+              ],
+              "variable": [
+                {
+                  "key": "user_id",
+                  "value": "{{employeeId}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{managerToken}}",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "bb44d7de-5f38-56da-a3f6-c1ebd3b67615",
+      "name": "Manager: báo cáo",
+      "description": "Báo cáo của nhân viên các bộ phận manager quản lý.",
+      "item": [
+        {
+          "id": "61f01d19-5a35-54dd-8c7f-1ce4b9f3b007",
+          "name": "Báo cáo của nhân viên bộ phận tôi quản lý",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/manager/reports?sort=-report_date",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "manager",
+                "reports"
+              ],
+              "query": [
+                {
+                  "key": "sort",
+                  "value": "-report_date"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set(\"managerReportId\", pm.response.json().data[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "9ddc1367-8c8f-552e-a473-e360d6b88fdb",
+          "name": "Export Excel báo cáo theo ngày",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/manager/reports/export?date={{today}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "manager",
+                "reports",
+                "export"
+              ],
+              "query": [
+                {
+                  "key": "date",
+                  "value": "{{today}}"
+                }
+              ]
+            },
+            "description": "Bấm Send and Download để lưu file .xlsx."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "45f47142-1914-5501-82a7-35c628581189",
+          "name": "Xem báo cáo của nhân viên",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/manager/reports/:report_id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "manager",
+                "reports",
+                ":report_id"
+              ],
+              "variable": [
+                {
+                  "key": "report_id",
+                  "value": "{{managerReportId}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{managerToken}}",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "5aef70ad-a573-5d4a-8452-4d053033be99",
+      "name": "Dọn dữ liệu thử",
+      "description": "Xóa user, bộ phận vừa tạo để chạy lại collection không để lại dữ liệu thừa.",
+      "item": [
+        {
+          "id": "98acc635-9ccf-5836-b306-51d299ee1cda",
+          "name": "Gửi lại email link đặt mật khẩu",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/users/:user_id/setup-link",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "users",
+                ":user_id",
+                "setup-link"
+              ],
+              "variable": [
+                {
+                  "key": "user_id",
+                  "value": "{{newUserId}}"
+                }
+              ]
+            },
+            "description": "Dùng cho user chưa đặt mật khẩu (link hết hạn, email không tới). User mới đã đặt mật khẩu ở folder trước nên nhận 409 `PASSWORD_ALREADY_SET`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"Đã đặt mật khẩu\", () => pm.expect(pm.response.json().error.code).to.eql(\"PASSWORD_ALREADY_SET\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "4ba8eda9-9320-5ddb-be8f-438036b3db2a",
+          "name": "Gỡ manager khỏi bộ phận",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/departments/:department_id/managers/:user_id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "departments",
+                ":department_id",
+                "managers",
+                ":user_id"
+              ],
+              "variable": [
+                {
+                  "key": "department_id",
+                  "value": "{{departmentId}}"
+                },
+                {
+                  "key": "user_id",
+                  "value": "{{managerUserId}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "267283b6-de1d-5e96-97da-3a40fa104e28",
+          "name": "Xóa user",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/users/:user_id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "users",
+                ":user_id"
+              ],
+              "variable": [
+                {
+                  "key": "user_id",
+                  "value": "{{newUserId}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "e3be979f-92a1-5c83-972f-c612ddac507f",
+          "name": "Xóa bộ phận",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/departments/:department_id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "departments",
+                ":department_id"
+              ],
+              "variable": [
+                {
+                  "key": "department_id",
+                  "value": "{{departmentId}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{adminToken}}",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "id": "4bed4f34-d466-5101-bf54-7e829d092c2b",
+      "name": "Đăng xuất",
+      "description": "Đăng xuất nhân viên: access token và refresh token của phiên hết hiệu lực ngay.",
+      "item": [
+        {
+          "id": "a7427c23-169b-56f1-80cb-acc617e1911f",
+          "name": "Đăng xuất",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "logout"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "2ca63c3d-98d7-54c9-9baf-5fca23fe98a8",
+          "name": "Gọi API sau khi đăng xuất",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me"
+              ]
+            },
+            "description": "Token đã thu hồi: nhận 401."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{userToken}}",
+            "type": "string"
+          }
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8001"
+    },
+    {
+      "key": "mailpitUrl",
+      "value": "http://localhost:8026"
+    },
+    {
+      "key": "password",
+      "value": "Matkhau@123"
+    },
+    {
+      "key": "newPassword",
+      "value": "Matkhau@456"
+    },
+    {
+      "key": "adminEmail",
+      "value": "admin@example.com"
+    },
+    {
+      "key": "managerEmail",
+      "value": "manager.dev@example.com"
+    },
+    {
+      "key": "userEmail",
+      "value": "an.nguyen@example.com"
+    },
+    {
+      "key": "today",
+      "value": ""
+    },
+    {
+      "key": "adminToken",
+      "value": ""
+    },
+    {
+      "key": "managerToken",
+      "value": ""
+    },
+    {
+      "key": "userToken",
+      "value": ""
+    },
+    {
+      "key": "userRefreshToken",
+      "value": ""
+    },
+    {
+      "key": "newUserToken",
+      "value": ""
+    },
+    {
+      "key": "recipientId",
+      "value": ""
+    },
+    {
+      "key": "reportId",
+      "value": ""
+    },
+    {
+      "key": "managerUserId",
+      "value": ""
+    },
+    {
+      "key": "newUserEmail",
+      "value": ""
+    },
+    {
+      "key": "newUserId",
+      "value": ""
+    },
+    {
+      "key": "mailId",
+      "value": ""
+    },
+    {
+      "key": "setupToken",
+      "value": ""
+    },
+    {
+      "key": "departmentCode",
+      "value": ""
+    },
+    {
+      "key": "departmentId",
+      "value": ""
+    },
+    {
+      "key": "employeeId",
+      "value": ""
+    },
+    {
+      "key": "managerReportId",
+      "value": ""
+    }
+  ]
+}
