@@ -194,3 +194,7 @@ SMTP_TIMEOUT_SECONDS = 10
 EMAIL_ERROR_MAX_LENGTH = 1000
 # Ngày hiển thị trong email (ngày báo cáo).
 EMAIL_DATE_FORMAT = "%d/%m/%Y"
+
+# Ngày làm việc: thứ 2 (1) đến thứ 6 (5) theo số thứ ISO (`date.isoweekday()`, `isodow` của
+# PostgreSQL), chưa trừ ngày lễ (Q12). Một định nghĩa cho seed và thống kê tháng (Python và SQL).
+WORKING_ISO_WEEKDAYS = (1, 2, 3, 4, 5)
