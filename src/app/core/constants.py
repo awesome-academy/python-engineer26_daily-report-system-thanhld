@@ -203,6 +203,9 @@ WORKING_ISO_WEEKDAYS = (1, 2, 3, 4, 5)
 MONTHLY_SUMMARY_TASK = "reports.send_monthly_summaries"
 # Tháng thống kê ở tham số task, lệnh CLI, dedup_key ("2026-10"); hiển thị trong email ("10/2026").
 MONTH_FORMAT = "%Y-%m"
+# Tháng nhập vào (CLI, tham số task) phải đúng 4 chữ số năm, 2 chữ số tháng: strptime nhận cả
+# "2026-1", "0001-01", mà strftime trên Linux in năm 1 thành "1-01", không dùng lại được.
+MONTH_PATTERN = r"[1-9][0-9]{3}-(0[1-9]|1[0-2])"
 EMAIL_MONTH_FORMAT = "%m/%Y"
 # Thời điểm tính số liệu ghi trong email thống kê (giờ Việt Nam).
 EMAIL_DATETIME_FORMAT = "%H:%M %d/%m/%Y"

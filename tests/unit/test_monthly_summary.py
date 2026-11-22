@@ -51,7 +51,11 @@ def test_resolve_month_accepts_finished_month(month: str, expected: date) -> Non
     assert resolve_month(month, TODAY) == expected
 
 
-@pytest.mark.parametrize("month", ["2026-13", "10/2026", "2026-10-01", "", "tháng 10"])
+@pytest.mark.parametrize(
+    "month",
+    # Năm dưới 1000: strftime trên Linux in "1-01", nhãn không dùng lại được làm tham số task.
+    ["2026-13", "10/2026", "2026-10-01", "", "tháng 10", "2026-1", "0001-01", "999-12", " 2026-10"],
+)
 def test_resolve_month_rejects_wrong_format(month: str) -> None:
     with pytest.raises(ValueError, match="không đúng dạng YYYY-MM"):
         resolve_month(month, TODAY)

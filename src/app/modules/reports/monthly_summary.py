@@ -1,6 +1,7 @@
 """Email S3: thống kê báo cáo tháng của từng bộ phận cho manager (chạy trong Celery worker)."""
 
 import calendar
+import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
@@ -14,6 +15,7 @@ from app.core.constants import (
     EMAIL_DATETIME_FORMAT,
     EMAIL_MONTH_FORMAT,
     MONTH_FORMAT,
+    MONTH_PATTERN,
     MONTHLY_SUMMARY_DEDUP_KEY,
 )
 from app.core.workdays import count_working_days
@@ -40,11 +42,10 @@ def resolve_month(month: str | None, today: date) -> date:
     last_finished = previous_month(today)
     if month is None:
         return last_finished
-    try:
-        # Chỉ lấy phần ngày, không so với thời điểm nào nên không cần múi giờ.
-        first = datetime.strptime(month, MONTH_FORMAT).date()  # noqa: DTZ007
-    except ValueError:
-        raise ValueError(f"Tháng {month!r} không đúng dạng YYYY-MM, ví dụ 2026-10") from None
+    if not re.fullmatch(MONTH_PATTERN, month):
+        raise ValueError(f"Tháng {month!r} không đúng dạng YYYY-MM, ví dụ 2026-10")
+    # Đã đúng mẫu nên strptime không lỗi. Chỉ lấy phần ngày, không cần múi giờ.
+    first = datetime.strptime(month, MONTH_FORMAT).date()  # noqa: DTZ007
     if first > last_finished:
         raise ValueError(f"Tháng {month} chưa kết thúc, chỉ thống kê được tháng đã qua")
     return first
