@@ -7,6 +7,7 @@ import typer
 
 # Import kèm alias để tên hàm không che mất submodule app.cli.admin, app.cli.seed.
 from app.cli.admin import create_admin as _create_admin
+from app.cli.email import send_monthly_summary as _send_monthly_summary
 from app.cli.email import send_test_email as _send_test_email
 from app.cli.seed import seed as _seed
 
@@ -14,3 +15,4 @@ cli = typer.Typer(help="Lệnh quản trị Daily Report API.", no_args_is_help=
 cli.command("create-admin")(_create_admin)
 cli.command("seed")(_seed)
 cli.command("send-test-email")(_send_test_email)
+cli.command("send-monthly-summary")(_send_monthly_summary)
