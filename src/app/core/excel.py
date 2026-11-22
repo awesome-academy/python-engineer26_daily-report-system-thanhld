@@ -8,6 +8,7 @@ viện đồng bộ, hàm ghi, đọc file chạy trong `asyncio.to_thread`.
 import asyncio
 import os
 import re
+import zlib
 from collections.abc import AsyncGenerator, Generator, Sequence
 from io import BytesIO
 from tempfile import SpooledTemporaryFile
@@ -15,6 +16,7 @@ from typing import IO, Any, NamedTuple
 from xml.etree.ElementTree import ParseError
 from zipfile import ZIP_DEFLATED, ZIP_STORED, BadZipFile, ZipFile
 
+import structlog
 from fastapi import status
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook, load_workbook
@@ -39,6 +41,8 @@ from app.core.constants import (
 from app.core.exceptions import AppError, ErrorCode
 from app.core.uploads import UPLOAD_FIELD, UnsupportedFileTypeError
 
+logger = structlog.get_logger(__name__)
+
 _XML_ILLEGAL_CHARACTERS = re.compile(XML_ILLEGAL_CHARACTERS_PATTERN)
 
 # Response 200 trên Swagger của endpoint trả file .xlsx (mặc định FastAPI ghi là JSON).
@@ -49,10 +53,22 @@ XLSX_FILE_RESPONSE: dict[int | str, dict[str, Any]] = {
     }
 }
 
-# Lỗi zipfile, openpyxl ném ra khi nội dung không phải .xlsx hợp lệ: file hỏng (BadZipFile), zip
-# không có workbook như file .docx (OSError), workbook trỏ tới phần không có (KeyError), XML hỏng
-# (ParseError), giá trị sai trong XML (ValueError).
-XLSX_READ_ERRORS = (BadZipFile, OSError, KeyError, ValueError, ParseError)
+# Lỗi zipfile, zlib, openpyxl ném ra khi nội dung không phải .xlsx hợp lệ (gom bằng cách thử file
+# hỏng ngẫu nhiên): zip hỏng, sai CRC (BadZipFile); dữ liệu nén hỏng, bị cắt (zlib.error,
+# EOFError); zip không có workbook như file .docx (OSError); trỏ tới phần, chuỗi không có (KeyError,
+# IndexError); XML hỏng (ParseError); giá trị, thuộc tính sai trong XML (ValueError, TypeError);
+# phần mã hóa, cờ nén zipfile không đọc được (RuntimeError, gồm cả NotImplementedError).
+XLSX_READ_ERRORS = (
+    BadZipFile,
+    zlib.error,
+    EOFError,
+    OSError,
+    LookupError,
+    ParseError,
+    ValueError,
+    TypeError,
+    RuntimeError,
+)
 # Phương thức nén Excel dùng cho .xlsx (vài công cụ để không nén). bzip2, lzma thì zipfile giải nén
 # không giới hạn đầu ra, một đoạn vài KB có thể bung ra hàng trăm MB: từ chối.
 XLSX_COMPRESSION_METHODS = frozenset({ZIP_STORED, ZIP_DEFLATED})
@@ -90,6 +106,9 @@ def iter_xlsx_rows(data: bytes, max_col: int) -> Generator[tuple[Any, ...]]:
         finally:
             workbook.close()
     except XLSX_READ_ERRORS as exc:
+        # Lỗi của file người dùng gửi, không phải lỗi hệ thống. Vẫn ghi lại lý do để tra được khi
+        # một file Excel thật bị từ chối (tính năng openpyxl chưa đọc được).
+        logger.warning("xlsx_unreadable", error=repr(exc), exc_info=True)
         raise UnsupportedFileTypeError((XLSX_MEDIA_TYPE,)) from exc
 
 

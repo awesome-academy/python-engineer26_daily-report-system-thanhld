@@ -10,6 +10,7 @@ import pytest
 from openpyxl import Workbook, load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
+from app.core import excel
 from app.core.constants import (
     BYTES_PER_MB,
     DOWNLOAD_CHUNK_BYTES,
@@ -19,10 +20,11 @@ from app.core.constants import (
 )
 from app.core.excel import iter_file, iter_xlsx_rows, save_workbook, text_cell, xlsx_response
 from app.core.uploads import UnsupportedFileTypeError
-from tests.helpers import xlsx_file
+from tests.helpers import capture_module_logs, xlsx_file
 
 SHEET_XML = "xl/worksheets/sheet1.xml"
 STYLES_XML = "xl/styles.xml"
+WORKBOOK_XML = "xl/workbook.xml"
 # Phần dữ liệu giấu sau nội dung thật của một phần trong zip (zip bomb khai thiếu dung lượng).
 HIDDEN_BYTES = 64 * BYTES_PER_MB
 
@@ -61,15 +63,23 @@ def under_declared(data: bytes, name: str, hidden: int) -> bytes:
     # Local file header: CRC ở byte 14, file_size ở byte 22.
     struct.pack_into("<I", patched, local_header + 14, crc)
     struct.pack_into("<I", patched, local_header + 22, len(real))
-    # Central directory: CRC ở byte 16, file_size ở byte 24, tên file từ byte 46.
-    position = patched.find(b"PK\x01\x02")
-    while position >= 0:
-        name_length = struct.unpack_from("<H", patched, position + 28)[0]
-        if patched[position + 46 : position + 46 + name_length] == name.encode():
-            struct.pack_into("<I", patched, position + 16, crc)
-            struct.pack_into("<I", patched, position + 24, len(real))
-        position = patched.find(b"PK\x01\x02", position + 4)
+    # Central directory: CRC ở byte 16, file_size ở byte 24.
+    for position in central_directory_entries(patched, name):
+        struct.pack_into("<I", patched, position + 16, crc)
+        struct.pack_into("<I", patched, position + 24, len(real))
     return bytes(patched)
+
+
+def central_directory_entries(data: bytearray, name: str) -> list[int]:
+    """Vị trí bản ghi central directory của phần `name` (tên file bắt đầu từ byte 46)."""
+    positions = []
+    position = data.find(b"PK\x01\x02")
+    while position >= 0:
+        name_length = struct.unpack_from("<H", data, position + 28)[0]
+        if data[position + 46 : position + 46 + name_length] == name.encode():
+            positions.append(position)
+        position = data.find(b"PK\x01\x02", position + 4)
+    return positions
 
 
 def zip_file(name: str, content: bytes) -> bytes:
@@ -234,3 +244,64 @@ def test_iter_xlsx_rows_rejects_row_beyond_excel_limit() -> None:
 
     with pytest.raises(UnsupportedFileTypeError):
         list(iter_xlsx_rows(data, 1))
+
+
+def fifty_rows() -> bytes:
+    return xlsx_file([[f"dòng {index}"] for index in range(1, 51)])
+
+
+def corrupt_compressed_sheet() -> bytes:
+    # Hỏng giữa dữ liệu nén của sheet (file tải lên bị lỗi đường truyền, ổ đĩa).
+    data = bytearray(fifty_rows())
+    with ZipFile(BytesIO(bytes(data))) as archive:
+        local_header = archive.getinfo(SHEET_XML).header_offset
+    name_length, extra_length = struct.unpack_from("<HH", data, local_header + 26)
+    start = local_header + 30 + name_length + extra_length
+    for position in range(start + 20, start + 60):
+        data[position] ^= 0xFF
+    return bytes(data)
+
+
+def missing_shared_string() -> bytes:
+    # Ô trỏ tới chuỗi dùng chung số 999 trong khi file không có bảng chuỗi.
+    return edit_sheet(
+        fifty_rows(),
+        lambda sheet: re.sub(
+            rb'(<c r="A2") t="inlineStr"><is><t>[^<]*</t></is>', rb'\1 t="s"><v>999</v>', sheet
+        ),
+    )
+
+
+def unknown_workbook_attribute() -> bytes:
+    data = fifty_rows()
+    with ZipFile(BytesIO(data)) as archive:
+        workbook = archive.read(WORKBOOK_XML)
+    edited = workbook.replace(b"<workbookView", b'<workbookView khongCo="1"')
+    assert edited != workbook
+    return rewrite_zip(data, {WORKBOOK_XML: edited})
+
+
+def encrypted_sheet() -> bytes:
+    # Bit 0 của cờ trong zip: phần đã mã hóa (local header byte 6, central directory byte 8).
+    data = bytearray(fifty_rows())
+    with ZipFile(BytesIO(bytes(data))) as archive:
+        data[archive.getinfo(SHEET_XML).header_offset + 6] |= 1
+    for position in central_directory_entries(data, SHEET_XML):
+        data[position + 8] |= 1
+    return bytes(data)
+
+
+@pytest.mark.parametrize(
+    "build",
+    [corrupt_compressed_sheet, missing_shared_string, unknown_workbook_attribute, encrypted_sheet],
+    ids=["corrupt-deflate", "missing-shared-string", "unknown-attribute", "encrypted"],
+)
+def test_iter_xlsx_rows_maps_corrupt_file_to_unsupported_type_and_logs_reason(
+    build: Callable[[], bytes], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    logs = capture_module_logs(monkeypatch, excel)
+
+    with pytest.raises(UnsupportedFileTypeError):
+        list(iter_xlsx_rows(build(), 1))
+
+    assert [log["event"] for log in logs] == ["xlsx_unreadable"]
