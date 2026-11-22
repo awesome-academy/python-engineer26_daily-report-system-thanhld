@@ -59,6 +59,12 @@ WRONG_ROLE_CALLS = [
     for role in UserRole
     if role != required
 ]
+ANY_ROLE_CALLS = [
+    pytest.param((method, path), role, id=f"{endpoint_id((method, path))} as {role}")
+    for method, path in PROTECTED_ENDPOINTS
+    if required_role(path) is None
+    for role in UserRole
+]
 
 
 def url(path: str) -> str:
@@ -117,3 +123,17 @@ async def test_endpoint_rejects_role_outside_its_group(
 
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "FORBIDDEN"
+
+
+@pytest.mark.parametrize(("endpoint", "role"), ANY_ROLE_CALLS)
+async def test_endpoint_outside_role_groups_allows_every_role(
+    client: AsyncClient, db_session: AsyncSession, endpoint: tuple[str, str], role: UserRole
+) -> None:
+    # Nhóm role mới có tiền tố chưa khai ở ROLE_PREFIXES thì đỏ ở đây, thay vì lọt khỏi kiểm tra
+    # role. Body rỗng nên phần lớn trả 422: đã qua bước xác thực, phân quyền.
+    method, path = endpoint
+    user = await create_user(db_session, role=role)
+
+    response = await client.request(method, url(path), headers=auth_headers(user))
+
+    assert response.status_code != 403
