@@ -20,7 +20,7 @@ from app.modules.reports.exceptions import ReportNotFoundError
 from app.modules.reports.models import DailyReport
 from app.modules.users.models import User, UserRole
 from tests.factories import auth_headers, create_department, create_report, create_user
-from tests.helpers import error_json, recorded_queries
+from tests.helpers import error_json
 
 API = get_settings().api_v1_prefix
 REPORTS_URL = f"{API}/manager/reports"
@@ -347,31 +347,6 @@ async def test_query_is_validated_before_department_scope(
 
     assert response.status_code == 422
     assert [d["field"] for d in response.json()["error"]["details"]] == ["query.page"]
-
-
-async def test_report_list_query_count_does_not_grow_with_page_size(
-    client: AsyncClient,
-    db_session: AsyncSession,
-    manager: User,
-    headers: dict[str, str],
-    department: Department,
-) -> None:
-    large = await create_department(db_session, managers=[manager])
-    await write(db_session, department, DAY_1)
-    for day in (DAY_1, DAY_2, DAY_3):
-        await write(db_session, large, day)
-        await write(db_session, large, day)
-
-    with recorded_queries(db_session) as small_queries:
-        small = await client.get(
-            REPORTS_URL, params={"department_id": department.id}, headers=headers
-        )
-    with recorded_queries(db_session) as large_queries:
-        big = await client.get(REPORTS_URL, params={"department_id": large.id}, headers=headers)
-
-    assert small.json()["meta"]["total"] == 1
-    assert big.json()["meta"]["total"] == 6
-    assert len(large_queries) == len(small_queries)
 
 
 # Chi tiết

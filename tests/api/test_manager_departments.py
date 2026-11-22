@@ -16,7 +16,7 @@ from app.core.exceptions import AppError, ForbiddenError, UnauthorizedError
 from app.modules.departments.models import Department
 from app.modules.users.models import User, UserRole
 from tests.factories import auth_headers, create_department, create_user
-from tests.helpers import error_json, recorded_queries
+from tests.helpers import error_json
 
 API = get_settings().api_v1_prefix
 DEPARTMENTS_URL = f"{API}/manager/departments"
@@ -201,26 +201,6 @@ async def test_manager_views_department_with_managers_and_member_count(
     assert body["member_count"] == 2
 
 
-async def test_department_detail_query_count_does_not_grow_with_people(
-    client: AsyncClient, db_session: AsyncSession, manager: User, headers: dict[str, str]
-) -> None:
-    small = await create_department(db_session, managers=[manager])
-    co_managers = [await create_user(db_session, role=UserRole.MANAGER) for _ in range(3)]
-    large = await create_department(db_session, managers=[manager, *co_managers])
-    for _ in range(5):
-        await create_user(db_session, department=large)
-
-    with recorded_queries(db_session) as small_queries:
-        small_response = await client.get(department_url(small.id), headers=headers)
-    with recorded_queries(db_session) as large_queries:
-        large_response = await client.get(department_url(large.id), headers=headers)
-
-    assert len(small_response.json()["managers"]) == 1
-    assert len(large_response.json()["managers"]) == 4
-    assert large_response.json()["member_count"] == 5
-    assert len(large_queries) == len(small_queries)
-
-
 # Thành viên
 
 
@@ -371,31 +351,6 @@ async def test_list_members_validates_query(
 
     assert response.status_code == 422
     assert [d["field"] for d in response.json()["error"]["details"]] == [field]
-
-
-async def test_member_list_query_count_does_not_grow_with_page_size(
-    client: AsyncClient, db_session: AsyncSession, manager: User, headers: dict[str, str]
-) -> None:
-    small = await create_department(db_session, managers=[manager])
-    await create_user(db_session, department=small)
-    # Có cả thành viên là manager của bộ phận, để cờ is_manager phải tra cho nhiều người.
-    co_managers = [await create_user(db_session, role=UserRole.MANAGER) for _ in range(3)]
-    large = await create_department(db_session, managers=[manager, *co_managers])
-    for co_manager in co_managers:
-        co_manager.department_id = large.id
-    for _ in range(5):
-        await create_user(db_session, department=large)
-    await db_session.flush()
-
-    with recorded_queries(db_session) as small_queries:
-        small_response = await client.get(members_url(small.id), headers=headers)
-    with recorded_queries(db_session) as large_queries:
-        large_response = await client.get(members_url(large.id), headers=headers)
-
-    assert small_response.json()["meta"]["total"] == 1
-    assert large_response.json()["meta"]["total"] == 8
-    assert sum(m["is_manager"] for m in large_response.json()["data"]) == 3
-    assert len(large_queries) == len(small_queries)
 
 
 @pytest.mark.parametrize(

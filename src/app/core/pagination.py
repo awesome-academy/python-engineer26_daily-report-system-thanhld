@@ -71,7 +71,12 @@ async def paginate(
     session: AsyncSession, statement: Select[Any], params: PageParams
 ) -> tuple[Sequence[Any], int]:
     """Trả về (bản ghi của trang hiện tại, tổng số bản ghi khớp điều kiện)."""
-    count_statement = select(func.count()).select_from(statement.order_by(None).subquery())
-    total = await session.scalar(count_statement) or 0
+    total = await count_rows(session, statement)
     rows = await session.scalars(statement.limit(params.page_size).offset(params.offset))
     return rows.all(), total
+
+
+async def count_rows(session: AsyncSession, statement: Select[Any]) -> int:
+    """Số dòng `statement` trả về khi không phân trang, cho `meta.total`."""
+    count_statement = select(func.count()).select_from(statement.order_by(None).subquery())
+    return await session.scalar(count_statement) or 0

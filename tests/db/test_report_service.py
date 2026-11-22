@@ -4,7 +4,7 @@ from datetime import UTC, date, datetime
 import pytest
 from sqlalchemy import delete, func, select, text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.modules.departments.models import Department, DepartmentManager
 from app.modules.reports.exceptions import ReportAlreadyExistsError
@@ -114,18 +114,41 @@ async def test_report_and_recipients_are_saved_in_one_transaction(
 INDEX_DEPARTMENTS = 20
 INDEX_AUTHORS_PER_DEPARTMENT = 5
 INDEX_DAYS = 60
+INDEX_TABLES = ("daily_reports", "department_managers", "departments", "users")
+DEPARTMENT_DATE_INDEX = "ix_daily_reports_department_date"
 
 
-async def plan_of_department_reports(
+async def add_index_dataset(session: AsyncSession, manager: User) -> None:
+    """Mỗi nhân viên một báo cáo mỗi ngày trong INDEX_DAYS ngày; manager quản lý bộ phận đầu."""
+    departments = [await create_department(session) for _ in range(INDEX_DEPARTMENTS)]
+    for department in departments:
+        for _ in range(INDEX_AUTHORS_PER_DEPARTMENT):
+            await create_user(session, department=department)
+    session.add(DepartmentManager(department_id=departments[0].id, user_id=manager.id))
+    await session.execute(
+        text(
+            "INSERT INTO daily_reports "
+            "(author_id, department_id, report_date, planned_work, actual_work, next_day_plan) "
+            "SELECT u.id, u.department_id, CAST(:today AS date) - day, 'a', 'b', 'c' "
+            "FROM users u CROSS JOIN generate_series(0, :days - 1) AS day "
+            "WHERE u.department_id IS NOT NULL"
+        ),
+        {"today": TODAY, "days": INDEX_DAYS},
+    )
+
+
+async def plans_of_department_reports(
     session: AsyncSession, manager_id: int, params: ManagerReportListParams
-) -> str:
-    """EXPLAIN của câu lấy trang báo cáo mà service thật chạy, cùng tham số."""
+) -> list[str]:
+    """EXPLAIN của từng câu mà service thật chạy (đếm, lấy trang), cùng tham số."""
     with recorded_queries(session) as queries:
         await ReportService(session).list_department_reports(manager_id, params)
-    statement, parameters = next(query for query in queries if "LIMIT" in query[0])
     connection = await session.connection()
-    plan = await connection.exec_driver_sql(f"EXPLAIN {statement}", parameters)
-    return "\n".join(row[0] for row in plan)
+    plans = []
+    for statement, parameters in queries:
+        plan = await connection.exec_driver_sql(f"EXPLAIN {statement}", parameters)
+        plans.append("\n".join(row[0] for row in plan))
+    return plans
 
 
 @pytest.mark.parametrize(
@@ -140,25 +163,41 @@ async def plan_of_department_reports(
 async def test_manager_report_list_uses_department_date_index(
     db_session: AsyncSession, manager: User, params: ManagerReportListParams
 ) -> None:
-    departments = [await create_department(db_session) for _ in range(INDEX_DEPARTMENTS)]
-    for department in departments:
-        for _ in range(INDEX_AUTHORS_PER_DEPARTMENT):
-            await create_user(db_session, department=department)
-    db_session.add(DepartmentManager(department_id=departments[0].id, user_id=manager.id))
-    await db_session.execute(
-        text(
-            "INSERT INTO daily_reports "
-            "(author_id, department_id, report_date, planned_work, actual_work, next_day_plan) "
-            "SELECT u.id, u.department_id, CAST(:today AS date) - day, 'a', 'b', 'c' "
-            "FROM users u CROSS JOIN generate_series(0, :days - 1) AS day "
-            "WHERE u.department_id IS NOT NULL"
-        ),
-        {"today": TODAY, "days": INDEX_DAYS},
-    )
+    await add_index_dataset(db_session, manager)
     # ANALYZE thấy cả dòng chưa commit của chính transaction này.
-    for table in ("daily_reports", "department_managers", "departments", "users"):
+    for table in INDEX_TABLES:
         await db_session.execute(text(f"ANALYZE {table}"))
 
-    plan = await plan_of_department_reports(db_session, manager.id, params)
+    plans = await plans_of_department_reports(db_session, manager.id, params)
 
-    assert "ix_daily_reports_department_date" in plan, plan
+    assert len(plans) == 2
+    for plan in plans:
+        assert DEPARTMENT_DATE_INDEX in plan, plan
+
+
+@pytest.mark.usefixtures("clean_after")
+async def test_manager_report_list_reads_report_rows_only_for_the_page(
+    engine: AsyncEngine,
+) -> None:
+    # Index Only Scan cần visibility map: dữ liệu phải commit rồi VACUUM, như bảng thật sau khi
+    # autovacuum chạy (báo cáo chỉ thêm, không sửa). Trong transaction chưa commit của db_session,
+    # planner luôn phải đọc dòng của bảng.
+    async with AsyncSession(engine, expire_on_commit=False) as session:
+        manager = await create_user(session, role=UserRole.MANAGER)
+        await add_index_dataset(session, manager)
+        await session.commit()
+    async with engine.connect() as connection:
+        autocommit = await connection.execution_options(isolation_level="AUTOCOMMIT")
+        await autocommit.execute(text(f"VACUUM ANALYZE {', '.join(INDEX_TABLES)}"))
+
+    async with AsyncSession(engine) as session:
+        count_plan, page_plan = await plans_of_department_reports(
+            session, manager.id, ManagerReportListParams()
+        )
+
+    # Đếm, chọn id của trang chỉ đọc index; đủ cột chỉ đọc cho báo cáo trong trang, theo khóa
+    # chính. Đọc thẳng đủ cột thì plan có Bitmap Heap Scan trên mọi báo cáo của bộ phận.
+    index_only = f"Index Only Scan using {DEPARTMENT_DATE_INDEX}"
+    assert index_only in count_plan, count_plan
+    assert index_only in page_plan, page_plan
+    assert "Index Scan using pk_daily_reports" in page_plan, page_plan

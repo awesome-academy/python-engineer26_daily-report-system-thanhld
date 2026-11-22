@@ -241,6 +241,15 @@ def recorded_queries(session: AsyncSession) -> Iterator[list[tuple[str, Any]]]:
         event.remove(connection, "before_cursor_execute", record)
 
 
+def data_queries(queries: list[tuple[str, Any]]) -> list[str]:
+    """Câu SQL đọc, ghi dữ liệu trong `queries` (từ `recorded_queries`).
+
+    Bỏ câu SAVEPOINT của transaction test: service commit thì lần gọi sau mở savepoint mới, số
+    câu này theo thứ tự gọi trong test chứ không theo endpoint.
+    """
+    return [statement for statement, _ in queries if "SAVEPOINT" not in statement]
+
+
 @dataclass(frozen=True)
 class ScopeTarget:
     """Một dòng của ma trận quyền: header của người gọi và id bộ phận trên URL."""

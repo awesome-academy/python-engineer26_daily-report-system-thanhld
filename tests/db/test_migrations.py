@@ -6,6 +6,8 @@ from alembic.config import Config
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
+from app.core.database import Base
+
 
 async def _schema_objects(engine: AsyncEngine) -> set[str]:
     async with engine.connect() as connection:
@@ -79,6 +81,32 @@ async def test_session_id_migration_keeps_existing_refresh_tokens(
 async def test_models_match_migrations(engine: AsyncEngine, alembic_config: Config) -> None:
     """Giống `alembic check`: model đổi mà quên tạo migration thì test này fail."""
     await asyncio.to_thread(command.check, alembic_config)
+
+
+async def test_index_include_columns_match_models(engine: AsyncEngine) -> None:
+    # `alembic check` không so cột INCLUDE của index: model thêm, bỏ INCLUDE mà quên migration thì
+    # vẫn xanh. Đối chiếu riêng với pg_index (các cột sau cột khóa là cột INCLUDE).
+    expected = {
+        index.name: list(index.dialect_options["postgresql"]["include"])
+        for table in Base.metadata.sorted_tables
+        for index in table.indexes
+        if index.dialect_options["postgresql"]["include"]
+    }
+    async with engine.connect() as connection:
+        rows = await connection.execute(
+            text(
+                "SELECT i.relname, array_agg(a.attname ORDER BY k.position) "
+                "FROM pg_index x "
+                "JOIN pg_class i ON i.oid = x.indexrelid "
+                "CROSS JOIN LATERAL unnest(x.indkey::int2[]) "
+                "WITH ORDINALITY AS k(attnum, position) "
+                "JOIN pg_attribute a ON a.attrelid = x.indrelid AND a.attnum = k.attnum "
+                "WHERE k.position > x.indnkeyatts "
+                "GROUP BY i.relname"
+            )
+        )
+
+    assert dict(rows.all()) == expected
 
 
 @pytest.mark.parametrize(
