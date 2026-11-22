@@ -1,11 +1,32 @@
 from io import BytesIO
+from zipfile import ZipFile
 
 import pytest
 from openpyxl import Workbook, load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
-from app.core.constants import DOWNLOAD_CHUNK_BYTES, XLSX_MEDIA_TYPE
-from app.core.excel import iter_file, save_workbook, text_cell, xlsx_response
+from app.core.constants import DOWNLOAD_CHUNK_BYTES, XLSX_MEDIA_TYPE, ZIP_SIGNATURE
+from app.core.excel import iter_file, iter_xlsx_rows, save_workbook, text_cell, xlsx_response
+from app.core.uploads import UnsupportedFileTypeError
+from tests.helpers import xlsx_file
+
+SHEET_XML = "xl/worksheets/sheet1.xml"
+
+
+def rewrite_zip(data: bytes, replace: dict[str, bytes]) -> bytes:
+    """Chép file zip, thay nội dung các phần trong `replace` (giả lập file .xlsx bị hỏng)."""
+    output = BytesIO()
+    with ZipFile(BytesIO(data)) as source, ZipFile(output, "w") as target:
+        for item in source.infolist():
+            target.writestr(item, replace.get(item.filename, source.read(item.filename)))
+    return output.getvalue()
+
+
+def zip_file(name: str, content: bytes) -> bytes:
+    output = BytesIO()
+    with ZipFile(output, "w") as archive:
+        archive.writestr(name, content)
+    return output.getvalue()
 
 
 @pytest.mark.parametrize(
@@ -72,3 +93,32 @@ def test_xlsx_response_sets_download_headers() -> None:
     assert response.headers["content-length"] == "3"
     # Đọc lại từ đầu dù con trỏ đang ở cuối.
     assert file.tell() == 0
+
+
+def test_iter_xlsx_rows_keeps_blank_rows_and_pads_to_max_col() -> None:
+    data = xlsx_file([["a", "b", "c"], [], ["x"]])
+
+    assert list(iter_xlsx_rows(data, 2)) == [("a", "b"), (None, None), ("x", None)]
+
+
+def broken_sheet() -> bytes:
+    # Dòng đầu đọc được, XML hỏng ở giữa sheet: chế độ read-only chỉ phát hiện khi duyệt tới đó.
+    data = xlsx_file([["tiêu đề"], *[[f"dòng {index}"] for index in range(50)]])
+    with ZipFile(BytesIO(data)) as archive:
+        sheet = archive.read(SHEET_XML)
+    return rewrite_zip(data, {SHEET_XML: sheet[: len(sheet) // 2]})
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        b"email,ho_ten\n",
+        ZIP_SIGNATURE + b"khong-phai-zip",
+        zip_file("word/document.xml", b"<w:document/>"),
+        broken_sheet(),
+    ],
+    ids=["not-zip", "broken-zip", "zip-without-workbook", "broken-sheet-xml"],
+)
+def test_iter_xlsx_rows_rejects_non_xlsx_content(data: bytes) -> None:
+    with pytest.raises(UnsupportedFileTypeError):
+        list(iter_xlsx_rows(data, 1))

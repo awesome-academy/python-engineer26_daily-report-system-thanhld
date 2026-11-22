@@ -156,6 +156,12 @@ EXCEL_SPOOL_MAX_BYTES = BYTES_PER_MB
 DOWNLOAD_CHUNK_BYTES = 64 * 1024
 # Ngày giờ trong file Excel (giờ Việt Nam), theo mã định dạng ô của Excel.
 EXCEL_DATETIME_FORMAT = "dd/mm/yyyy hh:mm"
+# File .xlsx tải lên là file zip: kiểm tra các byte đầu trước khi giải nén.
+ZIP_SIGNATURE = b"PK\x03\x04"
+# File zip nhỏ có thể giải nén ra rất lớn (zip bomb), openpyxl nạp cả bảng chuỗi vào RAM: tổng dung
+# lượng giải nén quá giới hạn này thì từ chối trước khi đọc. 1.000 dòng import chỉ vài trăm KB.
+XLSX_MAX_UNCOMPRESSED_MB = 10
+XLSX_MAX_UNCOMPRESSED_BYTES = XLSX_MAX_UNCOMPRESSED_MB * BYTES_PER_MB
 # Export báo cáo một ngày (M5). Tên file chỉ gồm ký tự ASCII để header Content-Disposition không
 # cần mã hóa.
 REPORT_EXPORT_FILENAME = "bao-cao-{report_date}.xlsx"

@@ -3,10 +3,11 @@
 import asyncio
 import base64
 import json
-from collections.abc import Awaitable, Callable, Iterator, MutableMapping
+from collections.abc import Awaitable, Callable, Iterable, Iterator, MutableMapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from io import BytesIO
 from types import ModuleType
 from typing import Any
 
@@ -14,6 +15,8 @@ import jwt
 import pytest
 import structlog
 from httpx import AsyncClient, Response
+from openpyxl import Workbook
+from openpyxl.worksheet.worksheet import Worksheet
 from redis.asyncio import Redis
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,6 +44,18 @@ LOCK_WAIT_SECONDS = 0.3
 CELERY_QUEUE = "celery"
 
 runner = CliRunner()
+
+
+def xlsx_file(rows: Iterable[Sequence[object]]) -> bytes:
+    """File .xlsx một sheet có đúng các dòng `rows` (dòng rỗng là dòng trống), như lưu từ Excel."""
+    workbook = Workbook()
+    sheet = workbook.active
+    assert isinstance(sheet, Worksheet)
+    for row in rows:
+        sheet.append(list(row))
+    buffer = BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
 
 
 @dataclass(frozen=True)
