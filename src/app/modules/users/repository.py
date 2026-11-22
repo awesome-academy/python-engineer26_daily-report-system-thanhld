@@ -26,6 +26,14 @@ class UserRepository:
             select(User).where(User.id == user_id, User.deleted_at.is_(None))
         )
 
+    async def load_department(self, user: User) -> None:
+        """Nạp bộ phận của `user` (hồ sơ /me) bằng một câu SELECT.
+
+        Quan hệ khai `lazy="raise"`; nạp riêng ở chỗ cần, không JOIN vào bước xác thực của mọi
+        request. Gọi sau khi ghi xong: `get_by_id_for_update` đọc lại user, bỏ quan hệ đã nạp.
+        """
+        await self.session.refresh(user, ["department"])
+
     async def get_by_id_for_update(self, user_id: int) -> User | None:
         # populate_existing: user đã có trong session (CurrentUser) được nạp lại dữ liệu mới nhất
         # sau khi chờ khóa, không giữ bản đọc trước đó.

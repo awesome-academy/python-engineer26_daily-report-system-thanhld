@@ -13,7 +13,7 @@ from app.core.constants import (
     ImageType,
 )
 from app.modules.users.models import User
-from tests.factories import auth_headers, create_user
+from tests.factories import auth_headers, create_department, create_user
 
 ME_URL = "/api/v1/me"
 AVATAR_URL = "/api/v1/me/avatar"
@@ -75,6 +75,21 @@ async def test_user_uploads_avatar_and_gets_url(
     assert avatar_url.endswith(f".{extension}")
     assert stored_path(storage_dir, avatar_url).read_bytes() == data
     assert user.avatar_key == avatar_url.removeprefix(f"{base_url()}/")
+
+
+async def test_avatar_response_is_full_profile(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    department = await create_department(db_session, code="DEV", name="Phòng Phát triển")
+    user = await create_user(db_session, department=department)
+
+    response = await upload_avatar(client, user, PNG)
+
+    assert response.json()["department"] == {
+        "id": department.id,
+        "code": "DEV",
+        "name": "Phòng Phát triển",
+    }
 
 
 async def test_uploaded_avatar_is_served_at_returned_url(

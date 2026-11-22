@@ -150,7 +150,7 @@ Hồ sơ cá nhân:
 - `phone`: chỉ chữ số, có thể có `+` đầu, 9 đến 15 chữ số. `date_of_birth`: ngày trong quá khứ.
 - Mật khẩu người dùng tự chọn (đổi mật khẩu, `create-admin`, đặt mật khẩu lần đầu): 8 đến 128 ký tự, có chữ thường, chữ hoa, chữ số và ký tự đặc biệt. Không đạt thì 422 ở field đó. Mật khẩu khi đăng nhập và mật khẩu hiện tại không xét quy tắc này.
 - `PUT /me/password` body `current_password`, `new_password` (phải khác mật khẩu hiện tại). Sai mật khẩu hiện tại trả 400 `CURRENT_PASSWORD_INCORRECT` (không dùng 401 để client không hiểu nhầm là hết phiên), đếm chung với đăng nhập sai nên quá 5 lần trong 15 phút trả 429.
-- `GET /me`, `PATCH /me`, `PUT /me/avatar` trả cùng một dạng hồ sơ, có `avatar_url` (`null` khi chưa có ảnh).
+- `GET /me`, `PATCH /me`, `PUT /me/avatar` trả cùng một dạng hồ sơ, có `department` (`id`, `code`, `name` của bộ phận mình là thành viên, cùng dạng `department` của chi tiết báo cáo; `null` khi chưa thuộc bộ phận nào) và `avatar_url` (`null` khi chưa có ảnh). Bộ phận manager được gán quản lý xem ở `GET /manager/departments`.
 
 Ảnh đại diện:
 

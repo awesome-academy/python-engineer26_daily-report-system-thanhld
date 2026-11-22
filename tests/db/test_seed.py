@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import UTC, date, datetime
 
 import pytest
 from sqlalchemy import func, select
@@ -6,7 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.cli import seed as seed_module
-from app.cli.seed import REPORT_DAYS, reset_data, seed_data, working_days_before
+from app.cli.seed import history_start, is_missed, report_days, reset_data, seed_data
+from app.core.clock import local_date, local_day_start
 from app.core.config import Settings
 from app.core.constants import Environment
 from app.core.database import Base
@@ -27,12 +28,29 @@ async def count(session: AsyncSession, model: type[Base]) -> int:
     return await session.scalar(select(func.count()).select_from(model)) or 0
 
 
-def test_working_days_skip_weekends() -> None:
-    assert working_days_before(MONDAY, 3) == [
-        date(2026, 10, 21),
-        date(2026, 10, 22),
-        date(2026, 10, 23),
-    ]
+def expected_reports(author_count: int, today: date = MONDAY) -> int:
+    """Số báo cáo seed tạo cho `author_count` nhân viên đầu tiên viết được báo cáo."""
+    return sum(
+        not is_missed(day, index) for index in range(author_count) for day in report_days(today)
+    )
+
+
+def test_report_days_are_working_days_from_previous_month_to_yesterday() -> None:
+    days = report_days(MONDAY)
+
+    assert history_start(MONDAY) == date(2026, 9, 1)
+    assert (days[0], days[-1]) == (date(2026, 9, 1), date(2026, 10, 23))
+    assert all(day.weekday() < 5 for day in days)
+    assert len(days) == 39
+
+
+def test_each_employee_misses_some_days() -> None:
+    days = report_days(MONDAY)
+
+    for index in range(len(EMPLOYEES)):
+        missed = [day for day in days if is_missed(day, index)]
+        assert 0 < len(missed) < len(days) / 3
+    assert len({tuple(is_missed(d, i) for d in days) for i in range(len(EMPLOYEES))}) > 1
 
 
 async def test_seed_creates_sample_data(db_session: AsyncSession) -> None:
@@ -42,9 +60,19 @@ async def test_seed_creates_sample_data(db_session: AsyncSession) -> None:
         len(DEPARTMENTS),
         len(USERS),
         len(DEPARTMENTS),
-        len(EMPLOYEES) * REPORT_DAYS,
+        expected_reports(len(EMPLOYEES)),
     )
-    assert await count(db_session, DailyReport) == len(EMPLOYEES) * REPORT_DAYS
+    assert await count(db_session, DailyReport) == expected_reports(len(EMPLOYEES))
+
+
+async def test_seeded_accounts_exist_since_history_start(db_session: AsyncSession) -> None:
+    # API không nhận báo cáo cho ngày trước khi có tài khoản: tài khoản mẫu phải có trước báo cáo
+    # mẫu sớm nhất, nếu không báo cáo bù, thống kê tháng (S3) không dùng được dữ liệu mẫu.
+    await seed_data(db_session, password=SEED_PASSWORD, today=MONDAY)
+
+    created = set(await db_session.scalars(select(User.created_at)))
+
+    assert created == {local_day_start(date(2026, 9, 1))}
 
 
 async def test_seed_ids_follow_order_of_sample_data(db_session: AsyncSession) -> None:
@@ -109,7 +137,7 @@ async def test_report_recipients_are_managers_of_author_department(
         assert {r.recipient.id for r in report.recipients} == {
             m.id for m in report.department.managers
         }
-        assert report.report_date < MONDAY
+        assert local_date(report.author.created_at) <= report.report_date < MONDAY
         assert report.report_date.weekday() < 5
 
 
@@ -127,7 +155,7 @@ async def test_seed_next_day_only_adds_new_reports(db_session: AsyncSession) -> 
     result = await seed_data(db_session, password=SEED_PASSWORD, today=date(2026, 10, 27))
 
     assert (result.departments, result.users, result.managers) == (0, 0, 0)
-    assert result.reports == len(EMPLOYEES)
+    assert result.reports == sum(not is_missed(MONDAY, i) for i in range(len(EMPLOYEES)))
 
 
 async def test_seed_keeps_existing_accounts_unchanged(db_session: AsyncSession) -> None:
@@ -188,14 +216,19 @@ async def test_seed_skips_reports_of_existing_account_that_cannot_write_reports(
         select(func.count()).select_from(DailyReport).where(DailyReport.author_id == author.id)
     )
     assert reports == 0
-    assert result.reports == (len(EMPLOYEES) - 1) * REPORT_DAYS
+    assert result.reports == expected_reports(len(EMPLOYEES) - 1)
     assert any("an.nguyen@example.com" in message for message in result.skipped)
 
 
 async def test_seed_reports_follow_author_actual_department(db_session: AsyncSession) -> None:
     ops_manager = await create_user(db_session, role=UserRole.MANAGER)
     ops = await create_department(db_session, code="OPS", managers=[ops_manager])
-    author = await create_user(db_session, email="an.nguyen@example.com", department=ops)
+    author = await create_user(
+        db_session,
+        email="an.nguyen@example.com",
+        department=ops,
+        created_at=local_day_start(history_start(MONDAY)),
+    )
 
     await seed_data(db_session, password=SEED_PASSWORD, today=MONDAY)
 
@@ -206,10 +239,29 @@ async def test_seed_reports_follow_author_actual_department(db_session: AsyncSes
             .options(selectinload(DailyReport.recipients))
         )
     ).all()
-    assert len(reports) == REPORT_DAYS
+    assert len(reports) == expected_reports(1)
     for report in reports:
         assert report.department_id == ops.id
         assert [r.recipient_id for r in report.recipients] == [ops_manager.id]
+
+
+async def test_seed_reports_start_at_existing_account_creation_date(
+    db_session: AsyncSession,
+) -> None:
+    created_at = datetime(2026, 10, 20, 3, tzinfo=UTC)
+    author = await create_user(db_session, email="an.nguyen@example.com", created_at=created_at)
+    dev = await create_department(db_session, code="DEV", name="Phòng Phát triển")
+    author.department_id = dev.id
+
+    await seed_data(db_session, password=SEED_PASSWORD, today=MONDAY)
+
+    dates = list(
+        await db_session.scalars(
+            select(DailyReport.report_date).where(DailyReport.author_id == author.id)
+        )
+    )
+    assert dates
+    assert min(dates) >= local_date(created_at)
 
 
 async def test_reset_clears_all_data(db_session: AsyncSession) -> None:
