@@ -54,3 +54,12 @@ class ReportNotFoundError(NotFoundError):
 
     def __init__(self) -> None:
         super().__init__(details={"field": "report_id"})
+
+
+class ReportExportDateOutOfRangeError(UnprocessableError):
+    # Cùng mã với lúc tạo báo cáo: ngày nằm ngoài khoảng cho phép, khoảng hợp lệ ở details.
+    code = ErrorCode.REPORT_DATE_OUT_OF_RANGE
+    message = "Chỉ export được báo cáo đến hôm nay (giờ Việt Nam), không cho ngày tương lai."
+
+    def __init__(self, max_date: date) -> None:
+        super().__init__(details={"field": "date", "max_date": max_date})

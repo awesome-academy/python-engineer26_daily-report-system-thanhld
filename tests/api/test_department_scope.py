@@ -9,8 +9,8 @@ Ngoài endpoint thật, route thăm dò gắn vào app riêng với đúng depen
 /manager, giống test_rbac.py, để thử policy (handler nhận đúng bộ phận, body xét sau phạm vi) độc
 lập với nghiệp vụ của endpoint thật.
 
-Danh sách /manager lọc theo `department_id` trên query (nhân viên M4, báo cáo M3, sau này export M5)
-cũng chạy cùng ma trận: bộ phận lọc ngoài phạm vi trả đúng lỗi như trên URL.
+Danh sách /manager lọc theo `department_id` trên query (nhân viên M4, báo cáo M3, export M5) cũng
+chạy cùng ma trận: bộ phận lọc ngoài phạm vi trả đúng lỗi như trên URL.
 """
 
 import re
@@ -280,9 +280,12 @@ FILTERED_ENDPOINTS = [
 def test_filtered_routes_are_found() -> None:
     # Cách tìm route sai thì các test dưới không chạy trường hợp nào mà vẫn xanh.
     prefix = f"{API}{manager_router.prefix}"
-    assert {("GET", f"{prefix}/employees"), ("GET", f"{prefix}/reports")} <= {
-        param.values[0] for param in FILTERED_ENDPOINTS
+    expected = {
+        ("GET", f"{prefix}/employees"),
+        ("GET", f"{prefix}/reports"),
+        ("GET", f"{prefix}/reports/export"),
     }
+    assert expected <= {param.values[0] for param in FILTERED_ENDPOINTS}
 
 
 @pytest.mark.parametrize("route", filtered_routes(), ids=lambda route: route.path)

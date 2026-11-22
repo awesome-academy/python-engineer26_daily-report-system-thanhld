@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import date, datetime
 from enum import StrEnum
 from typing import Annotated, Any, Self
@@ -21,6 +22,7 @@ from app.core.constants import (
 )
 from app.core.pagination import DateRangePageParams
 from app.core.validators import Id, Keyword, NoNul, blank_to_none, drop_duplicates
+from app.modules.departments.models import Department
 from app.modules.reports.models import DailyReport, ReportRecipient
 from app.modules.users.models import User
 
@@ -192,4 +194,29 @@ class ManagerReportDetailOut(ReportDetailOut):
         return cls(
             **ReportDetailOut.from_report(report, recipients).model_dump(),
             author=ReportUserOut.from_user(report.author),
+        )
+
+
+@dataclass(frozen=True)
+class ReportExportParams:
+    """Tham số export (M5) đã kiểm tra: `department_id` (nếu có) nằm trong phạm vi manager."""
+
+    report_date: date
+    department_id: int | None = None
+
+
+class ReportExportRow(BaseModel):
+    """Một dòng của file export (M5): nhân viên trong một bộ phận, kèm báo cáo nếu đã nộp."""
+
+    department: ReportDepartmentOut
+    # Người viết đã bị xóa không có email, như danh sách báo cáo M3.
+    author: ReportUserOut
+    report: ReportSummaryOut | None
+
+    @classmethod
+    def from_models(cls, department: Department, author: User, report: DailyReport | None) -> Self:
+        return cls(
+            department=ReportDepartmentOut.model_validate(department),
+            author=ReportUserOut.from_user(author),
+            report=ReportSummaryOut.model_validate(report) if report is not None else None,
         )

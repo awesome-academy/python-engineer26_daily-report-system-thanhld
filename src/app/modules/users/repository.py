@@ -5,7 +5,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app.core.pagination import PageParams, paginate
-from app.modules.users.models import User, UserRole, full_name_or_email_matches, order_by_full_name
+from app.modules.users.models import (
+    User,
+    UserRole,
+    full_name_or_email_matches,
+    is_employee_in,
+    order_by_full_name,
+)
 from app.modules.users.schemas import EmployeeListParams
 
 
@@ -106,13 +112,7 @@ class UserRepository:
         return rows.all()
 
     def _employees_in(self, department_ids: Select[int]) -> Select[User]:
-        # Nhân viên là role USER như khi manager gỡ thành viên (M2): manager, admin được admin xếp
-        # vào bộ phận không do manager quản lý. Tài khoản bị khóa vẫn tính, chỉ bỏ user đã xóa.
-        return select(User).where(
-            User.role == UserRole.USER,
-            User.deleted_at.is_(None),
-            User.department_id.in_(department_ids),
-        )
+        return select(User).where(is_employee_in(department_ids))
 
     async def search_employees(
         self, department_ids: Select[int], params: EmployeeListParams

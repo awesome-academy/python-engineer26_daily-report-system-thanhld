@@ -177,7 +177,7 @@ Báo cáo hằng ngày (U3):
 | GET | `/manager/employees/{user_id}` | M4 | |
 | GET | `/manager/reports` | M3 | `keyword`, `date_from`, `date_to`, `department_id`, `sort`, phân trang |
 | GET | `/manager/reports/{report_id}` | M3 | Gồm người viết, bộ phận lúc viết, người nhận |
-| GET | `/manager/reports/export` | M5 | `date`, `department_id`, trả file .xlsx |
+| GET | `/manager/reports/export` | M5 | `date` (mặc định hôm nay), `department_id`, trả file .xlsx |
 
 Bộ phận của tôi (M1):
 
@@ -207,6 +207,15 @@ Báo cáo của nhân viên (M3):
 - `sort`: `-report_date` (mặc định, ngày mới nhất trước), `report_date`, `author_name`, `-author_name` (họ tên không dấu như danh sách thành viên); giá trị khác trả 422. Cùng ngày thì sắp theo họ tên người viết, cùng người thì ngày mới trước, nên thứ tự cố định giữa các trang.
 - Mỗi phần tử có nội dung báo cáo, `department_id` và `author` (`id`, `full_name`, `email`, `is_deleted`). Báo cáo của người đã bị khóa, bị xóa vẫn hiện; người đã xóa có `is_deleted` là `true` và `email` là `null`, như người nhận ở `GET /me/reports/{id}`. Một trang lấy bằng một câu SQL (kèm câu đếm), không đổi theo số báo cáo.
 - `GET /manager/reports/{report_id}` thêm `department` (bộ phận lúc viết) và `recipients` như `GET /me/reports/{id}`. Báo cáo không tồn tại hoặc ngoài phạm vi cùng trả 404, `details` là `{"field": "report_id"}`.
+
+Export Excel báo cáo theo ngày (M5):
+
+- `GET /manager/reports/export` trả file .xlsx (`Content-Disposition: attachment; filename="bao-cao-2026-11-09.xlsx"`, có `Content-Length`) báo cáo một ngày của các bộ phận mình quản lý, hoặc chỉ bộ phận `department_id`. `date` mặc định hôm nay theo giờ Việt Nam; ngày sau hôm nay trả 422 `REPORT_DATE_OUT_OF_RANGE`, `details` là `{"field": "date", "max_date": ...}`. `date` sai định dạng trả 422 ở `query.date`. Lỗi của `date` có trước lỗi 404 của `department_id`, như các danh sách `/manager`.
+- Một sheet (tên là ngày), mỗi nhân viên một dòng, sắp theo mã bộ phận rồi họ tên không dấu như danh sách thành viên. Cột: mã bộ phận, tên bộ phận, họ tên, email, trạng thái (`Đã nộp`, `Chưa nộp`), 4 nội dung báo cáo, giờ gửi (`created_at` theo giờ Việt Nam, kiểu ngày giờ của Excel). Dòng chưa nộp có ô trạng thái nền đỏ, không có nội dung, giờ gửi.
+- Đã nộp: báo cáo ngày đó viết cho bộ phận trong phạm vi, theo bộ phận lúc viết như M3, kể cả người viết đã bị khóa, bị xóa (người đã xóa không ghi email). Chưa nộp: nhân viên hiện tại của bộ phận (như M4, kể cả tài khoản bị khóa, chưa đặt mật khẩu) đã có tài khoản trước khi hết ngày đó (giờ Việt Nam) mà không có báo cáo ngày đó. Người chuyển bộ phận sau khi nộp nằm ở bộ phận cũ với trạng thái đã nộp, không bị tính chưa nộp ở bộ phận mới; bộ phận cũ ngoài phạm vi thì người đó không có trong file của manager bộ phận mới (đã nộp, nhưng báo cáo thuộc bộ phận khác).
+- Hệ thống không lưu lịch sử thành viên bộ phận, nên danh sách chưa nộp của ngày cũ tính theo thành viên hiện tại: người mới chuyển vào bộ phận cũng hiện chưa nộp ở những ngày trước khi chuyển (nếu ngày đó không có báo cáo).
+- Nội dung người dùng nhập luôn ghi thành chữ: chuỗi bắt đầu bằng `=` không thành công thức khi mở file, `#N/A` không thành ô lỗi. Ký tự file Excel (XML) không chứa được bị bỏ: ký tự điều khiển (trừ tab, xuống dòng), U+FFFE, U+FFFF.
+- Dữ liệu một ngày lấy bằng một câu SQL rồi đóng transaction (trả kết nối DB về pool), ghi bằng openpyxl chế độ write-only (openpyxl ghi từng dòng ra file tạm, không giữ các ô trong RAM; dữ liệu đọc từ DB vẫn nằm trong RAM đến khi ghi xong), ghi xong mới gửi từng đoạn 64 KB (`StreamingResponse`). Lỗi trong lúc tạo file vẫn trả lỗi JSON, không ra file dở kèm 200.
 
 ### /admin: role ADMIN (15)
 
