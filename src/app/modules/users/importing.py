@@ -70,7 +70,7 @@ class UserImportRow(BaseModel):
             for date_format in USER_IMPORT_DATE_FORMATS:
                 with suppress(ValueError):
                     return datetime.strptime(value, date_format).date()  # noqa: DTZ007 (chỉ lấy ngày)
-        raise ValueError(messages.IMPORT_DATE_INVALID)
+        raise ValueError(messages.IMPORT_DATE_INVALID.format(date_format=EXCEL_DATE_FORMAT))
 
     @field_validator("role", mode="before")
     @classmethod
@@ -122,7 +122,7 @@ COLUMNS = (
         "date_of_birth",
         ExcelColumn("Ngày sinh", 14, EXCEL_DATE_FORMAT),
         required=False,
-        rule="Ngày trong quá khứ: ô kiểu ngày, hoặc chữ dạng dd/mm/yyyy.",
+        rule=f"Ngày trong quá khứ: ô kiểu ngày, hoặc chữ dạng {EXCEL_DATE_FORMAT}.",
     ),
     ImportColumn(
         "department_code",

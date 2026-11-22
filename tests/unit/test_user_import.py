@@ -6,12 +6,14 @@ import pytest
 from pydantic import ValidationError
 
 from app.core import messages
+from app.core.constants import EXCEL_DATE_FORMAT
 from app.modules.users.exceptions import ImportRowError
 from app.modules.users.importing import FIELDS, UserImportRow, parse_import_file, sort_errors
 from app.modules.users.models import UserRole
 from tests.helpers import user_import_file
 
 REQUIRED = {"email": "an@example.com", "full_name": "Nguyễn Văn An"}
+DATE_INVALID = messages.IMPORT_DATE_INVALID.format(date_format=EXCEL_DATE_FORMAT)
 
 
 def test_template_columns_match_import_row_fields() -> None:
@@ -59,9 +61,9 @@ def test_import_row_reads_excel_cell_values(
     [
         ({"phone": 901234567}, messages.IMPORT_PHONE_NOT_TEXT),
         ({"phone": 84.0}, messages.IMPORT_PHONE_NOT_TEXT),
-        ({"date_of_birth": 34820}, messages.IMPORT_DATE_INVALID),
-        ({"date_of_birth": "30-04-1995"}, messages.IMPORT_DATE_INVALID),
-        ({"date_of_birth": time(8, 0)}, messages.IMPORT_DATE_INVALID),
+        ({"date_of_birth": 34820}, DATE_INVALID),
+        ({"date_of_birth": "30-04-1995"}, DATE_INVALID),
+        ({"date_of_birth": time(8, 0)}, DATE_INVALID),
     ],
     ids=["phone-int", "phone-float", "date-number", "date-text", "date-time-cell"],
 )
