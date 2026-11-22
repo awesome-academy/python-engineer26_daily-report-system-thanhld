@@ -43,7 +43,7 @@ Phụ thuộc một chiều: router → service → repository → model. Module
 
 ```
 .
-├── docs/                      # requirement, thiết kế, tiến độ
+├── docs/                      # requirement, thiết kế, tiến độ, Postman collection (postman/)
 ├── migrations/                # Alembic (async)
 ├── scripts/                   # seed dữ liệu, tạo admin
 ├── src/app/
@@ -51,6 +51,7 @@ Phụ thuộc một chiều: router → service → repository → model. Module
 │   ├── worker.py              # Celery app, lịch Celery Beat: celery -A app.worker worker | beat
 │   ├── cli/                   # Typer: create-admin, seed, send-test-email, send-monthly-summary
 │   ├── models.py              # import model của mọi module cho Alembic
+│   ├── seed_data.py           # dữ liệu mẫu: lệnh seed tạo ra, ví dụ trên Swagger dùng lại
 │   ├── core/                  # dùng chung, không chứa nghiệp vụ
 │   │   ├── config.py          # Settings từ biến môi trường
 │   │   ├── database.py        # engine, session (async cho API, đồng bộ cho worker), Base, mixin

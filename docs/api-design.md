@@ -1,13 +1,13 @@
 # Thiết kế API
 
-39 endpoint, nhóm theo người dùng: `/auth`, `/me`, `/manager`, `/admin`. Mỗi nhóm khớp một nhóm quyền trong requirement, nên dễ đối chiếu và dễ test phân quyền. Swagger tự sinh tại `/docs`.
+41 endpoint, nhóm theo người dùng: `/auth`, `/me`, `/manager`, `/admin`. Mỗi nhóm khớp một nhóm quyền trong requirement, nên dễ đối chiếu và dễ test phân quyền. Swagger tự sinh tại `/docs`; Postman collection ở `docs/postman/` (mục Tài liệu thử API).
 
 ## Quy ước
 
 ### URL và định dạng
 
 - Tiền tố `/api/v1`. Riêng `/health` không có tiền tố để container healthcheck gọi trực tiếp.
-- JSON snake_case. Ngày theo ISO 8601 (`2026-11-09`), thời điểm có múi giờ (`2026-11-09T08:30:00+07:00`).
+- JSON snake_case. Ngày theo ISO 8601 (`2026-11-09`), ngày báo cáo theo giờ Việt Nam. Thời điểm theo UTC, ISO 8601 có micro giây (`2026-11-09T01:30:00.123456Z`).
 - Xác thực: OAuth2 password flow + JWT. Header `Authorization: Bearer <access_token>`.
 - `POST /auth/login` nhận form `application/x-www-form-urlencoded` với `username` (là email) và `password`, đúng chuẩn OAuth2, để nút **Authorize** trên Swagger đăng nhập được. Các endpoint khác nhận JSON.
 - Body của mọi request tối đa 3 MB (`REQUEST_BODY_MAX_MB`), lớn hơn thì trả 413 `REQUEST_TOO_LARGE`, trước cả bước kiểm tra token: có `Content-Length` thì từ chối trước khi đọc body, body gửi từng đoạn thì dừng khi vượt 3 MB. Endpoint upload còn giới hạn riêng cho file (413 `FILE_TOO_LARGE`), nhỏ hơn mức chung.
@@ -98,6 +98,14 @@ Lỗi validate (422) có `details` là danh sách `{ "field": "body.report_date"
 | `UNSUPPORTED_FILE_TYPE` | 415 | 8 |
 | `IMPORT_VALIDATION_FAILED` | 422 | 8 |
 | `REQUEST_TOO_LARGE` | 413 | 10 |
+
+## Tài liệu thử API
+
+- **Swagger** (`/docs`): phần đầu trang hướng dẫn đăng nhập bằng tài khoản seed và các quy ước chung (ngày trong ví dụ cố định: thử tạo báo cáo thì đổi `report_date` thành hôm nay). Mỗi endpoint có `summary`, `description`, ví dụ request, response, và một ví dụ cho từng lỗi endpoint có thể trả.
+  - Ví dụ request, response khai ở schema (`model_config` `json_schema_extra`), lấy từ dữ liệu seed (`app/seed_data.py`, cùng nguồn với lệnh `seed`) để "Try it out" chạy được; seed vào DB trống thì id theo thứ tự trong `DEPARTMENTS`, `USERS` (`seed_id`, có test). Test `tests/unit/test_openapi_examples.py` bắt mọi request body, response JSON phải có ví dụ, và ví dụ phải qua được validate của chính schema đó (response: đủ mọi field).
+  - Ví dụ lỗi lấy từ instance lỗi thật: `error_responses(EmailAlreadyExistsError(), status.HTTP_422_UNPROCESSABLE_CONTENT)` trong router, nên mã, message, `details` khớp lúc chạy; header lỗi trả kèm (`Retry-After` của 429, `WWW-Authenticate` của 401) cũng khai theo instance đó. HTTP status chỉ dùng cho lỗi chung (401, 403, 404, 422 validate, 503); 400, 409, 413, 415, 429 bắt buộc truyền instance lỗi nghiệp vụ.
+  - FastAPI bỏ mọi giá trị `null` khi xuất OpenAPI, nên ví dụ không hiện field `null`; kiểu từng field (có nhận `null` không) xem ở tab Schema.
+- **Postman** (`docs/postman/daily-report.postman_collection.json`): mọi endpoint, xếp theo thứ tự chạy được từ trên xuống trên dữ liệu seed, tự lưu token theo role và id vào biến collection, tự xóa dữ liệu đã tạo. Test `tests/unit/test_postman_collection.py` bắt collection phải đủ mọi route của app và gửi đúng token của role. Thêm endpoint thì thêm request vào collection (sửa trong Postman rồi Export bản v2.1, hoặc sửa file JSON).
 
 ## Danh sách endpoint
 
@@ -221,7 +229,7 @@ Export Excel báo cáo theo ngày (M5):
 - Nội dung người dùng nhập luôn ghi thành chữ: chuỗi bắt đầu bằng `=` không thành công thức khi mở file, `#N/A` không thành ô lỗi. Ký tự file Excel (XML) không chứa được bị bỏ: ký tự điều khiển (trừ tab, xuống dòng), U+FFFE, U+FFFF.
 - Dữ liệu một ngày lấy bằng một câu SQL rồi đóng transaction (trả kết nối DB về pool), ghi bằng openpyxl chế độ write-only (openpyxl ghi từng dòng ra file tạm, không giữ các ô trong RAM; dữ liệu đọc từ DB vẫn nằm trong RAM đến khi ghi xong), ghi xong mới gửi từng đoạn 64 KB (`StreamingResponse`). Lỗi trong lúc tạo file vẫn trả lỗi JSON, không ra file dở kèm 200.
 
-### /admin: role ADMIN (15)
+### /admin: role ADMIN (17)
 
 | Method | Endpoint | Mã | Ghi chú |
 | --- | --- | --- | --- |

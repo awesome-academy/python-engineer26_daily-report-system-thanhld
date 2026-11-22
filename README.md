@@ -6,12 +6,18 @@ Python 3.13 · FastAPI · PostgreSQL 17 · Redis 7 · SQLAlchemy 2 (async) · Al
 
 ## Chạy nhanh
 
-Cần [Docker](https://docs.docker.com/get-docker/) và [uv](https://docs.astral.sh/uv/).
+Chỉ cần [Docker](https://docs.docker.com/get-docker/) (có Docker Compose v2) và `make`. [uv](https://docs.astral.sh/uv/) chỉ cần khi chạy code, test trên máy host.
 
 ```bash
-cp .env.example .env   # tùy chọn, chỉ cần khi muốn đổi cổng
-make dev               # build và chạy api, worker, beat, postgres, redis, mailpit
+git clone https://github.com/awesome-academy/python-engineer26_daily-report-system-thanhld.git daily-report
+cd daily-report
+make dev                                                          # build, chạy cả stack, chờ API sẵn sàng
+docker compose exec api daily-report seed --password Matkhau@123  # dữ liệu mẫu
 ```
+
+- Máy không có `make` (Windows): thay `make dev` bằng `docker compose up -d --build`.
+- Lần đầu `make dev` mất thêm vài phút để tải image (Python, PostgreSQL, Redis, Mailpit); các lần sau khoảng 20 giây.
+- Cổng 8001, 5433, 6380, 8026 đã có chương trình khác dùng: `cp .env.example .env`, sửa các biến `*_PORT`, rồi `make dev` lại.
 
 | Địa chỉ | Dùng để |
 | --- | --- |
@@ -23,17 +29,36 @@ Migration chạy tự động khi container `api` khởi động. Sửa code tro
 
 Các cổng chỉ mở trên `127.0.0.1` của máy (máy khác cùng mạng không vào được): stack dev dùng JWT secret mặc định có trong repo và Redis không mật khẩu.
 
-## Đăng nhập thử
+## Thử API
+
+Tài khoản mẫu, mật khẩu `Matkhau@123` (giá trị `--password` lúc seed):
+
+| Tài khoản | Role | Gọi được |
+| --- | --- | --- |
+| `admin@example.com` | ADMIN | `/api/v1/admin/...`: user, bộ phận, gán manager, import Excel |
+| `manager.dev@example.com` | MANAGER | `/api/v1/manager/...`: bộ phận DEV, nhân viên, báo cáo, export Excel |
+| `an.nguyen@example.com` | USER | `/api/v1/me/reports`: tạo, xem báo cáo của mình |
+
+Mọi role gọi được `/api/v1/auth/...` và `/api/v1/me` (hồ sơ, đổi mật khẩu, ảnh đại diện).
+
+**Swagger:** mở http://localhost:8001/docs, bấm **Authorize**, ô `username` nhập email, ô `password` nhập mật khẩu, rồi gọi endpoint của role đó. Mỗi endpoint có mô tả, ví dụ request, response và ví dụ cho từng mã lỗi (chọn ở ô Examples của phần Responses). Ví dụ dùng id của dữ liệu mẫu (bộ phận DEV id 1, `manager.dev` id 2, `an.nguyen` id 5) khi seed vào DB trống. Ngày trong ví dụ cố định: thử tạo báo cáo thì đổi `report_date` thành hôm nay.
+
+**Postman:** import file [docs/postman/daily-report.postman_collection.json](docs/postman/daily-report.postman_collection.json) (File → Import), rồi chuột phải collection → **Run collection** → **Run**. Collection gọi lần lượt mọi endpoint: đăng nhập ba role, nhân viên tạo báo cáo, admin tạo user và bộ phận, user mới đặt mật khẩu bằng link trong email (đọc từ Mailpit), manager thêm, gỡ thành viên, xem và export báo cáo; cuối cùng xóa dữ liệu vừa tạo nên chạy lại được.
+
+- Gọi từng request: chạy folder **Xác thực** trước. Script lưu token theo role, folder của role nào tự gắn token của role đó.
+- Đổi ảnh đại diện, import Excel cần chọn file ở tab Body; chưa chọn file thì hai request này được bỏ qua khi chạy cả collection.
+- Đổi cổng hay mật khẩu seed thì sửa biến `baseUrl`, `mailpitUrl`, `password` ở tab Variables của collection.
+- Chạy bằng dòng lệnh: `npx newman run docs/postman/daily-report.postman_collection.json`.
+
+## Đăng nhập
+
+Không dùng dữ liệu mẫu thì tạo tài khoản admin đầu tiên:
 
 ```bash
 docker compose exec api daily-report create-admin   # hoặc: make admin (chạy trên máy host)
 ```
 
 Mật khẩu tối thiểu 8 ký tự, có chữ thường, chữ hoa, chữ số và ký tự đặc biệt (ví dụ `Matkhau@123`).
-
-1. Mở Swagger http://localhost:8001/docs, bấm **Authorize**.
-2. Ô `username` nhập email, ô `password` nhập mật khẩu vừa tạo.
-3. Gọi `GET /api/v1/me`.
 
 Đăng nhập theo chuẩn OAuth2 password flow, trả access token JWT (hết hạn sau 15 phút) và refresh token (7 ngày). Gọi `POST /api/v1/auth/refresh` để lấy cặp token mới, `POST /api/v1/auth/logout` để đăng xuất. Sai mật khẩu quá 5 lần trong 15 phút thì bị khóa tạm (429). `PATCH /api/v1/me` sửa hồ sơ, `PUT /api/v1/me/password` đổi mật khẩu (các phiên đăng nhập khác bị đăng xuất).
 
@@ -92,11 +117,11 @@ File người dùng tải lên (ảnh đại diện) lưu theo `STORAGE_BACKEND`
 ## Dữ liệu mẫu
 
 ```bash
-docker compose exec api daily-report seed      # hoặc: make seed (chạy trên máy host)
+docker compose exec api daily-report seed --password Matkhau@123   # hoặc: make seed (chạy trên máy host)
 ```
 
-- Tạo 3 bộ phận (DEV, QA, HR), 1 admin, 3 manager, 5 nhân viên và báo cáo 5 ngày làm việc gần nhất.
-- Mật khẩu tài khoản mẫu nhập ẩn khi chạy, hoặc đặt qua biến `SEED_USER_PASSWORD`. Không có mật khẩu viết cứng.
+- Tạo 3 bộ phận (DEV, QA, HR), 1 admin, 3 manager, 5 nhân viên và báo cáo 5 ngày làm việc gần nhất (không có báo cáo hôm nay, để thử tạo báo cáo).
+- Mật khẩu chung của tài khoản mẫu: `--password`, biến `SEED_USER_PASSWORD`, hoặc bỏ trống để nhập ẩn khi chạy. Không có mật khẩu viết cứng.
 - Chỉ thêm phần còn thiếu, chạy lại không tạo trùng. `--reset` xóa toàn bộ dữ liệu rồi seed lại.
 - Không chạy được khi `ENVIRONMENT=production`.
 
@@ -136,18 +161,46 @@ Chạy riêng một nhóm: `uv run pytest tests/e2e`.
 
 ## Lệnh hay dùng
 
+Mọi lệnh trong `Makefile` (`make help` liệt kê lại). Lệnh dùng `uv run` chạy trên máy host, cần `make install` và `make services` (hoặc `make dev`) trước.
+
 | Lệnh | Việc |
 | --- | --- |
-| `make dev` / `make down` | Chạy / dừng toàn bộ stack |
+| `make dev` / `make down` | Build, chạy / dừng toàn bộ stack Docker |
+| `make debug` | Chạy stack với API dưới debugpy (mục Debug) |
 | `make logs` | Xem log API, worker, beat |
-| `make admin` | Tạo tài khoản admin (CLI Typer: `uv run daily-report --help`) |
+| `make install` | Cài dependency, git hook pre-commit (máy host) |
+| `make services` | Chỉ chạy PostgreSQL, Redis, Mailpit |
+| `make run` / `make worker` | Chạy API / Celery worker trên máy host |
+| `make admin` | Tạo tài khoản admin |
 | `make seed` | Tạo dữ liệu mẫu |
 | `make test-email to=ban@example.com` | Gửi email thử qua worker, xem trên Mailpit |
 | `make monthly-summary month=2026-10` | Gửi email thống kê tháng ngay, không chờ Celery Beat |
 | `make migrate` | Chạy migration tới bản mới nhất |
 | `make migration m="add users table"` | Tạo migration từ model |
-| `make format` | Tự sửa lint, format |
+| `make lint` / `make format` | Kiểm tra / tự sửa lint, format (ruff) |
+| `make typecheck` | Kiểm tra kiểu (mypy strict) |
+| `make test` | Chạy test kèm coverage |
+| `make check` | `lint`, `typecheck`, `test` như CI |
 | `make help` | Liệt kê mọi lệnh |
+
+Lệnh quản trị (CLI Typer) chạy trong container bằng `docker compose exec api daily-report <lệnh>`, hoặc trên máy host bằng `uv run daily-report <lệnh>`. Thêm `--help` sau tên lệnh để xem đủ tham số.
+
+| Lệnh | Việc |
+| --- | --- |
+| `create-admin [--email ... --full-name ... --password ...]` | Tạo tài khoản admin; thiếu tham số thì hỏi, mật khẩu nhập ẩn (hoặc biến `ADMIN_PASSWORD`) |
+| `seed [--password ...] [--reset [-y]]` | Tạo dữ liệu mẫu; `--reset` xóa toàn bộ dữ liệu trước |
+| `send-test-email <email>` | Gửi email thử qua worker |
+| `send-monthly-summary [--month YYYY-MM]` | Gửi email thống kê tháng (mặc định tháng trước) |
+
+## Lỗi thường gặp
+
+| Hiện tượng | Cách xử lý |
+| --- | --- |
+| `make dev` báo `port is already allocated`, `address already in use` | Cổng đã có chương trình khác dùng: `cp .env.example .env`, đổi `API_PORT`, `POSTGRES_PORT`… rồi `make dev`. Đổi `API_PORT` thì đổi cả `LOCAL_STORAGE_BASE_URL`, và `baseUrl` trong Postman |
+| Seed, đăng nhập lỗi `relation ... does not exist` | Migration chưa chạy xong hoặc lỗi: `docker compose logs api` |
+| Đăng nhập trả 401 `INVALID_CREDENTIALS` với tài khoản mẫu | Mật khẩu là giá trị `--password` lúc seed lần đầu; seed lại không đổi mật khẩu tài khoản đã có. Đặt lại: `docker compose exec api daily-report seed --reset -y --password Matkhau@123` (xóa toàn bộ dữ liệu) |
+| Đăng nhập trả 429 `TOO_MANY_ATTEMPTS` | Sai mật khẩu quá 5 lần: chờ hết thời gian trong `Retry-After` (tối đa 15 phút) |
+| Email không tới Mailpit | Worker chưa chạy hoặc lỗi: `make logs`, sửa code thì `docker compose restart worker beat` |
 
 ## Tài liệu
 
@@ -156,6 +209,7 @@ Chạy riêng một nhóm: `uv run pytest tests/e2e`.
 | [docs/requirements.md](docs/requirements.md) | 15 chức năng, endpoint, kỹ thuật, câu hỏi cần PM chốt |
 | [docs/architecture.md](docs/architecture.md) | Công nghệ, kiến trúc, cấu trúc thư mục, quyết định kỹ thuật |
 | [docs/database.md](docs/database.md) | ERD, bảng, ràng buộc, index |
-| [docs/api-design.md](docs/api-design.md) | Quy ước API, mã lỗi, 41 endpoint |
+| [docs/api-design.md](docs/api-design.md) | Quy ước API, mã lỗi, 41 endpoint, Swagger và Postman |
+| [docs/postman/](docs/postman/) | Postman collection gọi mọi endpoint |
 | [docs/security.md](docs/security.md) | Rà soát bảo mật theo OWASP API Top 10, checklist khi thêm endpoint, khi triển khai |
 | [docs/progress/](docs/progress/) | Kế hoạch 10 ngày, báo cáo từng ngày |
