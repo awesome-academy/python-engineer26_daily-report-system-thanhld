@@ -11,8 +11,9 @@ from fastapi.staticfiles import StaticFiles
 from app import models as _models  # noqa: F401 (nạp đủ model trước khi SQLAlchemy nối quan hệ)
 from app.api.health import router as health_router
 from app.api.v1 import api_router
+from app.core.body_limit import BodySizeLimitMiddleware
 from app.core.config import Settings, get_settings
-from app.core.constants import LOCAL_STORAGE_URL_PATH, StorageBackend
+from app.core.constants import LOCAL_STORAGE_URL_PATH, REQUEST_BODY_MAX_BYTES, StorageBackend
 from app.core.database import engine
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import RequestContextMiddleware, configure_logging
@@ -55,6 +56,9 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # Middleware thêm sau bọc ngoài middleware thêm trước. Giới hạn body ở trong cùng: response 413
+    # vẫn có request-id, header CORS và dòng log như mọi response.
+    app.add_middleware(BodySizeLimitMiddleware, max_bytes=REQUEST_BODY_MAX_BYTES)
     app.add_middleware(RequestContextMiddleware)
     if settings.cors_origins:
         app.add_middleware(
