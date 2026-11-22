@@ -151,6 +151,11 @@ AVATAR_KEY_PREFIX = "avatars"
 XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 EXCEL_SPOOL_MAX_BYTES = BYTES_PER_MB
 DOWNLOAD_CHUNK_BYTES = 64 * 1024
+# Ngày giờ trong file Excel (giờ Việt Nam), theo mã định dạng ô của Excel.
+EXCEL_DATETIME_FORMAT = "dd/mm/yyyy hh:mm"
+# Export báo cáo một ngày (M5). Tên file chỉ gồm ký tự ASCII để header Content-Disposition không
+# cần mã hóa.
+REPORT_EXPORT_FILENAME = "bao-cao-{report_date}.xlsx"
 
 # Celery task gặp lỗi tạm thời (SMTP, mất kết nối) thì thử lại tối đa TASK_MAX_RETRIES lần, lần
 # thứ n chờ TASK_RETRY_BACKOFF_SECONDS * 2**n giây (30s, 60s, 120s). Mọi task dùng chung.

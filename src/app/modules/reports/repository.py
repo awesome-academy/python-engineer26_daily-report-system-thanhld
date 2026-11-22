@@ -1,16 +1,32 @@
 from collections.abc import Sequence
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
-from sqlalchemy import ColumnElement, Select, exists, select
+from sqlalchemy import (
+    BigInteger,
+    ColumnElement,
+    Select,
+    cast,
+    exists,
+    null,
+    select,
+    union_all,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute, Session, contains_eager, joinedload
 
+from app.core.clock import local_day_start
 from app.core.pagination import DateRange, DateRangePageParams, paginate
-from app.modules.departments.models import DepartmentManager
+from app.modules.departments.models import Department, DepartmentManager
 from app.modules.reports.models import DailyReport, ReportRecipient
-from app.modules.reports.schemas import ManagerReportListParams, ReportSort
-from app.modules.users.models import User, UserRole, full_name_matches, order_by_full_name
+from app.modules.reports.schemas import ManagerReportListParams, ReportExportParams, ReportSort
+from app.modules.users.models import (
+    User,
+    UserRole,
+    full_name_matches,
+    is_employee_in,
+    order_by_full_name,
+)
 
 # Mỗi thứ tự sắp đều xét cả ngày và người viết (order_by_full_name có id): một người một báo cáo
 # mỗi ngày, nên không có hai báo cáo cùng vị trí, thứ tự cố định giữa các trang.
@@ -101,6 +117,46 @@ class ReportRepository:
         if params.keyword:
             statement = statement.where(full_name_matches(params.keyword))
         return await paginate(self.session, _in_date_range(statement, params), params)
+
+    async def list_daily_export_rows(
+        self, department_ids: Select[int], params: ReportExportParams
+    ) -> Sequence[tuple[Department, User, DailyReport | None]]:
+        """Dòng của file export một ngày (M5) trong các bộ phận `department_ids`, một câu SQL.
+
+        - Đã nộp: báo cáo ngày đó viết cho bộ phận (bộ phận lúc viết, index (department_id,
+          report_date)), kể cả người viết đã bị khóa, xóa, đổi role như danh sách M3.
+        - Chưa nộp: nhân viên hiện tại của bộ phận (như M4) đã có tài khoản trước khi hết ngày đó
+          (giờ Việt Nam) mà không có báo cáo ngày đó ở bộ phận nào: người chuyển bộ phận sau khi nộp
+          đã có dòng ở bộ phận cũ. Không lưu lịch sử thành viên nên ngày cũ cũng xét thành viên
+          hiện tại.
+
+        Sắp theo mã bộ phận rồi họ tên ngay trong SQL (`order_by_full_name`).
+        """
+        day = params.report_date
+        submitted = select(
+            DailyReport.department_id.label("department_id"),
+            DailyReport.author_id.label("user_id"),
+            DailyReport.id.label("report_id"),
+        ).where(DailyReport.department_id.in_(department_ids), DailyReport.report_date == day)
+        missing = select(User.department_id, User.id, cast(null(), BigInteger)).where(
+            is_employee_in(department_ids),
+            User.created_at < local_day_start(day + timedelta(days=1)),
+            ~exists().where(DailyReport.author_id == User.id, DailyReport.report_date == day),
+        )
+        rows = union_all(submitted, missing).subquery()
+        statement = (
+            select(Department, User, DailyReport)
+            .select_from(rows)
+            .join(Department, Department.id == rows.c.department_id)
+            .join(User, User.id == rows.c.user_id)
+            .outerjoin(DailyReport, DailyReport.id == rows.c.report_id)
+            .order_by(Department.code, *order_by_full_name())
+        )
+        # Vẫn giữ điều kiện phạm vi ở trên: bộ lọc đã kiểm tra ở dependency, câu truy vấn không
+        # trông vào bước đó.
+        if params.department_id is not None:
+            statement = statement.where(Department.id == params.department_id)
+        return (await self.session.execute(statement)).all()
 
     async def get_by_author(self, report_id: int, author_id: int) -> DailyReport | None:
         """Báo cáo kèm bộ phận; báo cáo của người khác coi như không tồn tại."""

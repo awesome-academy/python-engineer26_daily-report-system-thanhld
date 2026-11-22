@@ -1,5 +1,7 @@
+import asyncio
 from collections.abc import Sequence
 from datetime import date, timedelta
+from typing import IO
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +17,7 @@ from app.modules.reports.exceptions import (
     ReportDateOutOfRangeError,
     ReportNotFoundError,
 )
+from app.modules.reports.export import write_report_workbook
 from app.modules.reports.models import REPORT_AUTHOR_DATE_UNIQUE, DailyReport, ReportRecipient
 from app.modules.reports.repository import ReportRepository
 from app.modules.reports.schemas import (
@@ -22,6 +25,8 @@ from app.modules.reports.schemas import (
     ManagerReportListParams,
     ReportCreate,
     ReportDetailOut,
+    ReportExportParams,
+    ReportExportRow,
 )
 from app.modules.reports.tasks import send_report_notification
 from app.modules.users.models import User
@@ -73,6 +78,22 @@ class ReportService:
             raise ReportNotFoundError
         recipients = await self.reports.get_report_recipients(report.id)
         return ManagerReportDetailOut.from_report(report, recipients)
+
+    async def export_department_reports(
+        self, manager_id: int, params: ReportExportParams
+    ) -> IO[bytes]:
+        """File Excel báo cáo ngày `params.report_date` của các bộ phận manager quản lý (M5).
+
+        Mỗi nhân viên một dòng: đã nộp kèm nội dung, chưa nộp được đánh dấu. Phạm vi theo bộ phận
+        lúc viết như M3. Ghi xong cả file rồi mới trả: lỗi giữa chừng vẫn ra lỗi JSON, không ra
+        file cụt kèm 200.
+        """
+        scope = self.departments.managed_department_ids(manager_id)
+        rows = [
+            ReportExportRow.from_models(*row)
+            for row in await self.reports.list_daily_export_rows(scope, params)
+        ]
+        return await asyncio.to_thread(write_report_workbook, params.report_date, rows)
 
     async def create_report(self, author: User, data: ReportCreate, *, today: date) -> DailyReport:
         """Lưu báo cáo cùng người nhận trong một lần commit: lỗi ở bước nào thì không lưu gì.

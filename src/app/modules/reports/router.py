@@ -1,10 +1,16 @@
 from fastapi import APIRouter, status
+from fastapi.responses import StreamingResponse
 
 from app.api.deps import CurrentUser, IdPath, Today
-from app.core.constants import REPORT_BACKDATE_DAYS
+from app.core.constants import REPORT_BACKDATE_DAYS, REPORT_EXPORT_FILENAME
+from app.core.excel import XLSX_FILE_RESPONSE, xlsx_response
 from app.core.exceptions import error_responses
 from app.core.pagination import Page
-from app.modules.reports.dependencies import ManagerReportListQuery, ReportServiceDep
+from app.modules.reports.dependencies import (
+    ManagerReportListQuery,
+    ReportExportQuery,
+    ReportServiceDep,
+)
 from app.modules.reports.schemas import (
     ManagerReportDetailOut,
     ManagerReportSummaryOut,
@@ -82,7 +88,7 @@ async def get_my_report(
 
 
 # Include vào nhóm /manager (api/v1.py): role MANAGER kiểm tra ở nhóm, 401, 403 khai ở nhóm.
-# Route tĩnh (M5 /export) phải khai trước /{report_id}.
+# Route tĩnh (/export) phải khai trước /{report_id}.
 manager_report_router = APIRouter(prefix="/reports", tags=["Manager: báo cáo"])
 
 
@@ -105,6 +111,29 @@ async def list_department_reports(
         total=total,
         params=params,
     )
+
+
+@manager_report_router.get(
+    "/export",
+    summary="Export Excel báo cáo theo ngày",
+    description=(
+        "File .xlsx báo cáo một ngày (mặc định hôm nay, giờ Việt Nam) của các bộ phận tôi quản "
+        "lý, hoặc một bộ phận `department_id`. Mỗi nhân viên một dòng, sắp theo mã bộ phận rồi họ "
+        "tên: đã nộp kèm 4 nội dung và giờ gửi, chưa nộp được đánh dấu. Ngày tương lai trả 422, "
+        "`department_id` ngoài phạm vi trả 404."
+    ),
+    response_class=StreamingResponse,
+    responses={
+        **XLSX_FILE_RESPONSE,
+        **error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
+    },
+)
+async def export_department_reports(
+    params: ReportExportQuery, manager: CurrentUser, service: ReportServiceDep
+) -> StreamingResponse:
+    file = await service.export_department_reports(manager.id, params)
+    filename = REPORT_EXPORT_FILENAME.format(report_date=params.report_date.isoformat())
+    return xlsx_response(file, filename)
 
 
 @manager_report_router.get(
