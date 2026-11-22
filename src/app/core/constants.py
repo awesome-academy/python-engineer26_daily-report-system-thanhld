@@ -146,6 +146,12 @@ IMAGE_EXTENSIONS = {ImageType.JPEG: "jpg", ImageType.PNG: "png"}
 # URL cũ không trả nhầm ảnh mới từ cache của trình duyệt, CDN.
 AVATAR_KEY_PREFIX = "avatars"
 
+# File Excel (.xlsx) tải về: ghi xong ra file tạm rồi gửi từng đoạn DOWNLOAD_CHUNK_BYTES
+# (StreamingResponse). File tạm nhỏ hơn EXCEL_SPOOL_MAX_BYTES giữ trong RAM, lớn hơn thì ra đĩa.
+XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+EXCEL_SPOOL_MAX_BYTES = BYTES_PER_MB
+DOWNLOAD_CHUNK_BYTES = 64 * 1024
+
 # Celery task gặp lỗi tạm thời (SMTP, mất kết nối) thì thử lại tối đa TASK_MAX_RETRIES lần, lần
 # thứ n chờ TASK_RETRY_BACKOFF_SECONDS * 2**n giây (30s, 60s, 120s). Mọi task dùng chung.
 TASK_MAX_RETRIES = 3
