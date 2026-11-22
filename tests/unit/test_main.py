@@ -94,12 +94,13 @@ async def test_cors_preflight_rejects_what_is_not_allowed(headers: dict[str, str
     assert response.status_code == 400
 
 
-async def test_cors_response_exposes_download_filename_and_request_id() -> None:
+async def test_cors_response_exposes_headers_frontend_reads() -> None:
     response = await send(cors_app([FRONTEND_ORIGIN]), "GET", {"Origin": FRONTEND_ORIGIN})
 
     assert response.headers["access-control-allow-origin"] == FRONTEND_ORIGIN
     exposed = response.headers["access-control-expose-headers"].split(", ")
-    assert exposed == ["Content-Disposition", "X-Request-ID"]
+    # Tên file Excel tải về, số giây chờ khi bị khóa đăng nhập (429), request-id để tra log.
+    assert exposed == ["Content-Disposition", "Retry-After", "X-Request-ID"]
     assert "access-control-allow-credentials" not in response.headers
 
 
