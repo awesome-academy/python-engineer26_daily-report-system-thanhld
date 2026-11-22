@@ -129,7 +129,7 @@ Link đặt mật khẩu lần đầu (S2, Ngày 7). Celery worker sinh token ng
 | id | bigint | PK, identity | |
 | to_email | varchar(255) | not null | không FK, ghi được cả địa chỉ chưa có tài khoản |
 | template | varchar(64) | not null | tên mẫu email (`EmailTemplate`): `test` (lệnh `send-test-email`), `report_created`, `account_setup`, `monthly_summary` |
-| dedup_key | varchar(128) | null, unique | chống gửi trùng cho S3 (ví dụ `monthly:2026-10:dept:3:user:7`) |
+| dedup_key | varchar(128) | null, unique | chống gửi trùng cho S3: `monthly:{tháng}:dept:{bộ phận}:user:{manager}`, ví dụ `monthly:2026-10:dept:3:user:7`. Worker ghi dòng `SENT` kèm key ngay trước khi gửi, cùng transaction với lần gửi; key đã có thì không gửi. Dòng `FAILED` không giữ key để chạy lại vẫn gửi được |
 | status | varchar(16) | not null, `CHECK (status IN ('SENT', 'FAILED'))` | worker ghi một dòng cho mỗi email: `SENT` khi gửi được, `FAILED` khi hết 3 lần thử lại |
 | error | text | null | lý do gửi lỗi |
 | created_at | timestamptz | not null, default now() | |
@@ -144,8 +144,8 @@ Link đặt mật khẩu lần đầu (S2, Ngày 7). Celery worker sinh token ng
 | users | `(department_id)` | lấy thành viên bộ phận |
 | departments | `UNIQUE (lower(code)) WHERE deleted_at IS NULL` | mã bộ phận không trùng, không phân biệt hoa thường (như email) |
 | department_managers | `(user_id)` | lấy các bộ phận một manager quản lý, dùng khi kiểm tra quyền |
-| daily_reports | `UNIQUE (author_id, report_date)` | mỗi người 1 báo cáo / ngày |
-| daily_reports | `(department_id, report_date)` | màn hình manager, export, thống kê tháng |
+| daily_reports | `UNIQUE (author_id, report_date)` | mỗi người 1 báo cáo / ngày; thống kê tháng đếm báo cáo theo người viết |
+| daily_reports | `(department_id, report_date)` | màn hình manager, export |
 | report_recipients | `(recipient_id)` | báo cáo gửi tới một manager |
 | refresh_tokens | `(user_id)` | thu hồi mọi phiên của một user; xóa cascade không phải quét cả bảng |
 | refresh_tokens | `(session_id)` | đăng xuất thu hồi mọi refresh token của một phiên |

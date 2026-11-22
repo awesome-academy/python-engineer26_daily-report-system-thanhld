@@ -10,7 +10,7 @@ Cần [Docker](https://docs.docker.com/get-docker/) và [uv](https://docs.astral
 
 ```bash
 cp .env.example .env   # tùy chọn, chỉ cần khi muốn đổi cổng
-make dev               # build và chạy api, worker, postgres, redis, mailpit
+make dev               # build và chạy api, worker, beat, postgres, redis, mailpit
 ```
 
 | Địa chỉ | Dùng để |
@@ -54,7 +54,7 @@ Mật khẩu tối thiểu 8 ký tự, có chữ thường, chữ hoa, chữ s�
 
 API không gửi email trực tiếp: đẩy task vào Redis, Celery worker (container `worker`) dựng nội dung từ template Jinja2 (`src/app/modules/notifications/templates/`), gửi qua SMTP, ghi kết quả vào bảng `email_logs`. Lỗi kết nối, lỗi SMTP thì thử lại tối đa 3 lần (chờ 30s, 60s, 120s); vẫn lỗi thì ghi `FAILED` kèm lý do.
 
-Email hệ thống gửi: báo cáo mới cho người nhận (S1, sau `POST /api/v1/me/reports`).
+Email hệ thống gửi: báo cáo mới cho người nhận (S1, sau `POST /api/v1/me/reports`), link đặt mật khẩu (S2, xem dưới), thống kê báo cáo tháng (S3, xem dưới).
 
 Gửi thử một email để kiểm tra worker và SMTP:
 
@@ -66,7 +66,17 @@ Khi dev, mọi email đều vào Mailpit (http://localhost:8026), không gửi r
 
 Tài khoản admin tạo (`POST /api/v1/admin/users`) chưa có mật khẩu; worker gửi email có link `FRONTEND_URL/setup-password?token=...` (hết hạn sau 24 giờ, dùng một lần). Chưa có frontend thì mở email trên Mailpit, chép giá trị `token` trên link, gọi `POST /api/v1/auth/setup-password` trên Swagger với body `{"token": "...", "password": "..."}`, rồi đăng nhập bằng email và mật khẩu vừa đặt. Link hết hạn hay email không tới thì admin gửi lại bằng `POST /api/v1/admin/users/{id}/setup-link`.
 
-Worker không tự reload khi sửa code: `docker compose restart worker`. Xem log: `make logs`; mức log của worker (cả log của Celery) lấy từ `LOG_LEVEL`.
+**Thống kê tháng (S3):** Celery Beat (container `beat`) đẩy task lúc 08:00 ngày 1 hằng tháng theo giờ Việt Nam, và cùng giờ ngày 2, 3 để gửi bù email còn thiếu (lượt ngày 1 bị lỡ vì Redis lỗi, hay SMTP vẫn lỗi sau 3 lần thử lại). Lượt gửi bù không gửi lại email đã gửi, nên bình thường không gửi gì. Mỗi manager nhận một email cho từng bộ phận mình quản lý: số ngày đã nộp báo cáo so với số ngày làm việc (thứ 2 đến thứ 6, chưa trừ ngày lễ) của từng nhân viên trong tháng trước. Nhân viên mới vào giữa tháng tính từ ngày tạo tài khoản. Email ghi thời điểm tính số liệu: báo cáo bù cho các ngày cuối tháng (được nộp lùi 3 ngày) mà nộp sau 08:00 ngày 1 không có trong thống kê. Mỗi email ghi `dedup_key` vào `email_logs`, nên task chạy lại không gửi trùng. Gửi ngay, không chờ lịch (chỉ tháng đã kết thúc):
+
+```bash
+docker compose exec api daily-report send-monthly-summary --month 2026-10   # hoặc: make monthly-summary month=2026-10
+```
+
+Bỏ `--month` thì thống kê tháng trước. Manager đã nhận email của tháng đó thì không nhận lại, nên lệnh này cũng dùng để gửi bù khi cả ba lượt theo lịch đều lỡ hoặc lỗi (log `monthly_summary_failed`). Lệnh chỉ đẩy task; số email đã gửi xem ở log worker (`monthly_summary_done sent=... already_sent=...`).
+
+Dữ liệu seed tạo tài khoản vào ngày chạy seed, nên tháng trước chưa ai phải nộp và lệnh không gửi email nào. Muốn thử thì cần tài khoản tạo trước tháng đó và báo cáo trong tháng.
+
+Worker, beat không tự reload khi sửa code: `docker compose restart worker beat`. Xem log: `make logs`; mức log của worker, beat (cả log của Celery) lấy từ `LOG_LEVEL`.
 
 ## Lưu trữ file
 
@@ -118,10 +128,11 @@ Test chạy trên PostgreSQL thật, database riêng `daily_report_test` (tự t
 | Lệnh | Việc |
 | --- | --- |
 | `make dev` / `make down` | Chạy / dừng toàn bộ stack |
-| `make logs` | Xem log API và worker |
+| `make logs` | Xem log API, worker, beat |
 | `make admin` | Tạo tài khoản admin (CLI Typer: `uv run daily-report --help`) |
 | `make seed` | Tạo dữ liệu mẫu |
 | `make test-email to=ban@example.com` | Gửi email thử qua worker, xem trên Mailpit |
+| `make monthly-summary month=2026-10` | Gửi email thống kê tháng ngay, không chờ Celery Beat |
 | `make migrate` | Chạy migration tới bản mới nhất |
 | `make migration m="add users table"` | Tạo migration từ model |
 | `make format` | Tự sửa lint, format |

@@ -1,17 +1,28 @@
 import logging
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pytest
 from celery import Task
+from celery.schedules import crontab
 from celery.signals import after_setup_logger, after_setup_task_logger
 from celery.utils.dispatch import Signal
 
 from app.core.config import get_settings
-from app.core.constants import REDIS_TIMEOUT_SECONDS, TASK_MAX_RETRIES, TASK_RETRY_BACKOFF_SECONDS
+from app.core.constants import (
+    MONTHLY_SUMMARY_TASK,
+    REDIS_TIMEOUT_SECONDS,
+    TASK_MAX_RETRIES,
+    TASK_RETRY_BACKOFF_SECONDS,
+)
 from app.modules.auth.tasks import send_account_setup_email
 from app.modules.notifications.tasks import send_email
-from app.modules.reports.tasks import send_report_notification
+from app.modules.reports.tasks import send_monthly_summaries, send_report_notification
 from app.worker import celery_app, retry_countdown
+
+# Giờ Việt Nam: lịch của Beat tính theo timezone này.
+VIETNAM = ZoneInfo(get_settings().timezone)
 
 
 def test_celery_uses_redis_broker_with_json_and_timeouts() -> None:
@@ -29,13 +40,51 @@ def test_celery_uses_redis_broker_with_json_and_timeouts() -> None:
 
 
 @pytest.mark.parametrize(
-    "task", [send_email, send_report_notification, send_account_setup_email], ids=lambda t: t.name
+    "task",
+    [send_email, send_report_notification, send_account_setup_email, send_monthly_summaries],
+    ids=lambda t: t.name,
 )
 def test_tasks_are_registered_with_retry_limit(task: Task[Any, Any]) -> None:
-    # Worker chỉ nạp task trong `include`: quên khai module thì worker từ chối task từ API.
-    celery_app.loader.import_default_modules()
+    # Worker chỉ nạp module trong `include`: quên khai thì worker từ chối task từ API, Beat. Test
+    # này import sẵn module task nên `celery_app.tasks` luôn có task, phải xét chính `include`.
+    registered = celery_app.tasks[task.name]
+    assert registered.__module__ in celery_app.conf.include
+    assert registered.max_retries == TASK_MAX_RETRIES
 
-    assert celery_app.tasks[task.name].max_retries == TASK_MAX_RETRIES
+
+def test_beat_entry_calls_monthly_summary_task_without_args() -> None:
+    entry = celery_app.conf.beat_schedule["monthly-summary"]
+
+    # Beat gọi task theo tên: tên sai thì tới giờ worker báo task không tồn tại.
+    assert entry["task"] == MONTHLY_SUMMARY_TASK == send_monthly_summaries.name
+    # Không tham số: task tự tính tháng trước theo ngày chạy.
+    assert entry.get("args", ()) == ()
+    assert isinstance(entry["schedule"], crontab)
+    # Không có result backend: không để Beat tự thêm lịch dọn kết quả (celery.backend_cleanup).
+    assert celery_app.conf.result_expires is None
+
+
+@pytest.mark.parametrize(
+    ("last_run", "next_run"),
+    [
+        # Lượt chính 08:00 ngày 1, rồi 08:00 ngày 2, 3 gửi bù email còn thiếu.
+        (datetime(2026, 11, 1, 8, tzinfo=VIETNAM), datetime(2026, 11, 2, 8, tzinfo=VIETNAM)),
+        (datetime(2026, 11, 2, 8, tzinfo=VIETNAM), datetime(2026, 11, 3, 8, tzinfo=VIETNAM)),
+        # Sau ngày 3 thì chờ tới ngày 1 tháng sau.
+        (datetime(2026, 11, 3, 8, tzinfo=VIETNAM), datetime(2026, 12, 1, 8, tzinfo=VIETNAM)),
+    ],
+)
+def test_beat_runs_monthly_summary_at_8am_on_days_1_to_3_vietnam_time(
+    monkeypatch: pytest.MonkeyPatch, last_run: datetime, next_run: datetime
+) -> None:
+    # Celery tính lịch theo timezone của app (giờ Việt Nam); để UTC thì sẽ chạy 15:00 giờ Việt Nam.
+    schedule = celery_app.conf.beat_schedule["monthly-summary"]["schedule"]
+    now = last_run.replace(second=1)
+    monkeypatch.setattr(schedule, "nowfun", lambda: now)
+
+    remaining = schedule.remaining_estimate(last_run)
+
+    assert now + remaining == next_run
 
 
 def test_retry_countdown_doubles_each_attempt() -> None:

@@ -1,10 +1,10 @@
 .DEFAULT_GOAL := help
 COMPOSE := docker compose
 
-.PHONY: help install dev debug down logs services run worker admin seed test-email migrate migration lint format typecheck test check
+.PHONY: help install dev debug down logs services run worker admin seed test-email monthly-summary migrate migration lint format typecheck test check
 
 help: ## Liệt kê các lệnh
-	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-11s %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-16s %s\n", $$1, $$2}'
 
 install: ## Cài dependency và git hook
 	uv sync
@@ -19,8 +19,8 @@ debug: ## Chạy stack với API dưới debugpy (cổng 5678), rồi attach b�
 down: ## Dừng stack
 	$(COMPOSE) down
 
-logs: ## Xem log API và Celery worker
-	$(COMPOSE) logs -f api worker
+logs: ## Xem log API, Celery worker và Celery Beat
+	$(COMPOSE) logs -f api worker beat
 
 services: ## Chỉ chạy PostgreSQL, Redis, Mailpit (để chạy API hoặc test trên máy host)
 	$(COMPOSE) up -d --wait postgres redis mailpit
@@ -40,6 +40,9 @@ seed: ## Tạo dữ liệu mẫu (bộ phận, user, báo cáo). Chạy lại kh
 
 test-email: ## Gửi email thử qua worker: make test-email to=ban@example.com, xem trên Mailpit
 	uv run daily-report send-test-email $(to)
+
+monthly-summary: ## Gửi email thống kê tháng ngay: make monthly-summary (tháng trước) hoặc month=2026-10
+	uv run daily-report send-monthly-summary $(if $(month),--month "$(month)")
 
 migrate: ## Chạy migration tới bản mới nhất
 	uv run alembic upgrade head
