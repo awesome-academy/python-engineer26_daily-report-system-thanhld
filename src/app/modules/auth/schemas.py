@@ -8,6 +8,7 @@ from app.core.constants import (
     ONE_TIME_TOKEN_MAX_LENGTH,
     ONE_TIME_TOKEN_PATTERN,
 )
+from app.core.validators import NoNul
 from app.modules.users.schemas import Password
 from app.seed_data import EXAMPLE_PASSWORD
 
@@ -18,6 +19,19 @@ _ACCESS_JWT_EXAMPLE = (
 _REFRESH_JWT_EXAMPLE = (
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1IiwidHlwZSI6InJlZnJlc2gifQ.c2lnbg"
 )
+
+
+class LoginForm(BaseModel):
+    """Form đăng nhập theo OAuth2 password flow, các field như `OAuth2PasswordRequestForm`.
+
+    Khai thành model để `username` (là email) chặn ký tự NUL: PostgreSQL không so sánh được chuỗi
+    chứa NUL, gửi xuống DB là lỗi 500. Field khác của chuẩn OAuth2 (`scope`, `client_id`...) API
+    không dùng, gửi kèm thì bỏ qua.
+    """
+
+    grant_type: Literal["password"] | None = None
+    username: Annotated[str, NoNul]
+    password: Annotated[str, Field(json_schema_extra={"format": "password"})]
 
 
 class TokenResponse(BaseModel):

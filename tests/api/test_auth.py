@@ -7,6 +7,7 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import messages
 from app.core.config import get_settings
 from app.core.constants import (
     JWT_MAX_LENGTH,
@@ -113,6 +114,52 @@ async def test_login_requires_username_and_password(client: AsyncClient) -> None
     assert response.status_code == 422
     fields = {detail["field"] for detail in response.json()["error"]["details"]}
     assert fields == {"body.username", "body.password"}
+
+
+@pytest.mark.parametrize("username", ["\x00", "an\x00@example.com"])
+async def test_login_rejects_nul_in_username(
+    client: AsyncClient, db_session: AsyncSession, username: str
+) -> None:
+    # PostgreSQL không so sánh được chuỗi chứa NUL: gửi xuống DB là lỗi, API từng trả 500 (#45).
+    await create_user(db_session, email="an@example.com")
+
+    response = await login(client, username, DEFAULT_PASSWORD)
+
+    assert response.status_code == 422
+    [detail] = response.json()["error"]["details"]
+    assert detail["field"] == "body.username"
+    assert messages.NUL_CHARACTER in detail["message"]
+
+
+async def test_login_accepts_full_oauth2_form(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    # Nút Authorize của Swagger gửi kèm grant_type, scope, client_id, client_secret.
+    await create_user(db_session, email="an@example.com")
+    form = {
+        "grant_type": "password",
+        "username": "an@example.com",
+        "password": DEFAULT_PASSWORD,
+        "scope": "",
+        "client_id": "swagger",
+        "client_secret": "",
+    }
+
+    response = await client.post(LOGIN_URL, data=form)
+
+    assert response.status_code == 200
+
+
+async def test_login_rejects_other_grant_type(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    await create_user(db_session, email="an@example.com")
+    form = {"grant_type": "client_credentials", "username": "an@example.com", "password": "x"}
+
+    response = await client.post(LOGIN_URL, data=form)
+
+    assert response.status_code == 422
+    assert response.json()["error"]["details"][0]["field"] == "body.grant_type"
 
 
 async def test_swagger_uses_login_endpoint_for_authorize_button(client: AsyncClient) -> None:

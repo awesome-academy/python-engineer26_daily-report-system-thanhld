@@ -1,7 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
-from fastapi.security import OAuth2PasswordRequestForm
+from fastapi import APIRouter, Form, status
 
 from app.api.deps import CurrentTokenClaims, CurrentUser
 from app.core.constants import (
@@ -16,7 +15,7 @@ from app.modules.auth.exceptions import (
     InvalidCredentialsError,
     SetupTokenInvalidError,
 )
-from app.modules.auth.schemas import PasswordSetup, RefreshTokenRequest, TokenResponse
+from app.modules.auth.schemas import LoginForm, PasswordSetup, RefreshTokenRequest, TokenResponse
 
 router = APIRouter(prefix="/auth", tags=["Xác thực"])
 
@@ -34,9 +33,7 @@ router = APIRouter(prefix="/auth", tags=["Xác thực"])
         InvalidCredentialsError(), status.HTTP_422_UNPROCESSABLE_CONTENT, TOO_MANY_ATTEMPTS_EXAMPLE
     ),
 )
-async def login(
-    form: Annotated[OAuth2PasswordRequestForm, Depends()], auth_service: AuthServiceDep
-) -> TokenResponse:
+async def login(form: Annotated[LoginForm, Form()], auth_service: AuthServiceDep) -> TokenResponse:
     return await auth_service.login(form.username, form.password)
 
 
