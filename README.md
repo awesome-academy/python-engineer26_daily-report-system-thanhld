@@ -212,4 +212,5 @@ Lệnh quản trị (CLI Typer) chạy trong container bằng `docker compose ex
 | [docs/api-design.md](docs/api-design.md) | Quy ước API, mã lỗi, 41 endpoint, Swagger và Postman |
 | [docs/postman/](docs/postman/) | Postman collection gọi mọi endpoint |
 | [docs/security.md](docs/security.md) | Rà soát bảo mật theo OWASP API Top 10, checklist khi thêm endpoint, khi triển khai |
+| [docs/demo.md](docs/demo.md) | Kịch bản demo theo vai, câu hỏi thường gặp |
 | [docs/progress/](docs/progress/) | Kế hoạch 10 ngày, báo cáo từng ngày |
