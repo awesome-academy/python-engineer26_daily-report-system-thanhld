@@ -8,7 +8,6 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
@@ -16,7 +15,7 @@ from app.core.config import get_settings
 from app.core.constants import TASK_MAX_RETRIES
 from app.core.workdays import is_working_day
 from app.modules.departments.models import Department
-from app.modules.notifications.models import EmailLog, EmailStatus, EmailTemplate
+from app.modules.notifications.models import EmailStatus, EmailTemplate
 from app.modules.notifications.rendering import RenderedEmail
 from app.modules.reports import monthly_summary, tasks
 from app.modules.reports.repository import MonthlySummaryRepository
@@ -24,7 +23,7 @@ from app.modules.reports.tasks import send_monthly_summaries
 from app.modules.users.models import User, UserRole
 from app.worker import celery_app, retry_countdown
 from tests.factories import create_department, create_report, create_user
-from tests.helpers import FakeMailer, capture_module_logs
+from tests.helpers import FakeMailer, capture_module_logs, email_logs
 
 pytestmark = pytest.mark.usefixtures("clean_after")
 
@@ -182,16 +181,6 @@ async def make_scene(engine: AsyncEngine) -> Scene:
 
 def summary_lines(email: RenderedEmail) -> list[str]:
     return [line for line in email.text.splitlines() if line.startswith("- ")]
-
-
-async def email_logs(engine: AsyncEngine) -> list[tuple[str, EmailStatus, str, str | None]]:
-    async with AsyncSession(engine) as session:
-        rows = await session.execute(
-            select(
-                EmailLog.to_email, EmailLog.status, EmailLog.template, EmailLog.dedup_key
-            ).order_by(EmailLog.id)
-        )
-        return [(to_email, status, template, key) for to_email, status, template, key in rows]
 
 
 def sent_logs(scene: Scene, indexes: list[int]) -> list[tuple[str, EmailStatus, str, str | None]]:

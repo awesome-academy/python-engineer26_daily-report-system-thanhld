@@ -69,8 +69,10 @@ Phụ thuộc một chiều: router → service → repository → model. Module
 │   └── modules/               # auth, users, departments, reports, notifications
 └── tests/
     ├── conftest.py            # DB test, rollback sau mỗi test, HTTP client
-    ├── unit/
-    └── api/
+    ├── unit/                  # hàm thuần, schema, cấu hình
+    ├── db/                    # service, repository, Celery task, CLI trên DB thật
+    ├── api/                   # từng endpoint qua httpx AsyncClient
+    └── e2e/                   # luồng chính qua API: commit thật, task qua hàng đợi Redis
 ```
 
 ## Luồng tạo báo cáo (Ngày 5, 7)

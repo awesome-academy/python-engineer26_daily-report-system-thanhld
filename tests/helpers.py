@@ -15,11 +15,11 @@ import jwt
 import pytest
 import structlog
 from httpx import AsyncClient, Response
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
 from redis.asyncio import Redis
-from sqlalchemy import event
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import event, select
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from sqlalchemy.orm import Session
 from structlog.testing import LogCapture
 from typer.testing import CliRunner, Result
@@ -30,9 +30,11 @@ from app.core.constants import BIGINT_MAX
 from app.core.exceptions import AppError, ForbiddenError, UnauthorizedError
 from app.modules.departments.exceptions import DepartmentNotFoundError
 from app.modules.departments.models import Department
+from app.modules.notifications.models import EmailLog, EmailStatus
 from app.modules.notifications.rendering import RenderedEmail
 from app.modules.users.importing import COLUMNS as USER_IMPORT_COLUMNS
 from app.modules.users.models import UserRole
+from app.worker import celery_app
 from tests.factories import DEFAULT_PASSWORD, auth_headers, create_department, create_user
 
 LOGIN_URL = "/api/v1/auth/login"
@@ -67,6 +69,13 @@ def user_import_file(*rows: Sequence[object]) -> bytes:
     return xlsx_file([USER_IMPORT_HEADER, *rows])
 
 
+def load_sheet(response: Response) -> Worksheet:
+    """Sheet đầu của file .xlsx mà API trả về (export báo cáo)."""
+    sheet = load_workbook(BytesIO(response.content)).active
+    assert isinstance(sheet, Worksheet)
+    return sheet
+
+
 @dataclass(frozen=True)
 class QueuedTask:
     name: str
@@ -82,6 +91,34 @@ async def queued_tasks(redis: Redis) -> list[QueuedTask]:
         args, kwargs, _ = json.loads(base64.b64decode(message["body"]))
         tasks.append(QueuedTask(message["headers"]["task"], args, kwargs))
     return tasks
+
+
+async def run_queued_tasks(redis: Redis) -> list[QueuedTask]:
+    """Làm thay worker: lấy hết task khỏi hàng đợi, chạy lần lượt theo thứ tự đẩy vào.
+
+    Task chạy ngay trong test (`apply`) với tham số đã qua Redis (JSON), đọc DB bằng session đồng
+    bộ như trong worker. Task lỗi thì ném lỗi ra test. Trả các task đã chạy để kiểm tra hàng đợi.
+    """
+    tasks = await queued_tasks(redis)
+    await redis.delete(CELERY_QUEUE)
+    for task in tasks:
+        celery_app.tasks[task.name].apply(args=tuple(task.args), kwargs=task.kwargs, throw=True)
+    return tasks
+
+
+async def email_logs(engine: AsyncEngine) -> list[tuple[str, EmailStatus, str, str | None]]:
+    """Nhật ký gửi email (người nhận, trạng thái, template, `dedup_key`) theo thứ tự gửi.
+
+    Đọc bằng kết nối riêng nên chỉ thấy dữ liệu đã commit, như task chạy trong worker ghi.
+    Chỉ email gửi một lần (thống kê tháng S3) có `dedup_key`; email khác là `None`.
+    """
+    async with AsyncSession(engine) as session:
+        rows = await session.execute(
+            select(
+                EmailLog.to_email, EmailLog.status, EmailLog.template, EmailLog.dedup_key
+            ).order_by(EmailLog.id)
+        )
+        return [(to_email, status, template, key) for to_email, status, template, key in rows]
 
 
 @dataclass

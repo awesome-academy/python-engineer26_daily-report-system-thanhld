@@ -121,7 +121,16 @@ Celery không hỗ trợ pool mặc định (prefork) trên Windows: chạy work
 make check      # ruff, mypy strict, pytest + coverage (giống CI)
 ```
 
-Test chạy trên PostgreSQL thật, database riêng `daily_report_test` (tự tạo nếu chưa có), cần `make services` trước. Mỗi test rollback khi kết thúc.
+Test chạy trên PostgreSQL thật, database riêng `daily_report_test` (tự tạo nếu chưa có), cần `make services` trước.
+
+| Thư mục | Nội dung |
+| --- | --- |
+| `tests/unit/` | Hàm thuần, schema, cấu hình |
+| `tests/db/` | Service, repository, Celery task, lệnh CLI trên DB thật |
+| `tests/api/` | Từng endpoint qua httpx `AsyncClient`, rollback khi kết thúc test |
+| `tests/e2e/` | Luồng nghiệp vụ trọn vẹn qua API: commit thật, task đi qua hàng đợi Redis rồi chạy như worker, chỉ thay SMTP bằng hộp thư giả. Xóa sạch dữ liệu sau mỗi test |
+
+Chạy riêng một nhóm: `uv run pytest tests/e2e`.
 
 ## Lệnh hay dùng
 
