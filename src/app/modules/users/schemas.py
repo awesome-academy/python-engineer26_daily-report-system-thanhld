@@ -26,7 +26,7 @@ from app.core.constants import (
 )
 from app.core.pagination import PageParams
 from app.core.storage import FileStorage
-from app.core.validators import Id, Keyword, NoNul, reject_null
+from app.core.validators import Id, Keyword, NoInvisible, NoNul, reject_null
 from app.modules.departments.schemas import DEPARTMENT_BRIEF_EXAMPLE, DepartmentBriefOut
 from app.modules.users.models import User, UserRole
 from app.seed_data import (
@@ -61,6 +61,7 @@ FullName = Annotated[
         strip_whitespace=True, min_length=FULL_NAME_MIN_LENGTH, max_length=FULL_NAME_MAX_LENGTH
     ),
     NoNul,
+    NoInvisible,
 ]
 Phone = Annotated[
     str,

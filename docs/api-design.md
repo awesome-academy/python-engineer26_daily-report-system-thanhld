@@ -54,15 +54,19 @@ Lỗi validate (422) có `details` là danh sách `{ "field": "body.report_date"
 | HTTP | Khi nào |
 | --- | --- |
 | 200, 201, 204 | Thành công |
+| 202 | Đã nhận, việc chạy nền (gửi lại link đặt mật khẩu) |
+| 400 | Đúng định dạng nhưng không thực hiện được: mật khẩu hiện tại sai, link đặt mật khẩu không dùng được, admin tự khóa, đổi role, xóa chính mình. Request hỏng không đọc được (multipart thiếu boundary) trả `BAD_REQUEST` |
 | 401 | Chưa đăng nhập, token hết hạn hoặc đã thu hồi |
 | 403 | Sai role |
 | 404 | Không tồn tại hoặc ngoài phạm vi quyền |
+| 405 | Phương thức HTTP không có ở đường dẫn này |
 | 409 | Trùng dữ liệu |
 | 413 | Body hoặc file tải lên quá dung lượng |
 | 415 | Loại file tải lên không được hỗ trợ |
 | 422 | Dữ liệu không hợp lệ |
 | 429 | Quá số lần thử |
 | 500 | Lỗi hệ thống |
+| 503 | DB hoặc Redis không sẵn sàng (`/health`), không đẩy được task (gửi lại link đặt mật khẩu) |
 
 ### Mã lỗi
 
@@ -71,6 +75,7 @@ Lỗi validate (422) có `details` là danh sách `{ "field": "body.report_date"
 | `VALIDATION_ERROR` | 422 | 1 |
 | `NOT_FOUND` | 404 | 1 |
 | `METHOD_NOT_ALLOWED` | 405 | 1 |
+| `BAD_REQUEST` | 400 | 1 |
 | `INTERNAL_ERROR` | 500 | 1 |
 | `UNAUTHORIZED` | 401 | 1 |
 | `FORBIDDEN` | 403 | 3 |
@@ -148,6 +153,7 @@ Hồ sơ cá nhân:
 
 - `PATCH /me` cập nhật từng phần: field không gửi thì giữ nguyên, `null` xóa `phone`, `date_of_birth` (`full_name` bắt buộc, không nhận `null`). Gửi `email`, `role` hay field lạ trả 422, không bỏ qua âm thầm.
 - `phone`: chỉ chữ số, có thể có `+` đầu, 9 đến 15 chữ số. `date_of_birth`: ngày trong quá khứ.
+- `full_name` (hồ sơ, admin tạo và sửa user, import Excel, `create-admin`): 1 đến 100 ký tự sau khi trim. Chứa ký tự điều khiển (tab, xuống dòng, NUL) hoặc ký tự định dạng vô hình (khoảng trắng độ rộng 0, BOM, ký tự đảo chiều văn bản; nhóm Unicode Cc, Cf) thì trả 422 ở field đó: `strip()` không bỏ các ký tự này, tên chỉ gồm chúng trông như rỗng trong danh sách, email, file Excel, còn ký tự đảo chiều làm tên hiển thị sai thứ tự.
 - Mật khẩu người dùng tự chọn (đổi mật khẩu, `create-admin`, đặt mật khẩu lần đầu): 8 đến 128 ký tự, có chữ thường, chữ hoa, chữ số và ký tự đặc biệt. Không đạt thì 422 ở field đó. Mật khẩu khi đăng nhập và mật khẩu hiện tại không xét quy tắc này.
 - `PUT /me/password` body `current_password`, `new_password` (phải khác mật khẩu hiện tại). Sai mật khẩu hiện tại trả 400 `CURRENT_PASSWORD_INCORRECT` (không dùng 401 để client không hiểu nhầm là hết phiên), đếm chung với đăng nhập sai nên quá 5 lần trong 15 phút trả 429.
 - `GET /me`, `PATCH /me`, `PUT /me/avatar` trả cùng một dạng hồ sơ, có `department` (`id`, `code`, `name` của bộ phận mình là thành viên, cùng dạng `department` của chi tiết báo cáo; `null` khi chưa thuộc bộ phận nào) và `avatar_url` (`null` khi chưa có ảnh). Bộ phận manager được gán quản lý xem ở `GET /manager/departments`.
@@ -255,7 +261,7 @@ Export Excel báo cáo theo ngày (M5):
 Bộ phận (A2):
 
 - `code` 1 đến 20 ký tự, chỉ chữ cái không dấu (ASCII), chữ số, `-`, `_`; trim và lưu chữ hoa (`qa` thành `QA`). Ký tự như `ß`, `ı` bị từ chối (422), không bị đổi ngầm thành `SS`, `I`. Không trùng với bộ phận chưa bị xóa, không phân biệt hoa thường: trùng trả 409 `DEPARTMENT_CODE_ALREADY_EXISTS`, `details` là `{"field": "code"}`. Mã của bộ phận đã xóa dùng lại được.
-- `name` 1 đến 100 ký tự, `description` tối đa 1000 ký tự, cả hai được trim; `description` rỗng sau khi trim lưu thành `null`. `name`, `description`, `keyword` chứa ký tự NUL (`\x00`) trả 422 (PostgreSQL không lưu được ký tự này).
+- `name` 1 đến 100 ký tự, `description` tối đa 1000 ký tự, cả hai được trim; `description` rỗng sau khi trim lưu thành `null`. `name`, `description`, `keyword` chứa ký tự NUL (`\x00`) trả 422 (PostgreSQL không lưu được ký tự này). `name` cũng không nhận ký tự điều khiển, ký tự vô hình như `full_name` (mục Hồ sơ cá nhân).
 - `GET /admin/departments`: `keyword` tìm trong mã hoặc tên, không phân biệt hoa thường, không dấu (`ky thuat` khớp `Kỹ thuật`); sắp theo mã. Bộ phận đã xóa không hiện ở danh sách, xem, sửa, xóa (404, `details` là `{"field": "department_id"}`).
 - `department_id` trên URL phải từ 1 đến 2^63 − 1 (phạm vi khóa chính bigint), ngoài phạm vi trả 422 ở field `path.department_id`.
 - `POST`, `PATCH` gửi field lạ trả 422, không bỏ qua âm thầm. `PATCH` cập nhật từng phần như `PATCH /me`: `null` xóa `description`; `code`, `name` không nhận `null`. `PATCH` và `DELETE` khóa dòng bộ phận: sửa đúng lúc bộ phận đang bị xóa thì chờ lệnh xóa xong rồi nhận 404.

@@ -1,11 +1,12 @@
 """Validator và kiểu Pydantic dùng chung cho schema của các module."""
 
+import unicodedata
 from typing import Annotated
 
 from pydantic import AfterValidator, Field, StringConstraints
 
 from app.core import messages
-from app.core.constants import BIGINT_MAX, ID_MIN, KEYWORD_MAX_LENGTH
+from app.core.constants import BIGINT_MAX, ID_MIN, INVISIBLE_UNICODE_CATEGORIES, KEYWORD_MAX_LENGTH
 
 
 def reject_null[T](value: T | None) -> T:
@@ -28,6 +29,22 @@ def reject_nul(value: str) -> str:
 
 # Gắn vào mọi kiểu chuỗi tự do người dùng nhập rồi đi xuống DB (tên, mô tả, từ khóa tìm kiếm).
 NoNul = AfterValidator(reject_nul)
+
+
+def reject_invisible(value: str) -> str:
+    """Tên hiển thị một dòng không chứa ký tự điều khiển, ký tự định dạng vô hình.
+
+    `strip()` không bỏ các ký tự này: tên chỉ gồm khoảng trắng độ rộng 0 vẫn đủ độ dài tối thiểu
+    nhưng hiện như rỗng ở danh sách, email ("Xin chào ,"), file Excel; ký tự đảo chiều văn bản làm
+    tên hiển thị sai thứ tự (giả được tên khác); ký tự vô hình giữa tên làm tìm kiếm không khớp.
+    Không dùng cho nội dung nhiều dòng (báo cáo, mô tả), nơi xuống dòng là hợp lệ.
+    """
+    if any(unicodedata.category(char) in INVISIBLE_UNICODE_CATEGORIES for char in value):
+        raise ValueError(messages.INVISIBLE_CHARACTER)
+    return value
+
+
+NoInvisible = AfterValidator(reject_invisible)
 
 
 def blank_to_none(value: str) -> str | None:

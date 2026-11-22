@@ -5,6 +5,10 @@ Lỗi nghiệp vụ (404, 409…) khai message trong class lỗi của module, k
 
 NOT_NULL = "Không được để trống."
 NUL_CHARACTER = "Không được chứa ký tự NUL (\\x00)."
+INVISIBLE_CHARACTER = (
+    "Không được chứa ký tự điều khiển hoặc ký tự vô hình "
+    "(khoảng trắng độ rộng 0, BOM, ký tự đảo chiều văn bản)."
+)
 PASSWORD_TOO_WEAK = (
     "Mật khẩu phải có chữ thường, chữ hoa, chữ số và ký tự đặc biệt; còn thiếu: {missing}."  # noqa: S105 (thông báo lỗi, không phải mật khẩu)
 )

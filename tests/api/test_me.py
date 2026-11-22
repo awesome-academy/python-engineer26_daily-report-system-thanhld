@@ -226,13 +226,23 @@ async def test_update_me_cannot_change_email_or_role(
         ({"full_name": None}, "body.full_name"),
         ({"full_name": "   "}, "body.full_name"),
         ({"full_name": "An\x00"}, "body.full_name"),
+        ({"full_name": "\ufeff\u200b"}, "body.full_name"),
+        ({"full_name": "An\u202eneuyg"}, "body.full_name"),
         ({"phone": "09-1234-5678"}, "body.phone"),
         (
             {"date_of_birth": (datetime.now(UTC) + timedelta(days=2)).date().isoformat()},
             "body.date_of_birth",
         ),
     ],
-    ids=["name-null", "name-blank", "name-with-nul", "phone-format", "birthday-in-future"],
+    ids=[
+        "name-null",
+        "name-blank",
+        "name-with-nul",
+        "name-only-invisible",
+        "name-with-bidi-override",
+        "phone-format",
+        "birthday-in-future",
+    ],
 )
 async def test_update_me_rejects_invalid_values(
     client: AsyncClient, db_session: AsyncSession, body: dict[str, Any], field: str
