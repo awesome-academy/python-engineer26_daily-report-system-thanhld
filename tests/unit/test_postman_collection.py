@@ -11,6 +11,8 @@ from typing import Any
 import pytest
 from fastapi import FastAPI
 
+from app.seed_data import EXAMPLE_ADMIN, EXAMPLE_EMPLOYEE, EXAMPLE_MANAGER, EXAMPLE_PASSWORD
+
 COLLECTION_PATH = (
     Path(__file__).resolve().parents[2]
     / "docs"
@@ -83,3 +85,15 @@ def test_role_endpoints_send_token_of_that_role(collection: dict[str, Any]) -> N
             wrong.append(f"{item['name']}: {token}")
 
     assert wrong == []
+
+
+def test_collection_logs_in_with_seed_accounts(collection: dict[str, Any]) -> None:
+    # Collection chạy trên dữ liệu seed: đổi tài khoản mẫu mà quên collection thì đăng nhập 401.
+    variables = {variable["key"]: variable["value"] for variable in collection["variable"]}
+
+    assert {key: variables[key] for key in ("adminEmail", "managerEmail", "userEmail")} == {
+        "adminEmail": EXAMPLE_ADMIN.email,
+        "managerEmail": EXAMPLE_MANAGER.email,
+        "userEmail": EXAMPLE_EMPLOYEE.email,
+    }
+    assert variables["password"] == EXAMPLE_PASSWORD
