@@ -53,6 +53,10 @@ EMAIL_MAX_LENGTH = 255
 PASSWORD_HASH_MAX_LENGTH = 255
 FULL_NAME_MIN_LENGTH = 1
 FULL_NAME_MAX_LENGTH = 100
+# Nhóm ký tự Unicode không được có trong tên hiển thị một dòng (họ tên, tên bộ phận): Cc là ký tự
+# điều khiển (NUL, tab, xuống dòng, mã màu terminal), Cf là ký tự định dạng vô hình (khoảng trắng
+# độ rộng 0 U+200B, BOM U+FEFF, đảo chiều văn bản U+202E).
+INVISIBLE_UNICODE_CATEGORIES = frozenset({"Cc", "Cf"})
 PHONE_MAX_LENGTH = 20
 # Số điện thoại: chỉ chữ số, có thể có dấu + đầu, từ 9 đến 15 chữ số (E.164 tối đa 15).
 PHONE_MIN_DIGITS = 9

@@ -284,12 +284,21 @@ async def test_create_user_rejects_unknown_department(
     [
         ({"email": "khong-phai-email"}, "body.email"),
         ({"full_name": "  "}, "body.full_name"),
+        ({"full_name": "\u200b"}, "body.full_name"),
         ({"phone": "12ab"}, "body.phone"),
         ({"role": "BOSS"}, "body.role"),
         ({"department_id": BIGINT_MAX + 1}, "body.department_id"),
         ({"password": DEFAULT_PASSWORD}, "body.password"),
     ],
-    ids=["email", "full-name", "phone", "role", "department-id-out-of-range", "password"],
+    ids=[
+        "email",
+        "full-name",
+        "full-name-zero-width-space",
+        "phone",
+        "role",
+        "department-id-out-of-range",
+        "password",
+    ],
 )
 async def test_create_user_rejects_invalid_body(
     client: AsyncClient, headers: dict[str, str], payload: dict[str, Any], field: str

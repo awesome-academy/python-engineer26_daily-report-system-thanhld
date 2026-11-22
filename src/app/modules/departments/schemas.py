@@ -24,7 +24,15 @@ from app.core.constants import (
     DEPARTMENT_NAME_MIN_LENGTH,
 )
 from app.core.pagination import PageParams
-from app.core.validators import Id, Keyword, NoNul, blank_to_none, drop_duplicates, reject_null
+from app.core.validators import (
+    Id,
+    Keyword,
+    NoInvisible,
+    NoNul,
+    blank_to_none,
+    drop_duplicates,
+    reject_null,
+)
 from app.modules.users.models import UserRole
 from app.seed_data import (
     EXAMPLE_DEPARTMENT,
@@ -64,6 +72,7 @@ DepartmentName = Annotated[
         max_length=DEPARTMENT_NAME_MAX_LENGTH,
     ),
     NoNul,
+    NoInvisible,
 ]
 DepartmentDescription = Annotated[
     str,

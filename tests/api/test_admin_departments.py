@@ -168,6 +168,8 @@ async def test_create_department_reuses_code_of_deleted_department(
         ({"code": "DEV", "name": "Phòng\x00"}, "body.name"),
         ({"code": "DEV", "name": "Phòng", "description": "Mô tả\x00"}, "body.description"),
         ({"code": "DEV", "name": "Phòng", "manager_id": 1}, "body.manager_id"),
+        ({"code": "DEV", "name": "\u200b"}, "body.name"),
+        ({"code": "DEV", "name": "Phòng \u202eTKV"}, "body.name"),
     ],
     ids=[
         "missing-code",
@@ -185,6 +187,8 @@ async def test_create_department_reuses_code_of_deleted_department(
         "name-with-nul",
         "description-with-nul",
         "unknown-field",
+        "name-zero-width-space",
+        "name-with-bidi-override",
     ],
 )
 async def test_create_department_rejects_invalid_data(
