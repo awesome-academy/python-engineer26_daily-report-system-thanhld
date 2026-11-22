@@ -228,7 +228,7 @@ Export Excel báo cáo theo ngày (M5):
 | DELETE | `/admin/users/{id}` | A1 | Xóa mềm, thu hồi mọi phiên |
 | POST | `/admin/users/{id}/setup-link` | S2 | Gửi lại email link đặt mật khẩu |
 | GET | `/admin/users/import-template` | A4 | Tải file Excel mẫu |
-| POST | `/admin/users/import` | A4 | Upload .xlsx |
+| POST | `/admin/users/import` | A4, S2 | Upload .xlsx, tạo tất cả hoặc không tạo ai, gửi link đặt mật khẩu |
 | GET | `/admin/departments` | A2 | `keyword`, phân trang |
 | POST | `/admin/departments` | A2 | |
 | GET | `/admin/departments/{id}` | A2 | |
@@ -263,6 +263,17 @@ Quản lý user (A1):
 - Luôn còn ít nhất một admin đăng nhập được: khóa, hạ role, xóa admin cuối cùng trả 409 `LAST_ACTIVE_ADMIN`. Chỉ chặn tự sửa mình là chưa đủ, vì hai admin có thể khóa nhau cùng lúc. Các lệnh này khóa dòng mọi admin đang hoạt động (theo thứ tự id) trước khi kiểm tra, nên chạy lần lượt: lệnh sau đếm theo kết quả của lệnh trước.
 - Manager đang quản lý bộ phận chưa xóa không đổi role, không khóa, không xóa được: 409 `USER_MANAGES_DEPARTMENTS`. Gỡ khỏi bộ phận (A3) trước, để bộ phận không còn liên kết tới người không còn là manager.
 
+Import nhân viên từ Excel (A4):
+
+- `GET /admin/users/import-template` trả file `mau-import-nhan-vien.xlsx`. Sheet "Nhân viên" chỉ có dòng tiêu đề `Email`, `Họ tên`, `Số điện thoại`, `Ngày sinh`, `Mã bộ phận`, `Role` (Q10); cột số điện thoại định dạng chữ để Excel giữ số 0 đầu, cột ngày sinh định dạng ngày, cột role chọn từ danh sách. Sheet "Hướng dẫn" ghi quy tắc từng cột.
+- `POST /admin/users/import` nhận `multipart/form-data`, field `file`, file .xlsx tối đa 2 MB. Đọc sheet đầu tiên: dòng 1 phải đúng tiêu đề của file mẫu (không phân biệt hoa thường, cột thừa bên phải bỏ qua), mỗi dòng sau là một tài khoản, dòng trống bỏ qua, tối đa 1.000 dòng có dữ liệu.
+- Mỗi dòng theo quy tắc của `POST /admin/users` (chưa có mật khẩu, role mặc định `USER`, nhận cả `MANAGER`, `ADMIN`), bộ phận ghi bằng mã thay cho id: không phân biệt hoa thường, bộ phận đã xóa coi như không có. Ô chữ được trim. Số điện thoại phải là ô chữ: ô số đã mất số 0 đầu nên bị từ chối. Ngày sinh là ô ngày, hoặc chữ `dd/mm/yyyy`, `yyyy-mm-dd`. Role không phân biệt hoa thường. Ô công thức lấy giá trị Excel đã tính lúc lưu file.
+- Kiểm tra cả file rồi mới ghi, trong một transaction: có lỗi thì không tạo tài khoản nào, trả 422 `IMPORT_VALIDATION_FAILED`, `details` là danh sách `{"row": 5, "field": "department_code", "message": "..."}` sắp theo dòng rồi theo cột. `row` là số dòng như trên Excel; `field` là tên cột (`email`, `full_name`, `phone`, `date_of_birth`, `department_code`, `role`), `null` khi lỗi thuộc cả file. Một lần trả mọi lỗi: ô sai quy tắc, email trùng một dòng trước đó trong file (không phân biệt hoa thường), email đã thuộc tài khoản chưa xóa, mã bộ phận không có. Dòng có ô sai vẫn được xét trùng email, xét mã bộ phận ở các ô hợp lệ.
+- Lỗi của cả file chỉ trả một lỗi, không xét từng dòng: tiêu đề sai (mỗi cột sai một lỗi ở dòng 1), không có dòng dữ liệu (dòng 2), quá 1.000 dòng (ở dòng có dữ liệu thứ 1.001).
+- Quá 2 MB trả 413 `FILE_TOO_LARGE` như ảnh đại diện. File .xlsx là file zip: tổng dung lượng giải nén quá 10 MB cũng trả 413, `details` là `{"field": "file", "max_uncompressed_bytes": 10485760}`, để file nén nhỏ giải nén ra rất lớn không làm đầy RAM. Không phải .xlsx (file khác đổi đuôi, file hỏng) trả 415 `UNSUPPORTED_FILE_TYPE`, `details.allowed_types` là MIME type của .xlsx. Thiếu field `file` trả 422.
+- Thành công trả 201 với `created_count` và `users` (cùng dạng `GET /admin/users/{id}`, theo thứ tự dòng). Bộ phận được khóa `FOR SHARE` đến khi lưu xong như gán bộ phận ở A1. Import khác hay `POST /admin/users` cùng email chạy song song: request lưu sau trả 409 `EMAIL_ALREADY_EXISTS`, không tạo ai.
+- Sau commit đẩy task `auth.send_account_setup_email` cho từng tài khoản (S2), theo thứ tự dòng. Redis lỗi thì dừng ở lần lỗi đầu (mỗi lần thử chờ timeout, thử tiếp cả 1.000 lần là treo request), vẫn trả 201, log `task_enqueue_failed` và `account_setup_emails_not_queued` kèm id các user chưa được gửi; admin gửi lại bằng `POST /admin/users/{id}/setup-link`.
+
 Manager của bộ phận (A3):
 
 - Một bộ phận có nhiều manager, một manager quản lý nhiều bộ phận (Q2). Manager không cần là thành viên bộ phận mình quản lý.
@@ -279,7 +290,7 @@ Manager của bộ phận (A3):
 | --- | --- | --- | --- |
 | GET | `/health` | — | Kiểm tra DB, Redis. 200 khi ổn, 503 khi có thành phần lỗi |
 | Event | `reports.send_report_notification` | S1 | Sau khi tạo báo cáo (`POST /me/reports`) |
-| Event | `auth.send_account_setup_email` | S2 | Sau khi admin tạo user (`POST /admin/users`), sau này cả import. Task chỉ nhận `user_id`; worker sinh token, xóa link cũ, gửi link mới. User đã bị xóa, bị khóa, đã có mật khẩu thì bỏ qua (log `account_setup_email_skipped`) |
+| Event | `auth.send_account_setup_email` | S2 | Sau khi admin tạo user (`POST /admin/users`) hoặc import (`POST /admin/users/import`), mỗi user một task. Task chỉ nhận `user_id`; worker sinh token, xóa link cũ, gửi link mới. User đã bị xóa, bị khóa, đã có mật khẩu thì bỏ qua (log `account_setup_email_skipped`) |
 | Cron | `send_monthly_summary` | S3 | 08:00 ngày 1 hằng tháng |
 
 ## Thứ tự khai báo route
