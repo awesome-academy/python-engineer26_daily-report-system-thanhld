@@ -20,6 +20,7 @@ from app.core.constants import (
     LOCAL_STORAGE_URL_PATH,
     MAX_PAGE_SIZE,
     REQUEST_BODY_MAX_BYTES,
+    REQUEST_BODY_MAX_MB,
     StorageBackend,
 )
 from app.core.database import engine
@@ -63,6 +64,8 @@ Mỗi endpoint có ví dụ cho từng mã lỗi ở phần Responses.
 - Lỗi validate (422): `details` là danh sách `{{"field": ..., "message": ...}}`, `field` có \
 tiền tố vị trí (`body.`, `query.`, `path.`). Ví dụ 422 giống nhau ở mọi endpoint, chỉ minh họa \
 format.
+- Body của mọi request tối đa {REQUEST_BODY_MAX_MB} MB, lớn hơn thì trả 413 `REQUEST_TOO_LARGE` \
+trước khi tới endpoint (nên không nằm trong ví dụ lỗi của từng endpoint).
 - Danh sách có phân trang: query `page`, `page_size` (tối đa {MAX_PAGE_SIZE}), response \
 `{{"data": [...], "meta": {{"page": ..., "page_size": ..., "total": ...}}}}`.
 - Ngày báo cáo theo giờ Việt Nam (`2026-11-09`); thời điểm theo UTC, ISO 8601 \
