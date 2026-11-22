@@ -214,6 +214,9 @@ EMAIL_DATETIME_FORMAT = "%H:%M %d/%m/%Y"
 MONTHLY_SUMMARY_DEDUP_KEY = "monthly:{month}:dept:{department_id}:user:{user_id}"
 # Celery Beat chạy task thống kê tháng trước lúc MONTHLY_SUMMARY_TIME ngày
 # MONTHLY_SUMMARY_DAY_OF_MONTH hằng tháng, theo giờ Việt Nam (timezone của Celery là
-# Settings.timezone).
+# Settings.timezone). Cùng giờ MONTHLY_SUMMARY_CATCH_UP_DAYS ngày kế tiếp chạy lại để gửi bù email
+# còn thiếu (lượt chính bị lỡ vì Redis lỗi, SMTP vẫn lỗi sau mọi lần thử lại): email đã gửi có
+# dedup_key nên không gửi lại.
 MONTHLY_SUMMARY_DAY_OF_MONTH = 1
+MONTHLY_SUMMARY_CATCH_UP_DAYS = 2
 MONTHLY_SUMMARY_TIME = time(8, 0)

@@ -19,6 +19,7 @@ from sqlalchemy import exc as sa_exc
 from app import models as _models  # noqa: F401 (nạp đủ model trước khi SQLAlchemy nối quan hệ)
 from app.core.config import get_settings
 from app.core.constants import (
+    MONTHLY_SUMMARY_CATCH_UP_DAYS,
     MONTHLY_SUMMARY_DAY_OF_MONTH,
     MONTHLY_SUMMARY_TASK,
     MONTHLY_SUMMARY_TIME,
@@ -66,13 +67,19 @@ celery_app.conf.update(
     timezone=settings.timezone,
     enable_utc=True,
     beat_schedule={
-        # Thống kê báo cáo tháng trước (S3). Gọi task theo tên: module task import app này.
+        # Thống kê báo cáo tháng trước (S3): lượt chính ngày 1, các ngày sau chỉ gửi bù email còn
+        # thiếu. Gọi task theo tên: module task import app này.
         "monthly-summary": {
             "task": MONTHLY_SUMMARY_TASK,
             "schedule": crontab(
                 minute=MONTHLY_SUMMARY_TIME.minute,
                 hour=MONTHLY_SUMMARY_TIME.hour,
-                day_of_month=MONTHLY_SUMMARY_DAY_OF_MONTH,
+                day_of_month=list(
+                    range(
+                        MONTHLY_SUMMARY_DAY_OF_MONTH,
+                        MONTHLY_SUMMARY_DAY_OF_MONTH + MONTHLY_SUMMARY_CATCH_UP_DAYS + 1,
+                    )
+                ),
             ),
         },
     },

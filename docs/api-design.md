@@ -291,7 +291,7 @@ Manager của bộ phận (A3):
 | GET | `/health` | — | Kiểm tra DB, Redis. 200 khi ổn, 503 khi có thành phần lỗi |
 | Event | `reports.send_report_notification` | S1 | Sau khi tạo báo cáo (`POST /me/reports`) |
 | Event | `auth.send_account_setup_email` | S2 | Sau khi admin tạo user (`POST /admin/users`) hoặc import (`POST /admin/users/import`), mỗi user một task. Task chỉ nhận `user_id`; worker sinh token, xóa link cũ, gửi link mới. User đã bị xóa, bị khóa, đã có mật khẩu thì bỏ qua (log `account_setup_email_skipped`) |
-| Cron | `reports.send_monthly_summaries` | S3 | Celery Beat 08:00 ngày 1 hằng tháng (giờ Việt Nam), thống kê tháng trước. Gửi ngay hoặc gửi bù: lệnh `daily-report send-monthly-summary [--month YYYY-MM]`; email đã gửi (`email_logs.dedup_key`) thì bỏ qua |
+| Cron | `reports.send_monthly_summaries` | S3 | Celery Beat 08:00 ngày 1 hằng tháng (giờ Việt Nam), thống kê tháng trước; cùng giờ ngày 2, 3 chạy lại để gửi bù email còn thiếu. Gửi ngay hoặc gửi bù: lệnh `daily-report send-monthly-summary [--month YYYY-MM]`; email đã gửi (`email_logs.dedup_key`) thì bỏ qua |
 
 ## Thứ tự khai báo route
 

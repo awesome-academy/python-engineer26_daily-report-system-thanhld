@@ -81,7 +81,7 @@ services:
     volumes:
       - ./src:/app/src
       # Lần chạy cuối của từng lịch: beat không chạy lúc tới giờ thì lần khởi động sau chạy bù một
-      # lần. Không chạy bù nếu lúc đó Redis lỗi; khi ấy gửi bù bằng lệnh send-monthly-summary.
+      # lần. Không chạy bù nếu lúc đó Redis lỗi; lượt ngày 2, 3 của lịch thống kê tháng gửi bù.
       - beat-data:/app/beat
     depends_on:
       redis:

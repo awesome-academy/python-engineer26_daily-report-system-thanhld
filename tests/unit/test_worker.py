@@ -21,6 +21,9 @@ from app.modules.notifications.tasks import send_email
 from app.modules.reports.tasks import send_monthly_summaries, send_report_notification
 from app.worker import celery_app, retry_countdown
 
+# Giờ Việt Nam: lịch của Beat tính theo timezone này.
+VIETNAM = ZoneInfo(get_settings().timezone)
+
 
 def test_celery_uses_redis_broker_with_json_and_timeouts() -> None:
     conf = celery_app.conf
@@ -49,27 +52,39 @@ def test_tasks_are_registered_with_retry_limit(task: Task[Any, Any]) -> None:
     assert registered.max_retries == TASK_MAX_RETRIES
 
 
-def test_beat_runs_monthly_summary_at_8am_on_first_day_vietnam_time(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    celery_app.loader.import_default_modules()
+def test_beat_entry_calls_monthly_summary_task_without_args() -> None:
     entry = celery_app.conf.beat_schedule["monthly-summary"]
-    schedule = entry["schedule"]
-    zone = ZoneInfo(get_settings().timezone)
 
     # Beat gọi task theo tên: tên sai thì tới giờ worker báo task không tồn tại.
     assert entry["task"] == MONTHLY_SUMMARY_TASK == send_monthly_summaries.name
-    assert MONTHLY_SUMMARY_TASK in celery_app.tasks
+    # Không tham số: task tự tính tháng trước theo ngày chạy.
     assert entry.get("args", ()) == ()
-    assert isinstance(schedule, crontab)
+    assert isinstance(entry["schedule"], crontab)
     # Không có result backend: không để Beat tự thêm lịch dọn kết quả (celery.backend_cleanup).
     assert celery_app.conf.result_expires is None
-    # Lần chạy kế tiếp sau 08:00 ngày 1/11 là 08:00 ngày 1/12 giờ Việt Nam: Celery tính lịch theo
-    # timezone của app, để UTC thì sẽ là 15:00 giờ Việt Nam.
-    now = datetime(2026, 11, 1, 8, 0, 1, tzinfo=zone)
+
+
+@pytest.mark.parametrize(
+    ("last_run", "next_run"),
+    [
+        # Lượt chính 08:00 ngày 1, rồi 08:00 ngày 2, 3 gửi bù email còn thiếu.
+        (datetime(2026, 11, 1, 8, tzinfo=VIETNAM), datetime(2026, 11, 2, 8, tzinfo=VIETNAM)),
+        (datetime(2026, 11, 2, 8, tzinfo=VIETNAM), datetime(2026, 11, 3, 8, tzinfo=VIETNAM)),
+        # Sau ngày 3 thì chờ tới ngày 1 tháng sau.
+        (datetime(2026, 11, 3, 8, tzinfo=VIETNAM), datetime(2026, 12, 1, 8, tzinfo=VIETNAM)),
+    ],
+)
+def test_beat_runs_monthly_summary_at_8am_on_days_1_to_3_vietnam_time(
+    monkeypatch: pytest.MonkeyPatch, last_run: datetime, next_run: datetime
+) -> None:
+    # Celery tính lịch theo timezone của app (giờ Việt Nam); để UTC thì sẽ chạy 15:00 giờ Việt Nam.
+    schedule = celery_app.conf.beat_schedule["monthly-summary"]["schedule"]
+    now = last_run.replace(second=1)
     monkeypatch.setattr(schedule, "nowfun", lambda: now)
-    remaining = schedule.remaining_estimate(datetime(2026, 11, 1, 8, 0, tzinfo=zone))
-    assert now + remaining == datetime(2026, 12, 1, 8, 0, tzinfo=zone)
+
+    remaining = schedule.remaining_estimate(last_run)
+
+    assert now + remaining == next_run
 
 
 def test_retry_countdown_doubles_each_attempt() -> None:
