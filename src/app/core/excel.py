@@ -13,7 +13,7 @@ from io import BytesIO
 from tempfile import SpooledTemporaryFile
 from typing import IO, Any, NamedTuple
 from xml.etree.ElementTree import ParseError
-from zipfile import BadZipFile, ZipFile
+from zipfile import ZIP_DEFLATED, ZIP_STORED, BadZipFile, ZipFile
 
 from fastapi import status
 from fastapi.responses import StreamingResponse
@@ -30,6 +30,7 @@ from app.core.constants import (
     XLSX_MAX_UNCOMPRESSED_BYTES,
     XLSX_MAX_UNCOMPRESSED_MB,
     XLSX_MEDIA_TYPE,
+    XLSX_READ_CHUNK_BYTES,
     XML_ILLEGAL_CHARACTERS_PATTERN,
     ZIP_SIGNATURE,
 )
@@ -50,6 +51,9 @@ XLSX_FILE_RESPONSE: dict[int | str, dict[str, Any]] = {
 # không có workbook như file .docx (OSError), workbook trỏ tới phần không có (KeyError), XML hỏng
 # (ParseError), giá trị sai trong XML (ValueError).
 XLSX_READ_ERRORS = (BadZipFile, OSError, KeyError, ValueError, ParseError)
+# Phương thức nén Excel dùng cho .xlsx (vài công cụ để không nén). bzip2, lzma thì zipfile giải nén
+# không giới hạn đầu ra, một đoạn vài KB có thể bung ra hàng trăm MB: từ chối.
+XLSX_COMPRESSION_METHODS = frozenset({ZIP_STORED, ZIP_DEFLATED})
 
 
 class XlsxTooLargeError(AppError):
@@ -77,12 +81,7 @@ def iter_xlsx_rows(data: bytes, max_col: int) -> Generator[tuple[Any, ...]]:
     if not data.startswith(ZIP_SIGNATURE):
         raise UnsupportedFileTypeError((XLSX_MEDIA_TYPE,))
     try:
-        with ZipFile(BytesIO(data)) as archive:
-            # zipfile không giải nén một phần quá file_size khai trong zip (khai sai thì lỗi CRC),
-            # nên cộng file_size là đủ chặn zip bomb.
-            if sum(info.file_size for info in archive.infolist()) > XLSX_MAX_UNCOMPRESSED_BYTES:
-                raise XlsxTooLargeError
-        workbook = load_workbook(BytesIO(data), read_only=True, data_only=True)
+        workbook = load_workbook(_copy_xlsx(data), read_only=True, data_only=True)
         try:
             for sheet in workbook.worksheets[:1]:
                 yield from sheet.iter_rows(max_col=max_col, values_only=True)
@@ -90,6 +89,30 @@ def iter_xlsx_rows(data: bytes, max_col: int) -> Generator[tuple[Any, ...]]:
             workbook.close()
     except XLSX_READ_ERRORS as exc:
         raise UnsupportedFileTypeError((XLSX_MEDIA_TYPE,)) from exc
+
+
+def _copy_xlsx(data: bytes) -> BytesIO:
+    """Chép các phần của file zip tải lên sang file zip mới trong RAM, mỗi lần đọc một đoạn ngắn.
+
+    Không đưa thẳng file tải lên cho openpyxl: zipfile giải nén cả khối dữ liệu nén rồi mới cắt
+    theo `file_size` khai trong zip, nên một phần khai thiếu dung lượng (CRC khớp phần đầu) vẫn bung
+    hết ra RAM dù file vẫn đọc được. Đọc từng đoạn thì deflate chỉ giải nén tới đó và dừng ở
+    `file_size`: bản chép không lớn hơn tổng `file_size`, tổng này đã giới hạn ở
+    XLSX_MAX_UNCOMPRESSED_BYTES.
+    """
+    copy = BytesIO()
+    with ZipFile(BytesIO(data)) as source, ZipFile(copy, "w") as target:
+        entries = [info for info in source.infolist() if not info.is_dir()]
+        if any(info.compress_type not in XLSX_COMPRESSION_METHODS for info in entries):
+            raise UnsupportedFileTypeError((XLSX_MEDIA_TYPE,))
+        if sum(info.file_size for info in entries) > XLSX_MAX_UNCOMPRESSED_BYTES:
+            raise XlsxTooLargeError
+        for info in entries:
+            with source.open(info) as part, target.open(info.filename, "w") as copied:
+                while chunk := part.read(XLSX_READ_CHUNK_BYTES):
+                    copied.write(chunk)
+    copy.seek(0)
+    return copy
 
 
 def text_cell(sheet: WriteOnlyWorksheet, value: str | None) -> Cell:

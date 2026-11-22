@@ -1,16 +1,22 @@
+import struct
+import tracemalloc
+import zlib
 from io import BytesIO
-from zipfile import ZipFile
+from zipfile import ZIP_BZIP2, ZIP_DEFLATED, ZIP_LZMA, ZipFile
 
 import pytest
 from openpyxl import Workbook, load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
-from app.core.constants import DOWNLOAD_CHUNK_BYTES, XLSX_MEDIA_TYPE, ZIP_SIGNATURE
+from app.core.constants import BYTES_PER_MB, DOWNLOAD_CHUNK_BYTES, XLSX_MEDIA_TYPE, ZIP_SIGNATURE
 from app.core.excel import iter_file, iter_xlsx_rows, save_workbook, text_cell, xlsx_response
 from app.core.uploads import UnsupportedFileTypeError
 from tests.helpers import xlsx_file
 
 SHEET_XML = "xl/worksheets/sheet1.xml"
+STYLES_XML = "xl/styles.xml"
+# Phần dữ liệu giấu sau nội dung thật của một phần trong zip (zip bomb khai thiếu dung lượng).
+HIDDEN_BYTES = 64 * BYTES_PER_MB
 
 
 def rewrite_zip(data: bytes, replace: dict[str, bytes]) -> bytes:
@@ -20,6 +26,42 @@ def rewrite_zip(data: bytes, replace: dict[str, bytes]) -> bytes:
         for item in source.infolist():
             target.writestr(item, replace.get(item.filename, source.read(item.filename)))
     return output.getvalue()
+
+
+def recompress(data: bytes, name: str, content: bytes, method: int) -> bytes:
+    """Chép file zip, ghi lại phần `name` với `content` bằng phương thức nén `method`."""
+    output = BytesIO()
+    with ZipFile(BytesIO(data)) as source, ZipFile(output, "w", ZIP_DEFLATED) as target:
+        for item in source.infolist():
+            if item.filename == name:
+                target.writestr(name, content, compress_type=method)
+            else:
+                target.writestr(item, source.read(item.filename))
+    return output.getvalue()
+
+
+def under_declared(data: bytes, name: str, hidden: int) -> bytes:
+    """Phần `name` giấu thêm `hidden` byte sau nội dung thật nhưng khai `file_size`, CRC của riêng
+    nội dung thật: CRC khớp nên file vẫn đọc được, tổng `file_size` khai báo vẫn nhỏ.
+    """
+    with ZipFile(BytesIO(data)) as archive:
+        real = archive.read(name)
+    patched = bytearray(recompress(data, name, real + bytes(hidden), ZIP_DEFLATED))
+    with ZipFile(BytesIO(bytes(patched))) as archive:
+        local_header = archive.getinfo(name).header_offset
+    crc = zlib.crc32(real)
+    # Local file header: CRC ở byte 14, file_size ở byte 22.
+    struct.pack_into("<I", patched, local_header + 14, crc)
+    struct.pack_into("<I", patched, local_header + 22, len(real))
+    # Central directory: CRC ở byte 16, file_size ở byte 24, tên file từ byte 46.
+    position = patched.find(b"PK\x01\x02")
+    while position >= 0:
+        name_length = struct.unpack_from("<H", patched, position + 28)[0]
+        if patched[position + 46 : position + 46 + name_length] == name.encode():
+            struct.pack_into("<I", patched, position + 16, crc)
+            struct.pack_into("<I", patched, position + 24, len(real))
+        position = patched.find(b"PK\x01\x02", position + 4)
+    return bytes(patched)
 
 
 def zip_file(name: str, content: bytes) -> bytes:
@@ -122,3 +164,29 @@ def broken_sheet() -> bytes:
 def test_iter_xlsx_rows_rejects_non_xlsx_content(data: bytes) -> None:
     with pytest.raises(UnsupportedFileTypeError):
         list(iter_xlsx_rows(data, 1))
+
+
+def test_iter_xlsx_rows_reads_under_declared_entry_without_inflating_it() -> None:
+    # zipfile bung cả khối nén rồi mới cắt theo file_size: file vẫn đọc được, cộng file_size khai
+    # báo không chặn được, phần giấu nằm hết trong RAM nếu đưa thẳng file cho openpyxl.
+    data = under_declared(xlsx_file([["a"]]), STYLES_XML, HIDDEN_BYTES)
+
+    tracemalloc.start()
+    try:
+        rows = list(iter_xlsx_rows(data, 1))
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+
+    assert rows == [("a",)]
+    assert peak < HIDDEN_BYTES // 4
+
+
+@pytest.mark.parametrize("method", [ZIP_BZIP2, ZIP_LZMA], ids=["bzip2", "lzma"])
+def test_iter_xlsx_rows_rejects_compression_excel_does_not_use(method: int) -> None:
+    data = xlsx_file([["a"]])
+    with ZipFile(BytesIO(data)) as archive:
+        styles = archive.read(STYLES_XML)
+
+    with pytest.raises(UnsupportedFileTypeError):
+        list(iter_xlsx_rows(recompress(data, STYLES_XML, styles, method), 1))

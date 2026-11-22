@@ -167,6 +167,8 @@ ZIP_SIGNATURE = b"PK\x03\x04"
 # lượng giải nén quá giới hạn này thì từ chối trước khi đọc. 1.000 dòng import chỉ vài trăm KB.
 XLSX_MAX_UNCOMPRESSED_MB = 10
 XLSX_MAX_UNCOMPRESSED_BYTES = XLSX_MAX_UNCOMPRESSED_MB * BYTES_PER_MB
+# Đọc từng phần của file .xlsx tải lên mỗi lần chừng này byte: deflate chỉ giải nén tới đó.
+XLSX_READ_CHUNK_BYTES = 64 * 1024
 
 # Import nhân viên từ Excel (A4): file .xlsx tối đa USER_IMPORT_MAX_MB, tối đa USER_IMPORT_MAX_ROWS
 # dòng có dữ liệu (không tính dòng tiêu đề). Nhiều hơn thì phải chuyển sang job nền (architecture,
