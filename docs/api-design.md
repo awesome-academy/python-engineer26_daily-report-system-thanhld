@@ -129,7 +129,7 @@ Phiên đăng nhập:
 - Hai request cùng một link chạy song song: request sau chờ request trước xong rồi nhận 400, mật khẩu không bị ghi đè.
 - Mỗi lần task gửi email chạy (kể cả thử lại sau lỗi SMTP, worker giao lại task) đều cấp link mới và hủy link cũ, vì token gốc không lưu ở đâu để gửi lại. Đánh đổi: SMTP báo lỗi dù email đã tới thì link trong email đó không còn dùng được, user dùng link trong email gửi sau.
 - Khóa tạm đăng nhập đếm theo email (không phân biệt hoa thường, kể cả email không tồn tại), cửa sổ 15 phút tính từ lần thử đầu. Lần thứ 6 trả 429 `TOO_MANY_ATTEMPTS` kèm header `Retry-After` (số giây còn lại), không kiểm tra mật khẩu. Đăng nhập đúng thì xóa bộ đếm.
-- Form đăng nhập không kiểm tra định dạng email: `username` không khớp tài khoản nào trả 401 như sai mật khẩu. Riêng `username` chứa ký tự NUL (`\x00`) trả 422 ở `body.username` trước khi tra DB (PostgreSQL không so sánh được chuỗi này), không đếm vào khóa tạm vì không thể khớp tài khoản nào. `grant_type` nếu gửi phải là `password`; field khác của chuẩn OAuth2 (`scope`, `client_id`, `client_secret`) được bỏ qua.
+- Form đăng nhập không kiểm tra định dạng email: `username` không khớp tài khoản nào trả 401 như sai mật khẩu. Riêng chuỗi không thể khớp tài khoản nào trả 422 ở field đó, trước khi tra DB và không đếm vào khóa tạm: `username` chứa ký tự NUL (`\x00`, PostgreSQL không so sánh được chuỗi này), `username` dài quá 255 ký tự, `password` dài quá 128 ký tự (giới hạn lúc tạo tài khoản, đặt mật khẩu). `grant_type` nếu gửi phải là `password`; field khác của chuẩn OAuth2 (`scope`, `client_id`, `client_secret`) được bỏ qua.
 
 ### /me: mọi user đã đăng nhập; báo cáo chỉ cho role USER (8)
 

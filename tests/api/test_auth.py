@@ -10,10 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import messages
 from app.core.config import get_settings
 from app.core.constants import (
+    EMAIL_MAX_LENGTH,
     JWT_MAX_LENGTH,
     JWT_SECRET_MIN_LENGTH,
     LOGIN_ATTEMPT_WINDOW_MINUTES,
     LOGIN_MAX_FAILED_ATTEMPTS,
+    PASSWORD_MAX_LENGTH,
     REDIS_REVOKED_SESSION_PREFIX,
     REFRESH_TOKEN_REUSE_GRACE_SECONDS,
 )
@@ -129,6 +131,51 @@ async def test_login_rejects_nul_in_username(
     [detail] = response.json()["error"]["details"]
     assert detail["field"] == "body.username"
     assert messages.NUL_CHARACTER in detail["message"]
+
+
+async def test_login_rejected_by_validation_is_not_counted_for_lock(client: AsyncClient) -> None:
+    # 422 trả trước bước đếm đăng nhập sai: username chứa NUL không khớp được tài khoản nào.
+    for _ in range(LOGIN_MAX_FAILED_ATTEMPTS + 1):
+        response = await login(client, "an\x00@example.com", WRONG_PASSWORD)
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("form", "field"),
+    [
+        pytest.param(
+            {"username": "a" * (EMAIL_MAX_LENGTH + 1), "password": DEFAULT_PASSWORD},
+            "body.username",
+            id="username",
+        ),
+        pytest.param(
+            {"username": "an@example.com", "password": "a" * (PASSWORD_MAX_LENGTH + 1)},
+            "body.password",
+            id="password",
+        ),
+    ],
+)
+async def test_login_rejects_credentials_longer_than_any_account(
+    client: AsyncClient, db_session: AsyncSession, form: dict[str, str], field: str
+) -> None:
+    # Tài khoản nào cũng có email, mật khẩu không quá giới hạn lúc tạo: chuỗi dài hơn không thể
+    # khớp, trả 422 trước khi tra DB, băm mật khẩu.
+    await create_user(db_session, email="an@example.com")
+
+    response = await client.post(LOGIN_URL, data=form)
+
+    assert response.status_code == 422
+    assert [d["field"] for d in response.json()["error"]["details"]] == [field]
+
+
+async def test_login_accepts_credentials_at_max_length(client: AsyncClient) -> None:
+    form = {"username": "a" * EMAIL_MAX_LENGTH, "password": "a" * PASSWORD_MAX_LENGTH}
+
+    response = await client.post(LOGIN_URL, data=form)
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "INVALID_CREDENTIALS"
 
 
 async def test_login_accepts_full_oauth2_form(
