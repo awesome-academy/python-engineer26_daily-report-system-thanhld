@@ -265,6 +265,9 @@ class UserImportService:
         mọi lỗi theo dòng (422) trong một lần, không tạo tài khoản nào. Tài khoản tạo như
         `POST /admin/users`: chưa có mật khẩu, chưa đăng nhập được đến khi tự đặt qua link.
         """
+        # Kết thúc transaction đọc của bước xác thực trước khi đọc file (trong thread, file lạ tốn
+        # vài giây), không giữ kết nối DB lúc chờ; commit chứ không rollback như `template()`.
+        await self.session.commit()
         parsed = await asyncio.to_thread(parse_import_file, data)
         # Khóa FOR SHARE đến khi commit như gán bộ phận ở A1: lệnh xóa bộ phận chạy cùng lúc phải
         # chờ rồi mới đếm thành viên (thấy user vừa import, trả 409).

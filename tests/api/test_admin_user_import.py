@@ -34,6 +34,8 @@ from app.modules.users.importing import (
     DATA_SHEET_TITLE,
     FIELDS,
     GUIDE_SHEET_TITLE,
+    ParsedImport,
+    parse_import_file,
     write_import_template,
 )
 from app.modules.users.models import User, UserRole
@@ -285,6 +287,27 @@ async def test_import_accepts_max_rows(
     assert response.status_code == 201
     assert response.json()["created_count"] == USER_IMPORT_MAX_ROWS
     assert len(await queued_tasks(redis)) == USER_IMPORT_MAX_ROWS
+
+
+async def test_import_releases_db_connection_before_reading_file(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Đọc file chạy trong thread, file lạ tốn vài giây: không giữ kết nối của bước xác thực.
+    in_transaction: list[bool] = []
+
+    def parse(data: bytes) -> ParsedImport:
+        in_transaction.append(db_session.in_transaction())
+        return parse_import_file(data)
+
+    monkeypatch.setattr(user_service_module, "parse_import_file", parse)
+
+    response = await upload(client, headers, user_import_file(row()))
+
+    assert response.status_code == 201
+    assert in_transaction == [False]
 
 
 async def test_import_stops_queueing_emails_when_queue_is_down(
