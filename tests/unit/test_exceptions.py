@@ -182,6 +182,19 @@ def test_error_responses_numbers_different_errors_with_same_name() -> None:
     assert list(_examples(responses, 409)) == ["CONFLICT", "CONFLICT (2)"]
 
 
+def test_error_responses_documents_headers_of_error() -> None:
+    # Header lỗi trả kèm (WWW-Authenticate của 401) phải có trên Swagger để client biết mà đọc.
+    responses = error_responses(401, FieldConflictError("email"))
+
+    assert responses[401]["headers"] == {
+        "WWW-Authenticate": {
+            "description": "Kèm lỗi `UNAUTHORIZED`, ví dụ `Bearer`.",
+            "schema": {"type": "string"},
+        }
+    }
+    assert "headers" not in responses[409]
+
+
 def test_error_responses_rejects_same_error_twice() -> None:
     with pytest.raises(ValueError, match="hai lần"):
         error_responses(FieldConflictError("email"), FieldConflictError("email"))

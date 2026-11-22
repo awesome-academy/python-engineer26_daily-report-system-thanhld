@@ -65,6 +65,16 @@ def test_every_error_response_has_example_per_error(app: FastAPI) -> None:
     assert missing == []
 
 
+def test_rate_limit_and_auth_errors_document_their_headers(app: FastAPI) -> None:
+    paths = app.openapi()["paths"]
+
+    login_429 = paths["/api/v1/auth/login"]["post"]["responses"]["429"]
+    me_401 = paths["/api/v1/me"]["get"]["responses"]["401"]
+
+    assert "Retry-After" in login_429["headers"]
+    assert "WWW-Authenticate" in me_401["headers"]
+
+
 def _model_examples() -> dict[type[BaseModel], list[dict[str, Any]]]:
     """Ví dụ khai ở `json_schema_extra` của mọi model của app (fixture `app` đã nạp app.main)."""
     found: dict[type[BaseModel], list[dict[str, Any]]] = {}

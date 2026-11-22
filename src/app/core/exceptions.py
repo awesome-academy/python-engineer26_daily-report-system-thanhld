@@ -176,30 +176,26 @@ class ErrorResponse(BaseModel):
         return cls(error=ErrorBody(code=exc.code, message=exc.message, details=exc.details))
 
 
-# Ví dụ trên Swagger cho lỗi validate (422) của mọi endpoint: details là danh sách field sai, tiền
-# tố là vị trí của field (body, query, path).
-_VALIDATION_ERROR_EXAMPLE = ErrorResponse(
-    error=ErrorBody(
-        code=ErrorCode.VALIDATION_ERROR,
-        message=VALIDATION_ERROR_MESSAGE,
-        details=[
-            {
-                "field": "body.email",
-                "message": "value is not a valid email address: An email address must have an "
-                "@-sign.",
-            }
-        ],
-    )
-)
 # Lỗi chung khai bằng HTTP status: mọi endpoint trả cùng mã. Status khác (400, 409, 413…) chỉ có lỗi
 # nghiệp vụ riêng của từng endpoint, phải khai bằng instance lỗi.
-_COMMON_ERRORS: Mapping[int, ErrorResponse] = MappingProxyType(
+_COMMON_ERRORS: Mapping[int, AppError] = MappingProxyType(
     {
-        status.HTTP_401_UNAUTHORIZED: ErrorResponse.from_error(UnauthorizedError()),
-        status.HTTP_403_FORBIDDEN: ErrorResponse.from_error(ForbiddenError()),
-        status.HTTP_404_NOT_FOUND: ErrorResponse.from_error(NotFoundError()),
-        status.HTTP_422_UNPROCESSABLE_CONTENT: _VALIDATION_ERROR_EXAMPLE,
-        status.HTTP_503_SERVICE_UNAVAILABLE: ErrorResponse.from_error(ServiceUnavailableError()),
+        status.HTTP_401_UNAUTHORIZED: UnauthorizedError(),
+        status.HTTP_403_FORBIDDEN: ForbiddenError(),
+        status.HTTP_404_NOT_FOUND: NotFoundError(),
+        # Lỗi validate của handler RequestValidationError: details là danh sách field sai, tiền tố
+        # là vị trí của field (body, query, path).
+        status.HTTP_422_UNPROCESSABLE_CONTENT: UnprocessableError(
+            code=ErrorCode.VALIDATION_ERROR,
+            details=[
+                {
+                    "field": "body.email",
+                    "message": "value is not a valid email address: An email address must have "
+                    "an @-sign.",
+                }
+            ],
+        ),
+        status.HTTP_503_SERVICE_UNAVAILABLE: ServiceUnavailableError(),
     }
 )
 
@@ -210,15 +206,17 @@ def error_responses(*errors: int | AppError) -> dict[int | str, dict[str, Any]]:
     Mỗi phần tử là một ví dụ: instance lỗi nghiệp vụ endpoint có thể trả
     (`EmailAlreadyExistsError()`) cho ví dụ đúng mã, message, details như lúc chạy; HTTP status
     cho lỗi chung (`_COMMON_ERRORS`). Các ví dụ cùng status gộp vào một response, Swagger cho chọn
-    từng ví dụ.
+    từng ví dụ. Header lỗi trả kèm (`Retry-After` của 429) cũng khai theo instance lỗi.
     """
     examples: dict[int, dict[str, dict[str, Any]]] = {}
-    for error in errors:
-        status_code, body = _error_example(error)
+    headers: dict[int, dict[str, dict[str, Any]]] = {}
+    for item in errors:
+        error = _error_instance(item)
+        body = ErrorResponse.from_error(error)
         value = body.model_dump(mode="json")
-        status_examples = examples.setdefault(status_code, {})
+        status_examples = examples.setdefault(error.status_code, {})
         if any(example["value"] == value for example in status_examples.values()):
-            msg = f"Ví dụ lỗi {body.error.code} của HTTP {status_code} bị khai hai lần."
+            msg = f"Ví dụ lỗi {error.code} của HTTP {error.status_code} bị khai hai lần."
             raise ValueError(msg)
         # Tên là mã lỗi, kèm field nếu có; hai lỗi khác nhau cùng tên (413 của file tải lên và của
         # nội dung giải nén) thì đánh số.
@@ -228,22 +226,28 @@ def error_responses(*errors: int | AppError) -> dict[int | str, dict[str, Any]]:
             number += 1
             name = f"{base_name} ({number})"
         status_examples[name] = {"summary": name, "value": value}
+        for header, header_value in (error.headers or {}).items():
+            headers.setdefault(error.status_code, {})[header] = {
+                "description": f"Kèm lỗi `{error.code}`, ví dụ `{header_value}`.",
+                "schema": {"type": "string"},
+            }
     return {
         status_code: {
             "model": ErrorResponse,
             "content": {"application/json": {"examples": status_examples}},
+            **({"headers": headers[status_code]} if status_code in headers else {}),
         }
         for status_code, status_examples in examples.items()
     }
 
 
-def _error_example(error: int | AppError) -> tuple[int, ErrorResponse]:
+def _error_instance(error: int | AppError) -> AppError:
     if isinstance(error, AppError):
-        return error.status_code, ErrorResponse.from_error(error)
+        return error
     if error not in _COMMON_ERRORS:
         msg = f"HTTP {error} không có lỗi chung: truyền instance lỗi nghiệp vụ endpoint trả về."
         raise ValueError(msg)
-    return error, _COMMON_ERRORS[error]
+    return _COMMON_ERRORS[error]
 
 
 def _example_name(error: ErrorBody) -> str:
