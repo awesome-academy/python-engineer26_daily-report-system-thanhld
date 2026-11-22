@@ -1,5 +1,6 @@
 """Task email thống kê tháng S3 chạy như trong worker: đọc dữ liệu đã commit bằng session riêng."""
 
+import re
 import smtplib
 from collections.abc import MutableMapping, Sequence
 from dataclasses import dataclass
@@ -41,6 +42,8 @@ UNAVAILABLE_MANAGERS: tuple[dict[str, Any], ...] = (
     {"password": None},
     {"role": UserRole.USER},
 )
+# Dòng đầu email: thời điểm tính số liệu theo giờ Việt Nam.
+COMPUTED_AT_LINE = re.compile(r", số liệu tính đến \d{2}:\d{2} \d{2}/\d{2}/\d{4}\.$", re.M)
 
 
 @dataclass(frozen=True)
@@ -219,17 +222,18 @@ async def test_task_emails_department_summary_to_each_manager(
     assert qa_binh.subject == f"[{app_name}] Thống kê báo cáo tháng 10/2026 của bộ phận Kiểm thử"
     assert "Xin chào Trần Bình," in dev_binh.text
     assert "Xin chào Lê Chi," in dev_chi.text
-    # Sắp theo tên không dấu; 3/56 ngày phải nộp là 5%.
-    assert "0/3 nhân viên nộp đủ, bộ phận nộp 5% số ngày phải nộp." in dev_binh.text
+    assert COMPUTED_AT_LINE.search(dev_binh.text)
+    # Sắp theo tên không dấu; 3/56 ngày phải nộp là 5,36%, làm tròn xuống.
+    assert "0/3 nhân viên nộp đủ, cả bộ phận đã nộp 5% tổng số ngày phải nộp." in dev_binh.text
     assert summary_lines(dev_binh) == [
         "- Đỗ Hà (đã khóa): đã nộp 0/22 ngày (0%), thiếu 22 ngày",
         "- Hoàng Dũng: đã nộp 1/12 ngày (8%), thiếu 11 ngày",
         "- Nguyễn Văn An: đã nộp 2/22 ngày (9%), thiếu 20 ngày",
     ]
     assert summary_lines(dev_chi) == summary_lines(dev_binh)
-    assert "1/2 nhân viên nộp đủ, bộ phận nộp 52% số ngày phải nộp." in qa_binh.text
+    assert "1/2 nhân viên nộp đủ, cả bộ phận đã nộp 52% tổng số ngày phải nộp." in qa_binh.text
     assert summary_lines(qa_binh) == [
-        "- Lý Chuyển: đã nộp 1/22 ngày (5%), thiếu 21 ngày",
+        "- Lý Chuyển: đã nộp 1/22 ngày (4%), thiếu 21 ngày",
         "- Phạm Giang: đã nộp 22/22 ngày (100%), thiếu 0 ngày",
     ]
     assert summary_lines(qa_minh) == summary_lines(qa_binh)
@@ -237,7 +241,8 @@ async def test_task_emails_department_summary_to_each_manager(
     # Bộ phận có nhân viên mà không ai nhận thống kê: ghi warning cho admin.
     [warning] = [log for log in logs if log["event"] == "monthly_summary_skipped"]
     assert warning["log_level"] == "warning"
-    assert (warning["department_id"], warning["reason"]) == (
+    assert (warning["month"], warning["department_id"], warning["reason"]) == (
+        MONTH,
         scene.hr_id,
         "no_recipient",
     )

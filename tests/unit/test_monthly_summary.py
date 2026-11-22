@@ -5,6 +5,7 @@ import pytest
 from app.modules.reports.monthly_summary import (
     EmployeeSummary,
     month_end,
+    percent,
     previous_month,
     resolve_month,
 )
@@ -68,4 +69,22 @@ def test_employee_summary_missing_days_and_rate() -> None:
     row = EmployeeSummary("Nguyễn Văn An", is_active=True, submitted_days=20, working_days=22)
 
     assert row.missing_days == 2
-    assert row.rate == "91%"
+    # 90,9% làm tròn xuống.
+    assert row.rate == "90%"
+
+
+@pytest.mark.parametrize(
+    ("part", "whole", "expected"),
+    [
+        (22, 22, "100%"),
+        (0, 22, "0%"),
+        # Gần đủ vẫn không hiện 100%: 199 người đủ 22/22, một người 21/22.
+        (199 * 22 + 21, 200 * 22, "99%"),
+        # Tính bằng số nguyên: 0.29 * 100 trong số thực là 28.999...
+        (29, 100, "29%"),
+    ],
+)
+def test_percent_rounds_down_so_only_complete_shows_100(
+    part: int, whole: int, expected: str
+) -> None:
+    assert percent(part, whole) == expected

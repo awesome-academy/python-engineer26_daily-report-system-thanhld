@@ -34,6 +34,7 @@ MONTHLY_SUMMARY_CONTEXT = {
     "recipient_name": "Trần Quản Lý",
     "department_name": "Phát triển",
     "month": "10/2026",
+    "computed_at": "08:00 01/11/2026",
     "working_days": 22,
     "employees": [
         EmployeeSummary("Đỗ <b>Hà</b>", is_active=False, submitted_days=0, working_days=22),
@@ -126,8 +127,9 @@ def test_render_monthly_summary_lists_each_employee() -> None:
 
     app_name = get_settings().app_name
     assert email.subject == f"[{app_name}] Thống kê báo cáo tháng 10/2026 của bộ phận Phát triển"
+    assert "của bộ phận Phát triển, số liệu tính đến 08:00 01/11/2026." in email.text
     assert "Tháng có 22 ngày làm việc (thứ 2 đến thứ 6)." in email.text
-    assert "0/2 nhân viên nộp đủ, bộ phận nộp 48% số ngày phải nộp." in email.text
+    assert "0/2 nhân viên nộp đủ, cả bộ phận đã nộp 48% tổng số ngày phải nộp." in email.text
     lines = [line for line in email.text.splitlines() if line.startswith("- ")]
     assert lines == [
         "- Đỗ <b>Hà</b> (đã khóa): đã nộp 0/22 ngày (0%), thiếu 22 ngày",
@@ -135,5 +137,6 @@ def test_render_monthly_summary_lists_each_employee() -> None:
     ]
     assert "Trần Quản Lý" in email.html
     assert "95%" in email.html
+    assert "số liệu tính đến 08:00 01/11/2026" in email.html
     # Họ tên do admin nhập: bản HTML phải escape.
     assert "Đỗ &lt;b&gt;Hà&lt;/b&gt;" in email.html

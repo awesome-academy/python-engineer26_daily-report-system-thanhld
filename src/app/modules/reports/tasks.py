@@ -1,5 +1,6 @@
 """Celery task của báo cáo: email S1 cho người nhận, email thống kê tháng S3 cho manager."""
 
+from datetime import UTC, datetime
 from typing import Any
 
 import structlog
@@ -52,7 +53,7 @@ def send_monthly_summaries(self: Task[Any, Any], month: str | None = None) -> No
     )
     with sync_session() as session:
         sender = MonthlySummarySender(session, EmailService(session, SmtpMailer(get_settings())))
-        result = sender.send(first)
+        result = sender.send(first, datetime.now(UTC))
         if not result.failures:
             log.info("monthly_summary_done", sent=result.sent, already_sent=result.already_sent)
             return
