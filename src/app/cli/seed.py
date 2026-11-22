@@ -4,7 +4,6 @@ Chỉ thêm những gì còn thiếu, nên chạy lại nhiều lần (kể cả
 """
 
 import asyncio
-import calendar
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -21,6 +20,7 @@ from app.core.config import get_settings
 from app.core.constants import Environment
 from app.core.database import Base
 from app.core.security import hash_password
+from app.core.workdays import is_working_day
 from app.modules.departments.models import Department, DepartmentManager
 from app.modules.reports.models import DailyReport, ReportRecipient
 from app.modules.users.models import User, UserRole
@@ -99,12 +99,12 @@ class SeedResult:
 
 
 def working_days_before(today: date, count: int) -> list[date]:
-    """`count` ngày thứ 2 đến thứ 6 gần nhất trước `today`, sắp từ cũ đến mới."""
+    """`count` ngày làm việc gần nhất trước `today`, sắp từ cũ đến mới."""
     days: list[date] = []
     day = today
     while len(days) < count:
         day -= timedelta(days=1)
-        if day.weekday() <= calendar.FRIDAY:
+        if is_working_day(day):
             days.append(day)
     return sorted(days)
 

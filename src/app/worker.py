@@ -12,6 +12,7 @@ import structlog
 from celery import Celery, Task
 from celery.signals import after_setup_logger, after_setup_task_logger, worker_init
 from kombu.exceptions import OperationalError
+from sqlalchemy import exc as sa_exc
 
 from app import models as _models  # noqa: F401 (nạp đủ model trước khi SQLAlchemy nối quan hệ)
 from app.core.config import get_settings
@@ -69,13 +70,23 @@ def _use_app_log_level(logger: logging.Logger, **_: Any) -> None:
     logger.setLevel(settings.log_level)
 
 
+# Lỗi DB tạm thời (mất kết nối, DB khởi động lại): task chạy lại an toàn thì thử lại như lỗi SMTP.
+TRANSIENT_DB_ERRORS = (sa_exc.OperationalError, sa_exc.InterfaceError)
+
+
 def retry_countdown(retries: int) -> int:
     """Số giây chờ trước lần thử lại thứ `retries + 1` của task: 30s, 60s, 120s."""
     return int(TASK_RETRY_BACKOFF_SECONDS * 2**retries)
 
 
-def retry_or_give_up(task: Task[Any, Any], exc: Exception) -> None:
-    """Còn lượt thì hẹn chạy lại task (ném `Retry`); hết lượt thì trả về để task ghi FAILED."""
+def retry_or_give_up(
+    task: Task[Any, Any], exc: Exception, *, args: tuple[Any, ...] | None = None
+) -> None:
+    """Còn lượt thì hẹn chạy lại task (ném `Retry`); hết lượt thì trả về để task ghi FAILED.
+
+    `args`: tham số của lần chạy lại, mặc định giữ tham số của lần này. Task tự tính giá trị mặc
+    định theo ngày (tháng trước) truyền giá trị đã tính, để lần chạy lại không tính lại.
+    """
     retries = task.request.retries
     if retries >= TASK_MAX_RETRIES:
         return
@@ -88,7 +99,7 @@ def retry_or_give_up(task: Task[Any, Any], exc: Exception) -> None:
         countdown=countdown,
         error=repr(exc),
     )
-    raise task.retry(exc=exc, countdown=countdown)
+    raise task.retry(args=args, exc=exc, countdown=countdown)
 
 
 async def enqueue_task(task: Task[Any, Any], *args: Any) -> bool:

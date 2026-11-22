@@ -37,8 +37,36 @@ class EmailService:
         self.logs.add(log)
         return log
 
+    def send_once(
+        self,
+        to_email: str,
+        template: EmailTemplate,
+        context: Mapping[str, Any],
+        dedup_key: str,
+    ) -> bool:
+        """Gửi một lần cho mỗi `dedup_key` rồi commit; key đã gửi thì bỏ qua, trả False.
+
+        Dòng SENT kèm key ghi trước khi gửi, cùng transaction với lần gửi: task khác cùng key chạy
+        song song phải chờ tới khi transaction này kết thúc rồi thấy key đã có. Gửi lỗi thì
+        rollback (bỏ dòng vừa ghi) rồi ném lỗi ra như `send`, để lần thử lại vẫn gửi được. Mọi
+        nhánh đều kết thúc transaction của cả session (commit hoặc rollback), nên người gọi không
+        để thay đổi nào khác chưa commit.
+        """
+        email = render_email(template, context)
+        if not self.logs.claim(to_email, template, dedup_key):
+            # Không giữ transaction (idle in transaction) suốt phần còn lại của task.
+            self.session.rollback()
+            return False
+        try:
+            self.mailer.send(to_email, email)
+        except Exception:
+            self.session.rollback()
+            raise
+        self.session.commit()
+        return True
+
     def record_failure(self, to_email: str, template: EmailTemplate, error: Exception) -> EmailLog:
-        """Ghi log FAILED khi đã hết lượt thử lại."""
+        """Ghi log FAILED khi đã hết lượt thử lại. Không ghi `dedup_key`: chạy lại vẫn gửi được."""
         message = f"{type(error).__name__}: {error}"[:EMAIL_ERROR_MAX_LENGTH]
         log = EmailLog(
             to_email=to_email, template=template, status=EmailStatus.FAILED, error=message
