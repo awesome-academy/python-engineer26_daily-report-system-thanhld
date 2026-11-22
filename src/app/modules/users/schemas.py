@@ -28,6 +28,15 @@ from app.core.pagination import PageParams
 from app.core.storage import FileStorage
 from app.core.validators import Id, Keyword, NoNul, reject_null
 from app.modules.users.models import User, UserRole
+from app.seed_data import (
+    DEPARTMENTS,
+    EXAMPLE_DEPARTMENT,
+    EXAMPLE_EMPLOYEE,
+    EXAMPLE_NEW_USER,
+    EXAMPLE_NEW_USER_ID,
+    EXAMPLE_PASSWORD,
+    seed_id,
+)
 
 
 def _check_password_strength(password: str) -> str:
@@ -65,32 +74,32 @@ Password = Annotated[
 ]
 
 
-# Ví dụ trên Swagger: khớp dữ liệu seed (an.nguyen@example.com là user id 5 thuộc bộ phận DEV id 1
-# khi seed vào DB trống), để thử ngay trên Swagger sau khi seed.
+# Ví dụ trên Swagger: nhân viên của dữ liệu seed (app.seed_data), để thử ngay sau khi seed.
 _USER_EXAMPLE: dict[str, Any] = {
-    "id": 5,
-    "email": "an.nguyen@example.com",
-    "full_name": "Nguyễn Văn An",
+    "id": seed_id(EXAMPLE_EMPLOYEE),
+    "email": EXAMPLE_EMPLOYEE.email,
+    "full_name": EXAMPLE_EMPLOYEE.full_name,
     "phone": "0912345678",
     "date_of_birth": "1998-05-20",
-    "role": "USER",
+    "role": EXAMPLE_EMPLOYEE.role,
     "is_active": True,
     "last_login_at": "2026-11-09T01:30:00Z",
     "created_at": "2026-10-26T02:00:00Z",
 }
 # Tài khoản admin vừa tạo (A1) hoặc import (A4): chưa đặt mật khẩu nên chưa đăng nhập lần nào.
 _NEW_USER_EXAMPLE: dict[str, Any] = {
-    "id": 10,
-    "email": "hoa.do@example.com",
-    "full_name": "Đỗ Thị Hoa",
+    "id": EXAMPLE_NEW_USER_ID,
+    "email": EXAMPLE_NEW_USER.email,
+    "full_name": EXAMPLE_NEW_USER.full_name,
     "phone": "0987654321",
     "date_of_birth": "2000-03-15",
-    "role": "USER",
+    "role": EXAMPLE_NEW_USER.role,
     "is_active": True,
     "last_login_at": None,
     "created_at": "2026-11-09T03:00:00Z",
-    "department_id": 1,
+    "department_id": seed_id(EXAMPLE_DEPARTMENT),
 }
+_EMPLOYEE_EXAMPLE: dict[str, Any] = {**_USER_EXAMPLE, "department_id": seed_id(EXAMPLE_DEPARTMENT)}
 
 
 class UserOut(BaseModel):
@@ -133,9 +142,7 @@ class ProfileOut(UserOut):
 
 
 class AdminUserOut(UserOut):
-    model_config = ConfigDict(
-        json_schema_extra={"examples": [{**_USER_EXAMPLE, "department_id": 1}]}
-    )
+    model_config = ConfigDict(json_schema_extra={"examples": [_EMPLOYEE_EXAMPLE]})
 
     department_id: int | None
 
@@ -152,9 +159,7 @@ class UserImportResult(BaseModel):
 
 
 class EmployeeOut(UserOut):
-    model_config = ConfigDict(
-        json_schema_extra={"examples": [{**_USER_EXAMPLE, "department_id": 1}]}
-    )
+    model_config = ConfigDict(json_schema_extra={"examples": [_EMPLOYEE_EXAMPLE]})
 
     # Nhân viên luôn thuộc một bộ phận manager quản lý; manager quản lý nhiều bộ phận thì cần
     # biết người này ở bộ phận nào.
@@ -190,7 +195,7 @@ class UserProfileUpdate(BaseModel):
 class PasswordChange(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
-            "examples": [{"current_password": "Matkhau@123", "new_password": "Matkhau@456"}]
+            "examples": [{"current_password": EXAMPLE_PASSWORD, "new_password": "Matkhau@456"}]
         }
     )
 
@@ -214,9 +219,15 @@ class AdminUserCreate(BaseModel):
             "examples": [
                 {
                     key: _NEW_USER_EXAMPLE[key]
-                    for key in ("email", "full_name", "phone", "date_of_birth", "role")
+                    for key in (
+                        "email",
+                        "full_name",
+                        "phone",
+                        "date_of_birth",
+                        "role",
+                        "department_id",
+                    )
                 }
-                | {"department_id": 1}
             ]
         },
     )
@@ -238,7 +249,10 @@ class AdminUserUpdate(BaseModel):
 
     model_config = ConfigDict(
         extra="forbid",
-        json_schema_extra={"examples": [{"phone": "0987654321", "department_id": 2}]},
+        # Chuyển nhân viên sang bộ phận seed thứ hai (QA).
+        json_schema_extra={
+            "examples": [{"phone": "0987654321", "department_id": seed_id(DEPARTMENTS[1])}]
+        },
     )
 
     email: Email | None = None

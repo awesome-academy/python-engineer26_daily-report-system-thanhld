@@ -9,6 +9,7 @@ from app.core.constants import (
     ONE_TIME_TOKEN_PATTERN,
 )
 from app.modules.users.schemas import Password
+from app.seed_data import EXAMPLE_PASSWORD
 
 # Ví dụ trên Swagger. Token thật dài hơn: JWT có header, claim (sub, jti, exp…) và chữ ký.
 _ACCESS_JWT_EXAMPLE = (
@@ -53,9 +54,7 @@ class PasswordSetup(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
         json_schema_extra={
-            "examples": [
-                {"token": "dan-token-tu-link-trong-email", "password": "Matkhau@123"}
-            ]
+            "examples": [{"token": "dan-token-tu-link-trong-email", "password": EXAMPLE_PASSWORD}]
         },
     )
 

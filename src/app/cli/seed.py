@@ -25,63 +25,10 @@ from app.modules.departments.models import Department, DepartmentManager
 from app.modules.reports.models import DailyReport, ReportRecipient
 from app.modules.users.models import User, UserRole
 from app.modules.users.schemas import Password
-
-
-@dataclass(frozen=True)
-class SeedDepartment:
-    code: str
-    name: str
-    description: str
-
-
-@dataclass(frozen=True)
-class SeedUser:
-    email: str
-    full_name: str
-    role: UserRole
-    department_code: str | None
-
-
-DEPARTMENTS = (
-    SeedDepartment("DEV", "Phòng Phát triển", "Phát triển sản phẩm"),
-    SeedDepartment("QA", "Phòng Kiểm thử", "Kiểm thử và đảm bảo chất lượng"),
-    SeedDepartment("HR", "Phòng Nhân sự", "Tuyển dụng và đào tạo"),
-)
-
-# Nguồn duy nhất: manager của bộ phận suy ra từ user role MANAGER có department_code tương ứng.
-USERS = (
-    SeedUser("admin@example.com", "Quản trị viên", UserRole.ADMIN, None),
-    SeedUser("manager.dev@example.com", "Trần Minh Quân", UserRole.MANAGER, "DEV"),
-    SeedUser("manager.qa@example.com", "Lê Thu Hà", UserRole.MANAGER, "QA"),
-    SeedUser("manager.hr@example.com", "Phạm Ngọc Lan", UserRole.MANAGER, "HR"),
-    SeedUser("an.nguyen@example.com", "Nguyễn Văn An", UserRole.USER, "DEV"),
-    SeedUser("binh.tran@example.com", "Trần Thị Bình", UserRole.USER, "DEV"),
-    SeedUser("cuong.le@example.com", "Lê Quốc Cường", UserRole.USER, "QA"),
-    SeedUser("dung.pham@example.com", "Phạm Thùy Dung", UserRole.USER, "QA"),
-    SeedUser("giang.vo@example.com", "Võ Hoàng Giang", UserRole.USER, "HR"),
-)
+from app.seed_data import DEPARTMENTS, EXAMPLE_EMPLOYEE, EXAMPLE_MANAGER, SAMPLE_WORK, USERS
 
 # Số ngày làm việc gần nhất (trước hôm nay) có báo cáo mẫu.
 REPORT_DAYS = 5
-
-# (việc dự định, việc thực tế đã làm, lý do chưa hoàn thành, việc ngày tiếp theo)
-SAMPLE_WORK = (
-    ("Làm API đăng nhập", "Xong API đăng nhập, viết test", None, "Làm API hồ sơ cá nhân"),
-    (
-        "Làm API hồ sơ cá nhân",
-        "Xong xem, sửa hồ sơ",
-        "Đổi mật khẩu chờ chốt quy tắc",
-        "Đổi mật khẩu",
-    ),
-    ("Viết test phân quyền", "Xong test cho nhóm /admin", None, "Test cho nhóm /manager"),
-    (
-        "Sửa lỗi sau review",
-        "Sửa 3/4 góp ý",
-        "Một góp ý cần hỏi lại mentor",
-        "Hoàn thành góp ý còn lại",
-    ),
-    ("Tối ưu truy vấn báo cáo", "Thêm index, bỏ N+1", None, "Export Excel báo cáo"),
-)
 
 
 @dataclass
@@ -324,4 +271,6 @@ def seed(
         typer.secho(f"Bỏ qua {message}.", fg=typer.colors.YELLOW, err=True)
     if result.total == 0:
         typer.echo("Dữ liệu mẫu đã đủ, không tạo thêm gì.")
-    typer.echo("Đăng nhập thử: manager.dev@example.com, an.nguyen@example.com (mật khẩu vừa nhập).")
+    typer.echo(
+        f"Đăng nhập thử: {EXAMPLE_MANAGER.email}, {EXAMPLE_EMPLOYEE.email} (mật khẩu vừa nhập)."
+    )

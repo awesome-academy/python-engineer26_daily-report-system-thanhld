@@ -25,6 +25,14 @@ from app.core.validators import Id, Keyword, NoNul, blank_to_none, drop_duplicat
 from app.modules.departments.models import Department
 from app.modules.reports.models import DailyReport, ReportRecipient
 from app.modules.users.models import User
+from app.seed_data import (
+    EXAMPLE_DEPARTMENT,
+    EXAMPLE_EMPLOYEE,
+    EXAMPLE_MANAGER,
+    EXAMPLE_WORK,
+    SeedUser,
+    seed_id,
+)
 
 ReportContent = Annotated[
     str,
@@ -48,36 +56,38 @@ RecipientIds = Annotated[
     AfterValidator(drop_duplicates),
 ]
 
-# Ví dụ trên Swagger (request, response, lỗi): báo cáo của an.nguyen@example.com (id 5, bộ phận DEV
-# id 1) gửi cho manager.dev@example.com (id 2), khớp dữ liệu seed khi seed vào DB trống.
+# Ví dụ trên Swagger (request, response, lỗi): báo cáo của nhân viên seed gửi cho manager bộ phận
+# đó (app.seed_data), dùng được ngay sau khi seed.
 EXAMPLE_REPORT_DATE = date(2026, 11, 9)
+_planned, _actual, _reason, _next_day = EXAMPLE_WORK
 _REPORT_CONTENT_EXAMPLE: dict[str, Any] = {
     "report_date": EXAMPLE_REPORT_DATE.isoformat(),
-    "planned_work": "Làm API hồ sơ cá nhân",
-    "actual_work": "Xong xem, sửa hồ sơ",
-    "incomplete_reason": "Đổi mật khẩu chờ chốt quy tắc",
-    "next_day_plan": "Đổi mật khẩu",
+    "planned_work": _planned,
+    "actual_work": _actual,
+    "incomplete_reason": _reason,
+    "next_day_plan": _next_day,
 }
 _REPORT_SUMMARY_EXAMPLE: dict[str, Any] = {
     "id": 128,
     **_REPORT_CONTENT_EXAMPLE,
-    "department_id": 1,
+    "department_id": seed_id(EXAMPLE_DEPARTMENT),
     "created_at": "2026-11-09T10:15:00Z",
     "updated_at": "2026-11-09T10:15:00Z",
 }
-_RECIPIENT_EXAMPLE: dict[str, Any] = {
-    "id": 2,
-    "full_name": "Trần Minh Quân",
-    "email": "manager.dev@example.com",
+
+
+def _person_example(user: SeedUser) -> dict[str, Any]:
+    return {"id": seed_id(user), "full_name": user.full_name, "email": user.email}
+
+
+_RECIPIENT_EXAMPLE = _person_example(EXAMPLE_MANAGER)
+_DEPARTMENT_EXAMPLE: dict[str, Any] = {
+    "id": seed_id(EXAMPLE_DEPARTMENT),
+    "code": EXAMPLE_DEPARTMENT.code,
+    "name": EXAMPLE_DEPARTMENT.name,
 }
-_DEPARTMENT_EXAMPLE: dict[str, Any] = {"id": 1, "code": "DEV", "name": "Phòng Phát triển"}
 _RECIPIENT_USER_EXAMPLE: dict[str, Any] = {**_RECIPIENT_EXAMPLE, "is_deleted": False}
-_AUTHOR_EXAMPLE: dict[str, Any] = {
-    "id": 5,
-    "full_name": "Nguyễn Văn An",
-    "email": "an.nguyen@example.com",
-    "is_deleted": False,
-}
+_AUTHOR_EXAMPLE: dict[str, Any] = {**_person_example(EXAMPLE_EMPLOYEE), "is_deleted": False}
 _REPORT_DETAIL_EXAMPLE: dict[str, Any] = {
     **_REPORT_SUMMARY_EXAMPLE,
     "department": _DEPARTMENT_EXAMPLE,

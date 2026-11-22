@@ -26,6 +26,14 @@ from app.core.constants import (
 from app.core.pagination import PageParams
 from app.core.validators import Id, Keyword, NoNul, blank_to_none, drop_duplicates, reject_null
 from app.modules.users.models import UserRole
+from app.seed_data import (
+    EXAMPLE_DEPARTMENT,
+    EXAMPLE_EMPLOYEE,
+    EXAMPLE_MANAGER,
+    EXAMPLE_NEW_USER,
+    EXAMPLE_NEW_USER_ID,
+    seed_id,
+)
 
 
 def _check_department_code(code: str) -> str:
@@ -65,20 +73,19 @@ DepartmentDescription = Annotated[
 ]
 
 
-# Ví dụ trên Swagger: khớp dữ liệu seed (bộ phận DEV id 1, manager.dev@example.com id 2, nhân viên
-# an.nguyen@example.com id 5 khi seed vào DB trống).
+# Ví dụ trên Swagger: bộ phận, manager, nhân viên của dữ liệu seed (app.seed_data).
 _DEPARTMENT_EXAMPLE: dict[str, Any] = {
-    "id": 1,
-    "code": "DEV",
-    "name": "Phòng Phát triển",
-    "description": "Phát triển sản phẩm",
+    "id": seed_id(EXAMPLE_DEPARTMENT),
+    "code": EXAMPLE_DEPARTMENT.code,
+    "name": EXAMPLE_DEPARTMENT.name,
+    "description": EXAMPLE_DEPARTMENT.description,
     "created_at": "2026-10-26T02:00:00Z",
     "updated_at": "2026-10-26T02:00:00Z",
 }
 _MANAGER_EXAMPLE: dict[str, Any] = {
-    "id": 2,
-    "email": "manager.dev@example.com",
-    "full_name": "Trần Minh Quân",
+    "id": seed_id(EXAMPLE_MANAGER),
+    "email": EXAMPLE_MANAGER.email,
+    "full_name": EXAMPLE_MANAGER.full_name,
     "assigned_at": "2026-10-26T02:00:00Z",
 }
 
@@ -159,10 +166,10 @@ class DepartmentMemberOut(BaseModel):
         json_schema_extra={
             "examples": [
                 {
-                    "id": 5,
-                    "email": "an.nguyen@example.com",
-                    "full_name": "Nguyễn Văn An",
-                    "role": "USER",
+                    "id": seed_id(EXAMPLE_EMPLOYEE),
+                    "email": EXAMPLE_EMPLOYEE.email,
+                    "full_name": EXAMPLE_EMPLOYEE.full_name,
+                    "role": EXAMPLE_EMPLOYEE.role,
                     "is_active": True,
                     "is_manager": False,
                 }
@@ -181,7 +188,9 @@ class DepartmentMemberOut(BaseModel):
 
 class ManagerAssign(BaseModel):
     # Field lạ trả 422 như DepartmentCreate, DepartmentUpdate.
-    model_config = ConfigDict(extra="forbid", json_schema_extra={"examples": [{"user_id": 2}]})
+    model_config = ConfigDict(
+        extra="forbid", json_schema_extra={"examples": [{"user_id": seed_id(EXAMPLE_MANAGER)}]}
+    )
 
     user_id: Id
 
@@ -221,7 +230,13 @@ class MemberCandidateOut(BaseModel):
     model_config = ConfigDict(
         from_attributes=True,
         json_schema_extra={
-            "examples": [{"id": 10, "email": "hoa.do@example.com", "full_name": "Đỗ Thị Hoa"}]
+            "examples": [
+                {
+                    "id": EXAMPLE_NEW_USER_ID,
+                    "email": EXAMPLE_NEW_USER.email,
+                    "full_name": EXAMPLE_NEW_USER.full_name,
+                }
+            ]
         },
     )
 
@@ -232,7 +247,9 @@ class MemberCandidateOut(BaseModel):
 
 class MembersAdd(BaseModel):
     # Field lạ trả 422 như các body khác của module.
-    model_config = ConfigDict(extra="forbid", json_schema_extra={"examples": [{"user_ids": [10]}]})
+    model_config = ConfigDict(
+        extra="forbid", json_schema_extra={"examples": [{"user_ids": [EXAMPLE_NEW_USER_ID]}]}
+    )
 
     user_ids: Annotated[
         list[Id],
