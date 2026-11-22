@@ -10,9 +10,8 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
-from app.core.clock import local_today
 from app.core.config import get_settings
-from app.core.constants import MONTH_FORMAT, MONTHLY_SUMMARY_DEDUP_KEY, TASK_MAX_RETRIES
+from app.core.constants import TASK_MAX_RETRIES
 from app.core.workdays import is_working_day
 from app.modules.departments.models import Department
 from app.modules.notifications.models import EmailLog, EmailStatus, EmailTemplate
@@ -28,7 +27,6 @@ pytestmark = pytest.mark.usefixtures("clean_after")
 
 MONTH = "2026-10"
 OCTOBER_FIRST = date(2026, 10, 1)
-OCTOBER_LAST = date(2026, 10, 31)
 # Tạo tài khoản từ tháng trước: cả tháng 10 (22 ngày làm việc) đều phải nộp.
 JOINED = datetime(2026, 9, 1, tzinfo=UTC)
 OCTOBER_WORKING_DAYS = [
@@ -36,8 +34,6 @@ OCTOBER_WORKING_DAYS = [
     for n in range(31)
     if is_working_day(OCTOBER_FIRST + timedelta(days=n))
 ]
-
-
 # Manager còn liên kết với bộ phận nhưng không đọc được báo cáo: không nhận thống kê (như S1).
 UNAVAILABLE_MANAGERS: tuple[dict[str, Any], ...] = (
     {"is_active": False},
@@ -48,13 +44,23 @@ UNAVAILABLE_MANAGERS: tuple[dict[str, Any], ...] = (
 
 
 @dataclass(frozen=True)
+class Recipient:
+    department_id: int
+    user_id: int
+    email: str
+
+
+@dataclass(frozen=True)
 class Scene:
     dev_id: int
     qa_id: int
     hr_id: int
-    # Email manager nhận thống kê, theo thứ tự task gửi (bộ phận, rồi id manager).
-    emails: list[str]
-    keys: list[str]
+    # Theo thứ tự task gửi: bộ phận, rồi id manager.
+    recipients: list[Recipient]
+
+    @property
+    def emails(self) -> list[str]:
+        return [recipient.email for recipient in self.recipients]
 
 
 @pytest.fixture
@@ -84,12 +90,6 @@ def logs(monkeypatch: pytest.MonkeyPatch) -> list[MutableMapping[str, Any]]:
     return capture_module_logs(monkeypatch, monthly_summary)
 
 
-def dedup_key(department_id: int, user_id: int) -> str:
-    return MONTHLY_SUMMARY_DEDUP_KEY.format(
-        month=MONTH, department_id=department_id, user_id=user_id
-    )
-
-
 async def employee(
     session: AsyncSession,
     department: Department,
@@ -106,9 +106,12 @@ async def employee(
 
 
 async def make_scene(engine: AsyncEngine) -> Scene:
-    """Bộ phận DEV (2 manager, đủ loại nhân viên), QA (1 manager, nộp đủ), HR (không manager)."""
+    """DEV (2 manager, đủ loại nhân viên), QA (2 manager), HR (không manager).
+
+    Trần Bình quản lý cả DEV và QA: nhận một email cho mỗi bộ phận.
+    """
     async with AsyncSession(engine, expire_on_commit=False) as session:
-        managers = [
+        binh, chi, minh = [
             await create_user(session, full_name=name, role=UserRole.MANAGER)
             for name in ("Trần Bình", "Lê Chi", "Vũ Minh")
         ]
@@ -117,9 +120,9 @@ async def make_scene(engine: AsyncEngine) -> Scene:
             for fields in UNAVAILABLE_MANAGERS
         ]
         dev = await create_department(
-            session, name="Phát triển", managers=[*managers[:2], *unavailable]
+            session, name="Phát triển", managers=[binh, chi, *unavailable]
         )
-        qa = await create_department(session, name="Kiểm thử", managers=managers[2:])
+        qa = await create_department(session, name="Kiểm thử", managers=[binh, minh])
         hr = await create_department(session, name="Nhân sự")
 
         # Thứ 7 (3/10), ngày của tháng trước, tháng sau không tính: đã nộp 2 ngày.
@@ -153,22 +156,22 @@ async def make_scene(engine: AsyncEngine) -> Scene:
         await employee(session, dev, "Vào Thứ Bảy", created_at=datetime(2026, 10, 31, tzinfo=UTC))
 
         await employee(session, qa, "Phạm Giang", OCTOBER_WORKING_DAYS)
+        # Đã nộp ngày 5/10 khi còn ở DEV rồi chuyển sang QA: tính ở bộ phận hiện tại (QA).
+        moved = await employee(session, qa, "Lý Chuyển")
+        await create_report(session, author=moved, department=dev, report_date=date(2026, 10, 5))
         await employee(session, hr, "Võ Lan")
         # Bộ phận có manager nhưng không có nhân viên, bộ phận đã xóa: không gửi.
-        await create_department(session, name="Trống", managers=managers[:1])
-        deleted = await create_department(
-            session, name="Đã xóa", managers=managers[:1], deleted=True
-        )
+        await create_department(session, name="Trống", managers=[binh])
+        deleted = await create_department(session, name="Đã xóa", managers=[binh], deleted=True)
         await employee(session, deleted, "Ở Bộ Phận Đã Xóa")
         await session.commit()
 
-        recipients = [(dev.id, managers[0]), (dev.id, managers[1]), (qa.id, managers[2])]
+        recipients = [(dev, binh), (dev, chi), (qa, binh), (qa, minh)]
         return Scene(
             dev_id=dev.id,
             qa_id=qa.id,
             hr_id=hr.id,
-            emails=[manager.email for _, manager in recipients],
-            keys=[dedup_key(department_id, manager.id) for department_id, manager in recipients],
+            recipients=[Recipient(d.id, user.id, user.email) for d, user in recipients],
         )
 
 
@@ -187,8 +190,15 @@ async def email_logs(engine: AsyncEngine) -> list[tuple[str, EmailStatus, str, s
 
 
 def sent_logs(scene: Scene, indexes: list[int]) -> list[tuple[str, EmailStatus, str, str | None]]:
+    # Viết lại dạng key như docs/database.md, không dựng từ hằng số của code đang test.
     return [
-        (scene.emails[i], EmailStatus.SENT, EmailTemplate.MONTHLY_SUMMARY, scene.keys[i])
+        (
+            scene.recipients[i].email,
+            EmailStatus.SENT,
+            EmailTemplate.MONTHLY_SUMMARY,
+            f"monthly:{MONTH}:dept:{scene.recipients[i].department_id}"
+            f":user:{scene.recipients[i].user_id}",
+        )
         for i in indexes
     ]
 
@@ -202,28 +212,32 @@ async def test_task_emails_department_summary_to_each_manager(
 
     assert result.successful()
     assert [to_email for to_email, _ in mailer.sent] == scene.emails
-    (_, dev_first), (_, dev_second), (_, qa) = mailer.sent
+    (_, dev_binh), (_, dev_chi), (_, qa_binh), (_, qa_minh) = mailer.sent
     app_name = get_settings().app_name
-    assert dev_first.subject == (
-        f"[{app_name}] Thống kê báo cáo tháng 10/2026 của bộ phận Phát triển"
-    )
-    assert "Xin chào Trần Bình," in dev_first.text
-    assert "Xin chào Lê Chi," in dev_second.text
+    # Manager của hai bộ phận nhận hai email riêng.
+    assert dev_binh.subject == f"[{app_name}] Thống kê báo cáo tháng 10/2026 của bộ phận Phát triển"
+    assert qa_binh.subject == f"[{app_name}] Thống kê báo cáo tháng 10/2026 của bộ phận Kiểm thử"
+    assert "Xin chào Trần Bình," in dev_binh.text
+    assert "Xin chào Lê Chi," in dev_chi.text
     # Sắp theo tên không dấu; 3/56 ngày phải nộp là 5%.
-    assert "0/3 nhân viên nộp đủ, bộ phận nộp 5% số ngày phải nộp." in dev_first.text
-    assert summary_lines(dev_first) == [
+    assert "0/3 nhân viên nộp đủ, bộ phận nộp 5% số ngày phải nộp." in dev_binh.text
+    assert summary_lines(dev_binh) == [
         "- Đỗ Hà (đã khóa): đã nộp 0/22 ngày (0%), thiếu 22 ngày",
         "- Hoàng Dũng: đã nộp 1/12 ngày (8%), thiếu 11 ngày",
         "- Nguyễn Văn An: đã nộp 2/22 ngày (9%), thiếu 20 ngày",
     ]
-    assert summary_lines(dev_second) == summary_lines(dev_first)
-    assert "1/1 nhân viên nộp đủ, bộ phận nộp 100% số ngày phải nộp." in qa.text
-    assert summary_lines(qa) == ["- Phạm Giang: đã nộp 22/22 ngày (100%), thiếu 0 ngày"]
-    assert await email_logs(engine) == sent_logs(scene, [0, 1, 2])
+    assert summary_lines(dev_chi) == summary_lines(dev_binh)
+    assert "1/2 nhân viên nộp đủ, bộ phận nộp 52% số ngày phải nộp." in qa_binh.text
+    assert summary_lines(qa_binh) == [
+        "- Lý Chuyển: đã nộp 1/22 ngày (5%), thiếu 21 ngày",
+        "- Phạm Giang: đã nộp 22/22 ngày (100%), thiếu 0 ngày",
+    ]
+    assert summary_lines(qa_minh) == summary_lines(qa_binh)
+    assert await email_logs(engine) == sent_logs(scene, [0, 1, 2, 3])
     # Bộ phận có nhân viên mà không ai nhận thống kê: ghi warning cho admin.
     [warning] = [log for log in logs if log["event"] == "monthly_summary_skipped"]
-    assert (warning["log_level"], warning["department_id"], warning["reason"]) == (
-        "warning",
+    assert warning["log_level"] == "warning"
+    assert (warning["department_id"], warning["reason"]) == (
         scene.hr_id,
         "no_recipient",
     )
@@ -238,7 +252,7 @@ async def test_task_run_again_does_not_email_twice(engine: AsyncEngine, mailer: 
 
     assert result.successful()
     assert len(mailer.sent) == len(scene.emails)
-    assert await email_logs(engine) == sent_logs(scene, [0, 1, 2])
+    assert await email_logs(engine) == sent_logs(scene, [0, 1, 2, 3])
 
 
 async def test_task_without_month_summarizes_previous_month_and_retries_same_month(
@@ -247,26 +261,31 @@ async def test_task_without_month_summarizes_previous_month_and_retries_same_mon
     retries: list[dict[str, Any]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Beat gọi không tham số lúc 08:00 ngày 1/11. Lần thử lại truyền đúng tháng 10, không tính
-    # lại "tháng trước" (task nằm chờ qua tháng thì tính sai tháng).
+    # Beat gọi không tham số lúc 08:00 ngày 1/11. Lần thử lại chạy khi đồng hồ đã sang 1/12 (task
+    # nằm chờ qua tháng): vẫn thống kê tháng 10 vì lần thử lại truyền đúng tháng đã tính.
     scene = await make_scene(engine)
-    monkeypatch.setattr(tasks, "local_today", lambda: date(2026, 11, 1))
+    days = [date(2026, 11, 1), date(2026, 12, 1)]
+    monkeypatch.setattr(tasks, "local_today", lambda: days.pop(0) if len(days) > 1 else days[0])
     mailer.errors.append(smtplib.SMTPServerDisconnected())
 
     result = send_monthly_summaries.apply()
 
     assert result.successful()
     assert retries == [{"args": (MONTH,), "countdown": retry_countdown(0)}]
-    # Lần đầu: email đầu lỗi, hai email sau vẫn gửi. Lần thử lại chỉ gửi email còn thiếu.
+    # Lần đầu: email đầu lỗi, các email sau vẫn gửi. Lần thử lại chỉ gửi email còn thiếu.
     assert [to_email for to_email, _ in mailer.sent] == [*scene.emails[1:], scene.emails[0]]
-    assert await email_logs(engine) == sent_logs(scene, [1, 2, 0])
+    assert {email.subject.split(" của ")[0] for _, email in mailer.sent} == {
+        f"[{get_settings().app_name}] Thống kê báo cáo tháng 10/2026"
+    }
+    assert await email_logs(engine) == sent_logs(scene, [1, 2, 3, 0])
 
 
 async def test_task_logs_failed_without_key_after_last_retry_so_next_run_sends(
     engine: AsyncEngine, mailer: FakeMailer, retries: list[dict[str, Any]]
 ) -> None:
     scene = await make_scene(engine)
-    refused = scene.emails[0]
+    # Lê Chi chỉ quản lý DEV: một email luôn lỗi.
+    refused = scene.emails[1]
     mailer.refused[refused] = smtplib.SMTPRecipientsRefused({refused: (550, b"no user")})
 
     result = send_monthly_summaries.apply(args=(MONTH,))
@@ -276,21 +295,28 @@ async def test_task_logs_failed_without_key_after_last_retry_so_next_run_sends(
         retry_countdown(n) for n in range(TASK_MAX_RETRIES)
     ]
     failed = (refused, EmailStatus.FAILED, EmailTemplate.MONTHLY_SUMMARY, None)
-    assert await email_logs(engine) == [*sent_logs(scene, [1, 2]), failed]
+    assert await email_logs(engine) == [*sent_logs(scene, [0, 2, 3]), failed]
 
     # Sửa xong lỗi rồi chạy lại cho tháng đó: chỉ gửi email chưa tới.
     del mailer.refused[refused]
     send_monthly_summaries.apply(args=(MONTH,))
 
-    assert [to_email for to_email, _ in mailer.sent] == [*scene.emails[1:], refused]
-    assert await email_logs(engine) == [*sent_logs(scene, [1, 2]), failed, *sent_logs(scene, [0])]
+    assert [to_email for to_email, _ in mailer.sent][-1] == refused
+    assert len(mailer.sent) == len(scene.emails)
+    assert await email_logs(engine) == [
+        *sent_logs(scene, [0, 2, 3]),
+        failed,
+        *sent_logs(scene, [1]),
+    ]
 
 
-async def test_task_rejects_month_not_finished(engine: AsyncEngine, mailer: FakeMailer) -> None:
+async def test_task_rejects_month_not_finished(
+    engine: AsyncEngine, mailer: FakeMailer, monkeypatch: pytest.MonkeyPatch
+) -> None:
     await make_scene(engine)
-    current_month = local_today().strftime(MONTH_FORMAT)
+    monkeypatch.setattr(tasks, "local_today", lambda: date(2026, 11, 22))
 
-    result = send_monthly_summaries.apply(args=(current_month,))
+    result = send_monthly_summaries.apply(args=("2026-11",))
 
     assert result.failed()
     assert isinstance(result.result, ValueError)
