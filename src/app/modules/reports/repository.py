@@ -5,9 +5,12 @@ from typing import Any
 from sqlalchemy import (
     BigInteger,
     ColumnElement,
+    Row,
     Select,
+    and_,
     cast,
     exists,
+    func,
     null,
     select,
     union_all,
@@ -15,8 +18,9 @@ from sqlalchemy import (
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute, Session, contains_eager, joinedload
 
-from app.core.clock import local_day_start
+from app.core.clock import local_date_sql, local_day_start
 from app.core.pagination import DateRange, DateRangePageParams, paginate
+from app.core.workdays import is_working_day_sql
 from app.modules.departments.models import Department, DepartmentManager
 from app.modules.reports.models import DailyReport, ReportRecipient
 from app.modules.reports.schemas import ManagerReportListParams, ReportExportParams, ReportSort
@@ -49,22 +53,23 @@ def _in_date_range(statement: Select[Any], date_range: DateRange) -> Select[Any]
     return statement
 
 
-def _eligible_recipients(department_id: int) -> Select[User]:
-    """Manager của bộ phận còn nhận được báo cáo: còn liên kết, đúng role, đăng nhập được để đọc.
+def _report_readers() -> Select[User]:
+    """Manager còn đọc được báo cáo của bộ phận mình: còn liên kết, đúng role, đăng nhập được.
 
     Manager chưa đặt mật khẩu, bị khóa hay bị xóa không đọc được báo cáo, nên không là
     người nhận. Xét lại role: liên kết manager là dữ liệu riêng, user đổi role thì liên kết vẫn
-    còn. Dùng chung cho lúc tạo báo cáo (API) và lúc gửi email S1 (worker).
+    còn. Dùng chung cho lúc tạo báo cáo (API), email S1 và thống kê tháng S3 (worker).
     """
     return (
         select(User)
         .join(DepartmentManager, DepartmentManager.user_id == User.id)
-        .where(
-            DepartmentManager.department_id == department_id,
-            User.role == UserRole.MANAGER,
-            User.can_log_in,
-        )
+        .where(User.role == UserRole.MANAGER, User.can_log_in)
     )
+
+
+def _eligible_recipients(department_id: int) -> Select[User]:
+    """Người nhận được báo cáo của bộ phận `department_id`."""
+    return _report_readers().where(DepartmentManager.department_id == department_id)
 
 
 class ReportRepository:
@@ -220,3 +225,75 @@ class ReportNotificationRepository:
             .order_by(ReportRecipient.recipient_id)
         )
         return self.session.scalars(statement).all()
+
+
+class MonthlySummaryRepository:
+    """Truy vấn cho email thống kê tháng S3 bằng session đồng bộ (Celery worker)."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def list_employee_stats(
+        self, first: date, last: date
+    ) -> Sequence[Row[int | None, int, str, bool, date, int]]:
+        """Số ngày làm việc đã nộp báo cáo từ `first` đến `last` của từng nhân viên, một câu SQL.
+
+        Dòng (bộ phận, nhân viên, họ tên, còn hoạt động, ngày bắt đầu tính, số ngày đã nộp), GROUP
+        BY bộ phận, nhân viên:
+        - Nhân viên hiện tại (như M4, M5) của bộ phận chưa xóa, có tài khoản trước khi hết `last`.
+          Không lưu lịch sử thành viên, nên người chuyển bộ phận giữa tháng tính ở bộ phận mới.
+        - Tính từ ngày tạo tài khoản (giờ Việt Nam) nếu tạo giữa tháng: ngày trước đó chưa phải
+          nộp (API cũng không nhận báo cáo cho ngày trước khi có tài khoản).
+        - Chỉ đếm báo cáo vào ngày làm việc, ở mọi bộ phận (mỗi người một báo cáo một ngày), dùng
+          unique (author_id, report_date). Số ngày đã nộp không vượt số ngày phải nộp.
+
+        Sắp theo bộ phận rồi họ tên ngay trong SQL (`order_by_full_name`).
+        """
+        starts_on = local_date_sql(User.created_at)
+        active_departments = select(Department.id).where(Department.deleted_at.is_(None))
+        statement = (
+            select(
+                User.department_id,
+                User.id,
+                User.full_name,
+                User.is_active,
+                func.greatest(starts_on, first),
+                func.count(DailyReport.id),
+            )
+            .outerjoin(
+                DailyReport,
+                and_(
+                    DailyReport.author_id == User.id,
+                    DailyReport.report_date.between(first, last),
+                    DailyReport.report_date >= starts_on,
+                    is_working_day_sql(DailyReport.report_date),
+                ),
+            )
+            .where(
+                is_employee_in(active_departments),
+                User.created_at < local_day_start(last + timedelta(days=1)),
+            )
+            .group_by(User.department_id, User.id)
+            .order_by(User.department_id, *order_by_full_name())
+        )
+        return self.session.execute(statement).all()
+
+    def list_recipients(self) -> Sequence[Row[int, str, int, str, str]]:
+        """Manager nhận thống kê của từng bộ phận chưa xóa, cùng điều kiện người nhận báo cáo.
+
+        Dòng (bộ phận, tên bộ phận, manager, email, họ tên), sắp theo bộ phận rồi manager.
+        """
+        statement = (
+            _report_readers()
+            .join(Department, Department.id == DepartmentManager.department_id)
+            .where(Department.deleted_at.is_(None))
+            .with_only_columns(
+                DepartmentManager.department_id,
+                Department.name,
+                User.id,
+                User.email,
+                User.full_name,
+            )
+            .order_by(DepartmentManager.department_id, User.id)
+        )
+        return self.session.execute(statement).all()

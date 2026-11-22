@@ -1,0 +1,1 @@
+[{{ app_name }}] Thống kê báo cáo tháng {{ month }} của bộ phận {{ department_name }}

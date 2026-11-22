@@ -26,6 +26,7 @@ class EmailTemplate(StrEnum):
     TEST = "test"
     REPORT_CREATED = "report_created"
     ACCOUNT_SETUP = "account_setup"
+    MONTHLY_SUMMARY = "monthly_summary"
 
 
 class EmailLog(CreatedAtMixin, Base):

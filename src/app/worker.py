@@ -74,8 +74,14 @@ def retry_countdown(retries: int) -> int:
     return int(TASK_RETRY_BACKOFF_SECONDS * 2**retries)
 
 
-def retry_or_give_up(task: Task[Any, Any], exc: Exception) -> None:
-    """Còn lượt thì hẹn chạy lại task (ném `Retry`); hết lượt thì trả về để task ghi FAILED."""
+def retry_or_give_up(
+    task: Task[Any, Any], exc: Exception, *, args: tuple[Any, ...] | None = None
+) -> None:
+    """Còn lượt thì hẹn chạy lại task (ném `Retry`); hết lượt thì trả về để task ghi FAILED.
+
+    `args`: tham số của lần chạy lại, mặc định giữ tham số của lần này. Task tự tính giá trị mặc
+    định theo ngày (tháng trước) truyền giá trị đã tính, để lần chạy lại không tính lại.
+    """
     retries = task.request.retries
     if retries >= TASK_MAX_RETRIES:
         return
@@ -88,7 +94,7 @@ def retry_or_give_up(task: Task[Any, Any], exc: Exception) -> None:
         countdown=countdown,
         error=repr(exc),
     )
-    raise task.retry(exc=exc, countdown=countdown)
+    raise task.retry(args=args, exc=exc, countdown=countdown)
 
 
 async def enqueue_task(task: Task[Any, Any], *args: Any) -> bool:

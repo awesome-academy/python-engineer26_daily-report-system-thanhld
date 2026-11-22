@@ -1,0 +1,13 @@
+Xin chào {{ recipient_name }},
+
+Thống kê báo cáo hằng ngày tháng {{ month }} của bộ phận {{ department_name }}.
+Tháng có {{ working_days }} ngày làm việc (thứ 2 đến thứ 6). {{ complete_count }}/{{ employees|length }} nhân viên nộp đủ, bộ phận nộp {{ department_rate }} số ngày phải nộp.
+
+{% for row in employees %}
+- {{ row.full_name }}{% if not row.is_active %} (đã khóa){% endif %}: đã nộp {{ row.submitted_days }}/{{ row.working_days }} ngày ({{ row.rate }}), thiếu {{ row.missing_days }} ngày
+{% endfor %}
+
+Nhân viên mới vào giữa tháng tính số ngày phải nộp từ ngày tạo tài khoản.
+
+--
+Email tự động từ {{ app_name }}, vui lòng không trả lời.

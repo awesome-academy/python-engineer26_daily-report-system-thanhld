@@ -6,6 +6,7 @@ from jinja2 import UndefinedError
 from app.core.config import get_settings
 from app.modules.notifications.models import EmailTemplate
 from app.modules.notifications.rendering import render_email
+from app.modules.reports.monthly_summary import EmployeeSummary
 
 
 def test_render_test_email_fills_subject_text_and_html() -> None:
@@ -29,6 +30,18 @@ REPORT_CONTEXT = {
     "incomplete_reason": None,
     "next_day_plan": "Làm API hồ sơ",
 }
+MONTHLY_SUMMARY_CONTEXT = {
+    "recipient_name": "Trần Quản Lý",
+    "department_name": "Phát triển",
+    "month": "10/2026",
+    "working_days": 22,
+    "employees": [
+        EmployeeSummary("Đỗ <b>Hà</b>", is_active=False, submitted_days=0, working_days=22),
+        EmployeeSummary("Nguyễn Văn An", is_active=True, submitted_days=21, working_days=22),
+    ],
+    "complete_count": 0,
+    "department_rate": "48%",
+}
 # Context mẫu đủ biến của từng mẫu email.
 TEMPLATE_CONTEXTS: dict[EmailTemplate, dict[str, Any]] = {
     EmailTemplate.TEST: {"requested_at": "x"},
@@ -39,6 +52,7 @@ TEMPLATE_CONTEXTS: dict[EmailTemplate, dict[str, Any]] = {
         "setup_url": "http://localhost:3000/setup-password?token=x",
         "expire_hours": 24,
     },
+    EmailTemplate.MONTHLY_SUMMARY: MONTHLY_SUMMARY_CONTEXT,
 }
 
 
@@ -105,3 +119,21 @@ def test_render_report_created_shows_incomplete_reason_and_escapes_content() -> 
     # Nội dung do nhân viên nhập: bản HTML phải escape, không chèn được thẻ.
     assert "Chờ &lt;script&gt;alert(1)&lt;/script&gt;" in email.html
     assert "<script>" not in email.html
+
+
+def test_render_monthly_summary_lists_each_employee() -> None:
+    email = render_email(EmailTemplate.MONTHLY_SUMMARY, MONTHLY_SUMMARY_CONTEXT)
+
+    app_name = get_settings().app_name
+    assert email.subject == f"[{app_name}] Thống kê báo cáo tháng 10/2026 của bộ phận Phát triển"
+    assert "Tháng có 22 ngày làm việc (thứ 2 đến thứ 6)." in email.text
+    assert "0/2 nhân viên nộp đủ, bộ phận nộp 48% số ngày phải nộp." in email.text
+    lines = [line for line in email.text.splitlines() if line.startswith("- ")]
+    assert lines == [
+        "- Đỗ <b>Hà</b> (đã khóa): đã nộp 0/22 ngày (0%), thiếu 22 ngày",
+        "- Nguyễn Văn An: đã nộp 21/22 ngày (95%), thiếu 1 ngày",
+    ]
+    assert "Trần Quản Lý" in email.html
+    assert "95%" in email.html
+    # Họ tên do admin nhập: bản HTML phải escape.
+    assert "Đỗ &lt;b&gt;Hà&lt;/b&gt;" in email.html

@@ -3,6 +3,9 @@
 from datetime import UTC, date, datetime, time
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import ColumnElement, Date, cast, func
+from sqlalchemy.orm import InstrumentedAttribute
+
 from app.core.config import get_settings
 
 
@@ -14,6 +17,13 @@ def local_datetime(moment: datetime) -> datetime:
 def local_date(moment: datetime) -> date:
     """Ngày theo giờ Việt Nam của một thời điểm (DB lưu UTC): 18:00 UTC đã là ngày hôm sau."""
     return local_datetime(moment).date()
+
+
+def local_date_sql(
+    moment: ColumnElement[datetime] | InstrumentedAttribute[datetime],
+) -> ColumnElement[date]:
+    """Như `local_date` nhưng trong SQL, cho cột thời điểm (timestamptz) cần so theo từng dòng."""
+    return cast(func.timezone(get_settings().timezone, moment), Date)
 
 
 def local_day_start(day: date) -> datetime:

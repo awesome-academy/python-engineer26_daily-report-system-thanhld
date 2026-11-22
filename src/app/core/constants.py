@@ -198,3 +198,11 @@ EMAIL_DATE_FORMAT = "%d/%m/%Y"
 # Ngày làm việc: thứ 2 (1) đến thứ 6 (5) theo số thứ ISO (`date.isoweekday()`, `isodow` của
 # PostgreSQL), chưa trừ ngày lễ (Q12). Một định nghĩa cho seed và thống kê tháng (Python và SQL).
 WORKING_ISO_WEEKDAYS = (1, 2, 3, 4, 5)
+
+# Task email thống kê báo cáo tháng (S3). Lịch của Celery Beat gọi task theo tên này.
+MONTHLY_SUMMARY_TASK = "reports.send_monthly_summaries"
+# Tháng thống kê ở tham số task, lệnh CLI, dedup_key ("2026-10"); hiển thị trong email ("10/2026").
+MONTH_FORMAT = "%Y-%m"
+EMAIL_MONTH_FORMAT = "%m/%Y"
+# Mỗi (tháng, bộ phận, manager) nhận đúng một email: chạy lại thì bỏ qua (email_logs.dedup_key).
+MONTHLY_SUMMARY_DEDUP_KEY = "monthly:{month}:dept:{department_id}:user:{user_id}"
