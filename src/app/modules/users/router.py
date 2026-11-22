@@ -66,8 +66,8 @@ manager_employees_router = APIRouter(prefix="/employees", tags=["Manager: nhân 
     summary="Xem thông tin tài khoản đang đăng nhập",
     responses=error_responses(status.HTTP_401_UNAUTHORIZED),
 )
-async def get_me(user: CurrentUser, storage: Storage) -> ProfileOut:
-    return ProfileOut.from_user(user, storage)
+async def get_me(user: CurrentUser, user_service: UserServiceDep, storage: Storage) -> ProfileOut:
+    return ProfileOut.from_user(await user_service.get_profile(user), storage)
 
 
 @me_router.patch(

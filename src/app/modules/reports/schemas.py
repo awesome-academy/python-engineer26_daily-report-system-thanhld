@@ -23,6 +23,7 @@ from app.core.constants import (
 from app.core.pagination import DateRangePageParams
 from app.core.validators import Id, Keyword, NoNul, blank_to_none, drop_duplicates
 from app.modules.departments.models import Department
+from app.modules.departments.schemas import DEPARTMENT_BRIEF_EXAMPLE, DepartmentBriefOut
 from app.modules.reports.models import DailyReport, ReportRecipient
 from app.modules.users.models import User
 from app.seed_data import (
@@ -81,16 +82,11 @@ def _person_example(user: SeedUser) -> dict[str, Any]:
 
 
 _RECIPIENT_EXAMPLE = _person_example(EXAMPLE_MANAGER)
-_DEPARTMENT_EXAMPLE: dict[str, Any] = {
-    "id": seed_id(EXAMPLE_DEPARTMENT),
-    "code": EXAMPLE_DEPARTMENT.code,
-    "name": EXAMPLE_DEPARTMENT.name,
-}
 _RECIPIENT_USER_EXAMPLE: dict[str, Any] = {**_RECIPIENT_EXAMPLE, "is_deleted": False}
 _AUTHOR_EXAMPLE: dict[str, Any] = {**_person_example(EXAMPLE_EMPLOYEE), "is_deleted": False}
 _REPORT_DETAIL_EXAMPLE: dict[str, Any] = {
     **_REPORT_SUMMARY_EXAMPLE,
-    "department": _DEPARTMENT_EXAMPLE,
+    "department": DEPARTMENT_BRIEF_EXAMPLE,
     "recipients": [_RECIPIENT_USER_EXAMPLE],
 }
 
@@ -165,16 +161,6 @@ class ReportOut(ReportSummaryOut):
         return value
 
 
-class ReportDepartmentOut(BaseModel):
-    model_config = ConfigDict(
-        from_attributes=True, json_schema_extra={"examples": [_DEPARTMENT_EXAMPLE]}
-    )
-
-    id: int
-    code: str
-    name: str
-
-
 class ReportUserOut(BaseModel):
     """Người viết hoặc người nhận của một báo cáo."""
 
@@ -202,7 +188,7 @@ class ReportDetailOut(ReportSummaryOut):
     model_config = ConfigDict(json_schema_extra={"examples": [_REPORT_DETAIL_EXAMPLE]})
 
     # Bộ phận lúc viết báo cáo, có thể khác bộ phận hiện tại của người viết.
-    department: ReportDepartmentOut
+    department: DepartmentBriefOut
     recipients: list[ReportUserOut]
 
     @classmethod
@@ -210,7 +196,7 @@ class ReportDetailOut(ReportSummaryOut):
         """`report` phải đã load sẵn `department`; `recipients` đã sắp theo tên."""
         return cls(
             **ReportSummaryOut.model_validate(report).model_dump(),
-            department=ReportDepartmentOut.model_validate(report.department),
+            department=DepartmentBriefOut.model_validate(report.department),
             recipients=[ReportUserOut.from_user(user) for user in recipients],
         )
 
@@ -283,7 +269,7 @@ class ReportExportParams:
 class ReportExportRow(BaseModel):
     """Một dòng của file export (M5): nhân viên trong một bộ phận, kèm báo cáo nếu đã nộp."""
 
-    department: ReportDepartmentOut
+    department: DepartmentBriefOut
     # Người viết đã bị xóa không có email, như danh sách báo cáo M3.
     author: ReportUserOut
     report: ReportSummaryOut | None
@@ -291,7 +277,7 @@ class ReportExportRow(BaseModel):
     @classmethod
     def from_models(cls, department: Department, author: User, report: DailyReport | None) -> Self:
         return cls(
-            department=ReportDepartmentOut.model_validate(department),
+            department=DepartmentBriefOut.model_validate(department),
             author=ReportUserOut.from_user(author),
             report=ReportSummaryOut.model_validate(report) if report is not None else None,
         )

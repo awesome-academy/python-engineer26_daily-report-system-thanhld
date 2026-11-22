@@ -82,12 +82,28 @@ _DEPARTMENT_EXAMPLE: dict[str, Any] = {
     "created_at": "2026-10-26T02:00:00Z",
     "updated_at": "2026-10-26T02:00:00Z",
 }
+# Bộ phận rút gọn kèm trong dữ liệu khác (hồ sơ /me, bộ phận lúc viết báo cáo).
+DEPARTMENT_BRIEF_EXAMPLE: dict[str, Any] = {
+    key: _DEPARTMENT_EXAMPLE[key] for key in ("id", "code", "name")
+}
 _MANAGER_EXAMPLE: dict[str, Any] = {
     "id": seed_id(EXAMPLE_MANAGER),
     "email": EXAMPLE_MANAGER.email,
     "full_name": EXAMPLE_MANAGER.full_name,
     "assigned_at": "2026-10-26T02:00:00Z",
 }
+
+
+class DepartmentBriefOut(BaseModel):
+    """Bộ phận kèm trong dữ liệu khác: hồ sơ của tôi, bộ phận lúc viết báo cáo."""
+
+    model_config = ConfigDict(
+        from_attributes=True, json_schema_extra={"examples": [DEPARTMENT_BRIEF_EXAMPLE]}
+    )
+
+    id: int
+    code: str
+    name: str
 
 
 class DepartmentOut(BaseModel):

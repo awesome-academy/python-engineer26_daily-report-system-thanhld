@@ -70,11 +70,16 @@ class UserService:
         await self._save_new(user)
         return user
 
+    async def get_profile(self, user: User) -> User:
+        """Hồ sơ của chính mình (/me): user đang đăng nhập kèm bộ phận."""
+        await self.users.load_department(user)
+        return user
+
     async def update_profile(self, user: User, data: UserProfileUpdate) -> User:
         for field, value in data.model_dump(exclude_unset=True).items():
             setattr(user, field, value)
         await self.session.commit()
-        return user
+        return await self.get_profile(user)
 
     async def list_users(self, params: UserListParams) -> tuple[Sequence[User], int]:
         return await self.users.search(
@@ -357,6 +362,8 @@ class AvatarService:
             raise
         if old_key is not None:
             await self._delete_quietly(old_key)
+        # Trả hồ sơ /me như GET /me.
+        await self.users.load_department(locked)
         return locked
 
     async def _delete_quietly(self, key: str) -> None:

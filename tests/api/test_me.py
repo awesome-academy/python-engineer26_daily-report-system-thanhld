@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.constants import JWT_SECRET_MIN_LENGTH, LOGIN_MAX_FAILED_ATTEMPTS
 from app.core.security import decode_access_token, verify_password
 from app.modules.users.models import User, UserRole
-from tests.factories import DEFAULT_PASSWORD, auth_headers, create_user
+from tests.factories import DEFAULT_PASSWORD, auth_headers, create_department, create_user
 from tests.helpers import bearer, login, login_tokens, make_token, refresh
 
 ME_URL = "/api/v1/me"
@@ -37,6 +37,43 @@ async def test_me_returns_current_user_without_sensitive_fields(
     )
     assert "password_hash" not in body
     assert "token_version" not in body
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        pytest.param("GET", ME_URL, None, id="get"),
+        pytest.param("PATCH", ME_URL, {"full_name": "Tên Mới"}, id="patch"),
+    ],
+)
+async def test_profile_includes_own_department(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    method: str,
+    path: str,
+    body: dict[str, Any] | None,
+) -> None:
+    department = await create_department(db_session, code="DEV", name="Phòng Phát triển")
+    user = await create_user(db_session, department=department)
+
+    response = await client.request(method, path, json=body, headers=auth_headers(user))
+
+    assert response.status_code == 200
+    assert response.json()["department"] == {
+        "id": department.id,
+        "code": "DEV",
+        "name": "Phòng Phát triển",
+    }
+
+
+async def test_profile_department_is_null_without_department(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    user = await create_user(db_session, role=UserRole.ADMIN)
+
+    response = await client.get(ME_URL, headers=auth_headers(user))
+
+    assert response.json()["department"] is None
 
 
 async def test_token_from_login_can_call_me(client: AsyncClient, db_session: AsyncSession) -> None:

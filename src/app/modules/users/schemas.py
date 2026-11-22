@@ -27,6 +27,7 @@ from app.core.constants import (
 from app.core.pagination import PageParams
 from app.core.storage import FileStorage
 from app.core.validators import Id, Keyword, NoNul, reject_null
+from app.modules.departments.schemas import DEPARTMENT_BRIEF_EXAMPLE, DepartmentBriefOut
 from app.modules.users.models import User, UserRole
 from app.seed_data import (
     DEPARTMENTS,
@@ -117,28 +118,36 @@ class UserOut(BaseModel):
 
 
 class ProfileOut(UserOut):
-    """Hồ sơ của chính mình (`/me`), kèm URL ảnh đại diện."""
+    """Hồ sơ của chính mình (`/me`), kèm bộ phận và URL ảnh đại diện."""
 
     model_config = ConfigDict(
         json_schema_extra={
             "examples": [
                 {
                     **_USER_EXAMPLE,
+                    "department": DEPARTMENT_BRIEF_EXAMPLE,
                     "avatar_url": "http://localhost:8001/media/avatars/5/9f1c2b7e4d.png",
                 }
             ]
         }
     )
 
+    department: DepartmentBriefOut | None = Field(description="Null khi chưa thuộc bộ phận nào")
     avatar_url: str | None = Field(
         description="Null khi chưa có ảnh. Backend S3 trả URL ký sẵn có hạn: lấy lại qua GET /me"
     )
 
     @classmethod
     def from_user(cls, user: User, storage: FileStorage) -> Self:
+        """`user` phải đã load sẵn `department` (`UserService.get_profile`)."""
         # DB chỉ lưu key; URL phụ thuộc backend lưu trữ (local hay S3) nên tính lúc trả response.
         avatar_url = storage.url(user.avatar_key) if user.avatar_key else None
-        return cls(**UserOut.model_validate(user).model_dump(), avatar_url=avatar_url)
+        department = DepartmentBriefOut.model_validate(user.department) if user.department else None
+        return cls(
+            **UserOut.model_validate(user).model_dump(),
+            department=department,
+            avatar_url=avatar_url,
+        )
 
 
 class AdminUserOut(UserOut):
