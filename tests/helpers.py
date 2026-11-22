@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import json
+import re
 from collections.abc import Awaitable, Callable, Iterable, Iterator, MutableMapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -14,7 +15,9 @@ from typing import Any
 import jwt
 import pytest
 import structlog
+from fastapi import APIRouter
 from fastapi.dependencies.models import Dependant
+from fastapi.routing import APIRoute, RouteContext, iter_route_contexts
 from httpx import AsyncClient, Response
 from openpyxl import Workbook, load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
@@ -40,6 +43,8 @@ from tests.factories import DEFAULT_PASSWORD, auth_headers, create_department, c
 
 LOGIN_URL = "/api/v1/auth/login"
 REFRESH_URL = "/api/v1/auth/refresh"
+# Tham số trên path của route (`{department_id}`), nhóm 1 là tên tham số.
+PATH_PARAM = re.compile(r"\{(\w+)\}")
 # Test chạy song song hai transaction: chờ chừng này để lệnh đang thử chạy tới bước khóa dòng
 # trước khi transaction kia commit. Không có khóa thì lệnh đó đọc bản cũ, test đỏ.
 LOCK_WAIT_SECONDS = 0.3
@@ -176,6 +181,26 @@ async def invoke(*args: str) -> Result:
         return runner.invoke(cli, list(args))
 
     return await asyncio.to_thread(run)
+
+
+def api_routes(*routers: APIRouter) -> list[tuple[str, RouteContext]]:
+    """Route API của các router kèm path đủ tiền tố, như khi FastAPI sinh OpenAPI.
+
+    include_router không chép route ra router cha mà giữ cả router con, nên `router.routes` không
+    có route lồng trong nhóm (/manager...). `iter_route_contexts` duyệt cả router con: path đã gộp
+    tiền tố, dependant gồm cả dependency của nhóm.
+    """
+    return [
+        (route.path, route)
+        for route in iter_route_contexts([route for router in routers for route in router.routes])
+        if isinstance(route.original_route, APIRoute) and route.path is not None
+    ]
+
+
+def endpoint_id(endpoint: tuple[str, str]) -> str:
+    """Tên test của một endpoint (method, path): `GET /manager/reports`, bỏ tiền tố /api/v1."""
+    method, path = endpoint
+    return f"{method} {path.removeprefix(get_settings().api_v1_prefix)}"
 
 
 def dependency_calls(dependant: Dependant) -> Iterator[Callable[..., Any]]:

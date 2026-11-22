@@ -9,10 +9,7 @@ Phạm vi dữ liệu theo bộ phận (ngoài phạm vi trả 404, OWASP API1) 
 và test của từng endpoint (báo cáo, nhân viên ngoài phạm vi).
 """
 
-import re
-
 import pytest
-from fastapi.routing import APIRoute, RouteContext, iter_route_contexts
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,10 +20,9 @@ from app.core.config import get_settings
 from app.core.constants import ID_MIN
 from app.modules.users.models import UserRole
 from tests.factories import auth_headers, create_user
-from tests.helpers import dependency_calls
+from tests.helpers import PATH_PARAM, api_routes, dependency_calls, endpoint_id
 
 API = get_settings().api_v1_prefix
-PATH_PARAM = re.compile(r"\{\w+\}")
 PUBLIC_ENDPOINTS = {
     ("GET", "/health"),
     ("POST", f"{API}/auth/login"),
@@ -43,27 +39,13 @@ ROLE_PREFIXES = {
 }
 
 
-def app_routes() -> list[RouteContext]:
-    # Hai router create_app() gắn vào app; test đối chiếu Swagger bên dưới chặn router bị sót.
-    return [
-        route
-        for route in iter_route_contexts([*health_router.routes, *api_router.routes])
-        if isinstance(route.original_route, APIRoute) and route.path is not None
-    ]
-
-
+# Hai router create_app() gắn vào app; test đối chiếu Swagger bên dưới chặn router bị sót.
 ENDPOINTS = {
-    (method, route.path): route
-    for route in app_routes()
-    if route.path is not None
+    (method, path): route
+    for path, route in api_routes(health_router, api_router)
     for method in route.methods or ()
 }
 PROTECTED_ENDPOINTS = sorted(set(ENDPOINTS) - PUBLIC_ENDPOINTS)
-
-
-def endpoint_id(endpoint: tuple[str, str]) -> str:
-    method, path = endpoint
-    return f"{method} {path.removeprefix(API)}"
 
 
 def required_role(path: str) -> UserRole | None:

@@ -13,12 +13,10 @@ Danh sách /manager lọc theo `department_id` trên query (nhân viên M4, báo
 chạy cùng ma trận: bộ phận lọc ngoài phạm vi trả đúng lỗi như trên URL.
 """
 
-import re
-
 import pytest
 from fastapi import APIRouter, FastAPI, status
 from fastapi.dependencies.models import Dependant
-from fastapi.routing import APIRoute, RouteContext, iter_route_contexts
+from fastapi.routing import RouteContext
 from httpx import AsyncClient
 from pydantic import BaseModel
 from pydantic.fields import FieldInfo
@@ -41,14 +39,16 @@ from tests.factories import auth_headers, create_department, create_user
 from tests.helpers import (
     DEPARTMENT_SCOPE_ALLOWED,
     DEPARTMENT_SCOPE_DENIED,
+    PATH_PARAM,
     ArrangeScope,
+    api_routes,
     dependency_calls,
+    endpoint_id,
     error_json,
 )
 
 API = get_settings().api_v1_prefix
 SCOPED_PREFIX = f"{API}{manager_router.prefix}/departments/"
-PATH_PARAM = re.compile(r"\{(\w+)\}")
 _SCOPE_ERRORS = error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT)
 
 probe_router = APIRouter(
@@ -76,20 +76,15 @@ async def write_probe(department: ManagedDepartment, data: ProbeBody) -> dict[st
 
 
 def scoped_routes() -> list[RouteContext]:
-    # include_router không chép route ra router cha mà giữ cả router con, nên `api_router.routes`
-    # không có route lồng trong nhóm /manager. Duyệt bằng iter_route_contexts như khi FastAPI
-    # sinh OpenAPI: path, dependant là của route sau khi gộp tiền tố, dependency của nhóm.
     return [
         route
-        for route in iter_route_contexts([*api_router.routes, *probe_router.routes])
-        if isinstance(route.original_route, APIRoute)
-        and route.path is not None
-        and route.path.startswith(SCOPED_PREFIX)
+        for path, route in api_routes(api_router, probe_router)
+        if path.startswith(SCOPED_PREFIX)
     ]
 
 
 SCOPED_ENDPOINTS = [
-    pytest.param((method, path), id=f"{method} {path.removeprefix(API)}")
+    pytest.param((method, path), id=endpoint_id((method, path)))
     for route in scoped_routes()
     if (path := route.path) is not None
     for method in sorted(route.methods or ())
@@ -253,16 +248,14 @@ def all_query_names(dependant: Dependant) -> set[str]:
 def filtered_routes() -> list[RouteContext]:
     return [
         route
-        for route in iter_route_contexts(api_router.routes)
-        if isinstance(route.original_route, APIRoute)
-        and route.path is not None
-        and route.path.startswith(f"{API}{manager_router.prefix}")
+        for path, route in api_routes(api_router)
+        if path.startswith(f"{API}{manager_router.prefix}")
         and "department_id" in all_query_names(route.dependant)
     ]
 
 
 FILTERED_ENDPOINTS = [
-    pytest.param((method, path), id=f"{method} {path.removeprefix(API)}")
+    pytest.param((method, path), id=endpoint_id((method, path)))
     for route in filtered_routes()
     if (path := route.path) is not None
     for method in sorted(route.methods or ())

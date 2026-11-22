@@ -18,7 +18,7 @@ from typing import Any, get_args, get_origin
 
 import pytest
 from fastapi import FastAPI
-from fastapi.routing import APIRoute, RouteContext, iter_route_contexts
+from fastapi.routing import APIRoute, RouteContext
 from httpx import AsyncClient, Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,7 +32,13 @@ from app.modules.departments.models import Department, DepartmentManager
 from app.modules.reports.models import ReportRecipient
 from app.modules.users.models import User, UserRole
 from tests.factories import auth_headers, create_department, create_report, create_user
-from tests.helpers import data_queries, load_sheet, recorded_queries, user_import_file
+from tests.helpers import (
+    api_routes,
+    data_queries,
+    load_sheet,
+    recorded_queries,
+    user_import_file,
+)
 
 API = get_settings().api_v1_prefix
 EXPORT_PATH = f"{API}/manager/reports/export"
@@ -72,10 +78,9 @@ def is_page(route: RouteContext) -> bool:
 
 
 def list_routes() -> list[RouteContext]:
-    # iter_route_contexts như khi FastAPI sinh OpenAPI: route của router con, path đủ tiền tố.
     return [
         route
-        for route in iter_route_contexts(api_router.routes)
+        for _, route in api_routes(api_router)
         if "GET" in (route.methods or ()) and returns_list(response_model(route))
     ]
 
