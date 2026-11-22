@@ -213,4 +213,4 @@ Lệnh quản trị (CLI Typer) chạy trong container bằng `docker compose ex
 | [docs/postman/](docs/postman/) | Postman collection gọi mọi endpoint |
 | [docs/security.md](docs/security.md) | Rà soát bảo mật theo OWASP API Top 10, checklist khi thêm endpoint, khi triển khai |
 | [docs/demo.md](docs/demo.md) | Kịch bản demo theo vai, câu hỏi thường gặp |
-| [docs/progress/](docs/progress/) | Kế hoạch 10 ngày, báo cáo từng ngày |
+| [docs/progress/](docs/progress/) | Kế hoạch 10 ngày; [tổng kết bàn giao](docs/progress/handover.md): đã làm, kết quả UAT, việc còn lại |
