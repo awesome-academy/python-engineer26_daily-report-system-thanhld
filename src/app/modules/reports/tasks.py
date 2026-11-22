@@ -14,7 +14,7 @@ from app.modules.notifications.mailer import SmtpMailer
 from app.modules.notifications.service import EmailService
 from app.modules.reports.monthly_summary import MonthlySummarySender, resolve_month
 from app.modules.reports.notifications import ReportNotifier
-from app.worker import celery_app, retry_or_give_up
+from app.worker import TRANSIENT_DB_ERRORS, celery_app, retry_or_give_up
 
 logger = structlog.get_logger(__name__)
 
@@ -45,6 +45,9 @@ def send_monthly_summaries(self: Task[Any, Any], month: str | None = None) -> No
     Celery Beat gọi không tham số lúc 08:00 ngày 1: thống kê tháng trước theo giờ Việt Nam. Email
     đã gửi (email_logs.dedup_key) thì bỏ qua, nên chạy lại, giao lại hay thử lại chỉ gửi email còn
     thiếu. Thử lại truyền đúng tháng đã tính. Hết lượt thì ghi FAILED cho email còn lỗi.
+
+    DB tạm mất kết nối thì cũng thử lại cả task, để một lần DB khởi động lại không làm mất lượt gửi
+    của cả tháng; hết lượt thì task báo lỗi (không còn DB để ghi FAILED), chạy lại tay sau.
     """
     first = resolve_month(month, local_today())
     summary_month = first.strftime(MONTH_FORMAT)
@@ -53,7 +56,12 @@ def send_monthly_summaries(self: Task[Any, Any], month: str | None = None) -> No
     )
     with sync_session() as session:
         sender = MonthlySummarySender(session, EmailService(session, SmtpMailer(get_settings())))
-        result = sender.send(first, datetime.now(UTC))
+        try:
+            result = sender.send(first, datetime.now(UTC))
+        except TRANSIENT_DB_ERRORS as exc:
+            retry_or_give_up(self, exc, args=(summary_month,))
+            log.error("monthly_summary_failed", reason="database_unavailable", error=repr(exc))
+            raise
         if not result.failures:
             log.info("monthly_summary_done", sent=result.sent, already_sent=result.already_sent)
             return

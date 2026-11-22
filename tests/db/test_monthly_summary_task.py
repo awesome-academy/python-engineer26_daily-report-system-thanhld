@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.core.config import get_settings
@@ -18,6 +19,7 @@ from app.modules.departments.models import Department
 from app.modules.notifications.models import EmailLog, EmailStatus, EmailTemplate
 from app.modules.notifications.rendering import RenderedEmail
 from app.modules.reports import monthly_summary, tasks
+from app.modules.reports.repository import MonthlySummaryRepository
 from app.modules.reports.tasks import send_monthly_summaries
 from app.modules.users.models import User, UserRole
 from app.worker import celery_app, retry_countdown
@@ -206,6 +208,21 @@ def sent_logs(scene: Scene, indexes: list[int]) -> list[tuple[str, EmailStatus, 
     ]
 
 
+def fail_stats_query(monkeypatch: pytest.MonkeyPatch, times: int) -> list[int]:
+    """Câu thống kê lỗi mất kết nối DB `times` lần đầu; trả về list đếm số lần gọi."""
+    original = MonthlySummaryRepository.list_employee_stats
+    calls: list[int] = []
+
+    def flaky(self: MonthlySummaryRepository, *args: Any) -> Any:
+        calls.append(1)
+        if len(calls) <= times:
+            raise OperationalError("SELECT ...", None, Exception("server closed the connection"))
+        return original(self, *args)
+
+    monkeypatch.setattr(MonthlySummaryRepository, "list_employee_stats", flaky)
+    return calls
+
+
 async def test_task_emails_department_summary_to_each_manager(
     engine: AsyncEngine, mailer: FakeMailer, logs: list[MutableMapping[str, Any]]
 ) -> None:
@@ -313,6 +330,43 @@ async def test_task_logs_failed_without_key_after_last_retry_so_next_run_sends(
         failed,
         *sent_logs(scene, [1]),
     ]
+
+
+async def test_task_retries_same_month_when_database_unavailable(
+    engine: AsyncEngine,
+    mailer: FakeMailer,
+    retries: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # DB khởi động lại đúng lúc Beat chạy: không mất cả lượt gửi của tháng.
+    scene = await make_scene(engine)
+    monkeypatch.setattr(tasks, "local_today", lambda: date(2026, 11, 1))
+    fail_stats_query(monkeypatch, times=1)
+
+    result = send_monthly_summaries.apply()
+
+    assert result.successful()
+    assert retries == [{"args": (MONTH,), "countdown": retry_countdown(0)}]
+    assert [to_email for to_email, _ in mailer.sent] == scene.emails
+
+
+async def test_task_fails_after_last_retry_when_database_stays_unavailable(
+    engine: AsyncEngine,
+    mailer: FakeMailer,
+    retries: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await make_scene(engine)
+    calls = fail_stats_query(monkeypatch, times=TASK_MAX_RETRIES + 1)
+
+    result = send_monthly_summaries.apply(args=(MONTH,))
+
+    # Không còn DB để ghi FAILED: task báo lỗi (log của Celery), chạy lại tay khi DB đã lên.
+    assert result.failed()
+    assert isinstance(result.result, OperationalError)
+    assert len(calls) == TASK_MAX_RETRIES + 1
+    assert len(retries) == TASK_MAX_RETRIES
+    assert mailer.sent == []
 
 
 async def test_task_rejects_month_not_finished(

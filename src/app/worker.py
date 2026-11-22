@@ -12,6 +12,7 @@ import structlog
 from celery import Celery, Task
 from celery.signals import after_setup_logger, after_setup_task_logger, worker_init
 from kombu.exceptions import OperationalError
+from sqlalchemy import exc as sa_exc
 
 from app import models as _models  # noqa: F401 (nạp đủ model trước khi SQLAlchemy nối quan hệ)
 from app.core.config import get_settings
@@ -67,6 +68,10 @@ def _use_app_log_level(logger: logging.Logger, **_: Any) -> None:
     # Log của Celery theo LOG_LEVEL như log của app, không theo cờ --loglevel (mặc định WARNING):
     # một chỗ đặt mức log cho cả worker.
     logger.setLevel(settings.log_level)
+
+
+# Lỗi DB tạm thời (mất kết nối, DB khởi động lại): task chạy lại an toàn thì thử lại như lỗi SMTP.
+TRANSIENT_DB_ERRORS = (sa_exc.OperationalError, sa_exc.InterfaceError)
 
 
 def retry_countdown(retries: int) -> int:
