@@ -58,7 +58,8 @@ def send_monthly_summary(
 ) -> None:
     """Gửi email thống kê báo cáo tháng (S3) ngay, không chờ lịch 08:00 ngày 1 của Celery Beat.
 
-    Đẩy cùng task Beat gọi vào hàng đợi. Manager đã nhận email của tháng đó thì không gửi lại.
+    Đẩy vào hàng đợi đúng task mà Celery Beat gọi. Manager đã nhận email của tháng đó thì không
+    nhận lại, nên dùng được để gửi bù khi lượt chạy theo lịch bị lỡ hoặc gửi lỗi.
     """
     try:
         first = resolve_month(month, local_today())
@@ -68,7 +69,9 @@ def send_monthly_summary(
 
     label = first.strftime(MONTH_FORMAT)
     _enqueue(send_monthly_summaries, label)
+    # Task có thể không gửi email nào (đã gửi hết, tháng chưa ai phải nộp): kết quả ở log worker.
     typer.secho(
-        f"Đã đưa email thống kê tháng {label} vào hàng đợi. Worker gửi xong thì kiểm tra hộp thư.",
+        f"Đã đưa task thống kê tháng {label} vào hàng đợi. Số email đã gửi xem ở log worker "
+        "(monthly_summary_done) và trên hộp thư.",
         fg=typer.colors.GREEN,
     )

@@ -42,7 +42,7 @@ test-email: ## Gửi email thử qua worker: make test-email to=ban@example.com,
 	uv run daily-report send-test-email $(to)
 
 monthly-summary: ## Gửi email thống kê tháng ngay: make monthly-summary (tháng trước) hoặc month=2026-10
-	uv run daily-report send-monthly-summary $(if $(month),--month $(month))
+	uv run daily-report send-monthly-summary $(if $(month),--month "$(month)")
 
 migrate: ## Chạy migration tới bản mới nhất
 	uv run alembic upgrade head
