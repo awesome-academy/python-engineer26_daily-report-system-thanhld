@@ -21,6 +21,8 @@ make dev               # build và chạy api, worker, beat, postgres, redis, ma
 
 Migration chạy tự động khi container `api` khởi động. Sửa code trong `src/` thì API tự reload.
 
+Các cổng chỉ mở trên `127.0.0.1` của máy (máy khác cùng mạng không vào được): stack dev dùng JWT secret mặc định có trong repo và Redis không mật khẩu.
+
 ## Đăng nhập thử
 
 ```bash

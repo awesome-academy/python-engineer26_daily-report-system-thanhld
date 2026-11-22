@@ -9,6 +9,12 @@ repos:
       - id: check-merge-conflict
       - id: check-added-large-files
 
+  # Chặn commit có secret (khóa API, private key, token) trước khi lên repo công khai.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.17.2
     hooks:
