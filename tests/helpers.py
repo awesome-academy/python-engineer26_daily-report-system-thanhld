@@ -106,16 +106,19 @@ async def run_queued_tasks(redis: Redis) -> list[QueuedTask]:
     return tasks
 
 
-async def email_logs(engine: AsyncEngine) -> list[tuple[str, EmailStatus, str]]:
-    """Nhật ký gửi email (người nhận, trạng thái, template) theo thứ tự gửi.
+async def email_logs(engine: AsyncEngine) -> list[tuple[str, EmailStatus, str, str | None]]:
+    """Nhật ký gửi email (người nhận, trạng thái, template, `dedup_key`) theo thứ tự gửi.
 
     Đọc bằng kết nối riêng nên chỉ thấy dữ liệu đã commit, như task chạy trong worker ghi.
+    Chỉ email gửi một lần (thống kê tháng S3) có `dedup_key`; email khác là `None`.
     """
     async with AsyncSession(engine) as session:
         rows = await session.execute(
-            select(EmailLog.to_email, EmailLog.status, EmailLog.template).order_by(EmailLog.id)
+            select(
+                EmailLog.to_email, EmailLog.status, EmailLog.template, EmailLog.dedup_key
+            ).order_by(EmailLog.id)
         )
-        return [(to_email, status, template) for to_email, status, template in rows]
+        return [(to_email, status, template, key) for to_email, status, template, key in rows]
 
 
 @dataclass

@@ -243,7 +243,7 @@ async def test_admin_builds_department_and_new_accounts_sign_in_from_emailed_lin
     emails = [account["email"] for account in department.accounts]
     assert [to_email for to_email, _ in mailbox.sent] == emails
     assert await email_logs(engine) == [
-        (email, EmailStatus.SENT, EmailTemplate.ACCOUNT_SETUP) for email in emails
+        (email, EmailStatus.SENT, EmailTemplate.ACCOUNT_SETUP, None) for email in emails
     ]
 
     # Đặt mật khẩu bằng link trong email rồi đăng nhập: manager thấy bộ phận mình quản lý, nhân
@@ -295,6 +295,7 @@ async def test_employee_report_reaches_own_manager_who_reviews_and_exports_it(
         manager.email,
         EmailStatus.SENT,
         EmailTemplate.REPORT_CREATED,
+        None,
     )
     # Manager thấy báo cáo trong danh sách, mở xem chi tiết.
     listed = json_of(await client.get(f"{API}/manager/reports", headers=manager.headers))

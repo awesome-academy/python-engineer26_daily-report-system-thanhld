@@ -97,8 +97,9 @@ async def notified_emails(engine: AsyncEngine, report_id: int) -> set[str]:
         return set(await session.scalars(statement))
 
 
-def sent_logs(emails: list[str]) -> list[tuple[str, EmailStatus, str]]:
-    return [(email, EmailStatus.SENT, EmailTemplate.REPORT_CREATED) for email in emails]
+def sent_logs(emails: list[str]) -> list[tuple[str, EmailStatus, str, str | None]]:
+    # Email S1 không dùng dedup_key: chống gửi trùng bằng report_recipients.notified_at.
+    return [(email, EmailStatus.SENT, EmailTemplate.REPORT_CREATED, None) for email in emails]
 
 
 async def test_task_emails_every_recipient_and_marks_notified(
@@ -137,7 +138,7 @@ async def assert_second_recipient_skipped(
     active, skipped = scene.emails
     assert [to_email for to_email, _ in mailer.sent] == [active]
     assert await notified_emails(engine, scene.report_id) == {active}
-    assert skipped not in {to_email for to_email, _, _ in await email_logs(engine)}
+    assert skipped not in {to_email for to_email, *_ in await email_logs(engine)}
     assert any(
         log["event"] == "report_notification_skipped" and log["reason"] == "recipient_unavailable"
         for log in logs
@@ -227,4 +228,5 @@ async def test_task_logs_failed_for_recipient_still_failing_after_last_retry(
     assert [to_email for to_email, _ in mailer.sent] == [ok]
     assert await notified_emails(engine, scene.report_id) == {ok}
     logs = await email_logs(engine)
-    assert logs == [*sent_logs([ok]), (refused, EmailStatus.FAILED, EmailTemplate.REPORT_CREATED)]
+    failed = (refused, EmailStatus.FAILED, EmailTemplate.REPORT_CREATED, None)
+    assert logs == [*sent_logs([ok]), failed]
