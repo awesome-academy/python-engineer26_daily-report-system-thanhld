@@ -17,8 +17,12 @@ logger = structlog.get_logger("app.request")
 
 
 def configure_logging(level: str, *, json_logs: bool) -> None:
+    # Traceback không kèm biến cục bộ của từng frame (mặc định của structlog là có): mật khẩu, token
+    # trong request và secret trong Settings sẽ nằm trong log.
     renderer: structlog.typing.Processor = (
-        structlog.processors.JSONRenderer() if json_logs else structlog.dev.ConsoleRenderer()
+        structlog.processors.JSONRenderer()
+        if json_logs
+        else structlog.dev.ConsoleRenderer(exception_formatter=structlog.dev.plain_traceback)
     )
     processors: list[structlog.typing.Processor] = [
         structlog.contextvars.merge_contextvars,
@@ -26,7 +30,11 @@ def configure_logging(level: str, *, json_logs: bool) -> None:
         structlog.processors.TimeStamper(fmt="iso", utc=True),
     ]
     if json_logs:
-        processors.append(structlog.processors.dict_tracebacks)
+        processors.append(
+            structlog.processors.ExceptionRenderer(
+                structlog.tracebacks.ExceptionDictTransformer(show_locals=False)
+            )
+        )
     processors.append(renderer)
 
     structlog.configure(

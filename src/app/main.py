@@ -11,11 +11,19 @@ from fastapi.staticfiles import StaticFiles
 from app import models as _models  # noqa: F401 (nạp đủ model trước khi SQLAlchemy nối quan hệ)
 from app.api.health import router as health_router
 from app.api.v1 import api_router
+from app.core.body_limit import BodySizeLimitMiddleware
 from app.core.config import Settings, get_settings
-from app.core.constants import LOCAL_STORAGE_URL_PATH, StorageBackend
+from app.core.constants import (
+    CORS_ALLOW_HEADERS,
+    CORS_ALLOW_METHODS,
+    CORS_EXPOSE_HEADERS,
+    LOCAL_STORAGE_URL_PATH,
+    REQUEST_BODY_MAX_BYTES,
+    StorageBackend,
+)
 from app.core.database import engine
 from app.core.exceptions import register_exception_handlers
-from app.core.logging import RequestContextMiddleware, configure_logging
+from app.core.logging import REQUEST_ID_HEADER, RequestContextMiddleware, configure_logging
 from app.core.redis import redis_client
 
 
@@ -44,6 +52,24 @@ def mount_local_storage(app: FastAPI, settings: Settings) -> None:
     )
 
 
+def add_cors(app: FastAPI, settings: Settings) -> None:
+    """Cho frontend ở origin trong CORS_ORIGINS gọi API. Không cấu hình thì không thêm middleware.
+
+    Không bật `allow_credentials`: API xác thực bằng header Authorization, không dùng cookie. Bật
+    cùng origin "*" thì Starlette trả lại đúng origin của trang gọi kèm Allow-Credentials, sau này
+    thêm cookie là trang nào cũng gọi được API bằng phiên của người dùng.
+    """
+    if not settings.cors_origins:
+        return
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins,
+        allow_methods=CORS_ALLOW_METHODS,
+        allow_headers=[*CORS_ALLOW_HEADERS, REQUEST_ID_HEADER],
+        expose_headers=[*CORS_EXPOSE_HEADERS, REQUEST_ID_HEADER],
+    )
+
+
 def create_app() -> FastAPI:
     settings = get_settings()
     configure_logging(settings.log_level, json_logs=settings.json_logs)
@@ -55,15 +81,12 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # Middleware thêm sau bọc ngoài middleware thêm trước. Giới hạn body ở trong cùng: response 413
+    # vẫn có request-id, header CORS và dòng log như mọi response.
+    app.add_middleware(BodySizeLimitMiddleware, max_bytes=REQUEST_BODY_MAX_BYTES)
     app.add_middleware(RequestContextMiddleware)
-    if settings.cors_origins:
-        app.add_middleware(
-            CORSMiddleware,
-            allow_origins=settings.cors_origins,
-            allow_credentials=True,
-            allow_methods=["*"],
-            allow_headers=["*"],
-        )
+    # Ngoài cùng: response lỗi (401, 413...) cũng có header CORS để frontend đọc được.
+    add_cors(app, settings)
 
     register_exception_handlers(app)
     app.include_router(health_router)

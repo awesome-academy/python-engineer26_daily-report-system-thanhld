@@ -10,6 +10,7 @@
 - JSON snake_case. Ngày theo ISO 8601 (`2026-11-09`), thời điểm có múi giờ (`2026-11-09T08:30:00+07:00`).
 - Xác thực: OAuth2 password flow + JWT. Header `Authorization: Bearer <access_token>`.
 - `POST /auth/login` nhận form `application/x-www-form-urlencoded` với `username` (là email) và `password`, đúng chuẩn OAuth2, để nút **Authorize** trên Swagger đăng nhập được. Các endpoint khác nhận JSON.
+- Body của mọi request tối đa 3 MB (`REQUEST_BODY_MAX_MB`), lớn hơn thì trả 413 `REQUEST_TOO_LARGE`, trước cả bước kiểm tra token: có `Content-Length` thì từ chối trước khi đọc body, body gửi từng đoạn thì dừng khi vượt 3 MB. Endpoint upload còn giới hạn riêng cho file (413 `FILE_TOO_LARGE`), nhỏ hơn mức chung.
 
 ### Phân quyền
 
@@ -57,7 +58,7 @@ Lỗi validate (422) có `details` là danh sách `{ "field": "body.report_date"
 | 403 | Sai role |
 | 404 | Không tồn tại hoặc ngoài phạm vi quyền |
 | 409 | Trùng dữ liệu |
-| 413 | File tải lên quá dung lượng |
+| 413 | Body hoặc file tải lên quá dung lượng |
 | 415 | Loại file tải lên không được hỗ trợ |
 | 422 | Dữ liệu không hợp lệ |
 | 429 | Quá số lần thử |
@@ -96,6 +97,7 @@ Lỗi validate (422) có `details` là danh sách `{ "field": "body.report_date"
 | `FILE_TOO_LARGE` | 413 | 8 |
 | `UNSUPPORTED_FILE_TYPE` | 415 | 8 |
 | `IMPORT_VALIDATION_FAILED` | 422 | 8 |
+| `REQUEST_TOO_LARGE` | 413 | 10 |
 
 ## Danh sách endpoint
 

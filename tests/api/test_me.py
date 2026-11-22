@@ -71,6 +71,8 @@ async def test_me_requires_token(client: AsyncClient) -> None:
         pytest.param(
             lambda uid: make_token(uid, secret="x" * JWT_SECRET_MIN_LENGTH), id="wrong-signature"
         ),
+        # Token không ký: thư viện JWT phải chỉ nhận đúng thuật toán đã cấu hình.
+        pytest.param(lambda uid: make_token(uid, algorithm="none", secret=None), id="alg-none"),
         pytest.param(lambda uid: make_token(uid, type="refresh"), id="wrong-type"),
         pytest.param(lambda uid: make_token(uid + 1000), id="unknown-user"),
     ],

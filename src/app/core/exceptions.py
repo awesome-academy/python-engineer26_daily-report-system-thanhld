@@ -15,6 +15,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.core.constants import BYTES_PER_MB
+
 logger = structlog.get_logger(__name__)
 
 
@@ -50,6 +52,7 @@ class ErrorCode(StrEnum):
     FILE_TOO_LARGE = "FILE_TOO_LARGE"
     UNSUPPORTED_FILE_TYPE = "UNSUPPORTED_FILE_TYPE"
     IMPORT_VALIDATION_FAILED = "IMPORT_VALIDATION_FAILED"
+    REQUEST_TOO_LARGE = "REQUEST_TOO_LARGE"
 
 
 class AppError(Exception):
@@ -124,6 +127,26 @@ class UnprocessableError(AppError):
             raise TypeError(msg)
 
 
+class RequestTooLargeError(StarletteHTTPException):
+    """Body của request vượt quá giới hạn chung (`BodySizeLimitMiddleware`).
+
+    Là HTTPException của Starlette chứ không phải AppError: lỗi được ném ra lúc FastAPI đang đọc
+    body, mà FastAPI chỉ để HTTPException đi qua, lỗi khác bị đổi thành 400.
+    """
+
+    def __init__(self, max_bytes: int) -> None:
+        super().__init__(status.HTTP_413_CONTENT_TOO_LARGE)
+        self.max_bytes = max_bytes
+
+    def to_response(self) -> JSONResponse:
+        return error_response(
+            self.status_code,
+            ErrorCode.REQUEST_TOO_LARGE,
+            f"Dữ liệu gửi lên vượt quá dung lượng cho phép ({self.max_bytes / BYTES_PER_MB:g} MB).",
+            {"max_bytes": self.max_bytes},
+        )
+
+
 _HTTP_ERRORS: dict[int, tuple[ErrorCode, str]] = {
     status.HTTP_401_UNAUTHORIZED: (ErrorCode.UNAUTHORIZED, UnauthorizedError.message),
     status.HTTP_403_FORBIDDEN: (ErrorCode.FORBIDDEN, ForbiddenError.message),
@@ -182,6 +205,10 @@ def register_exception_handlers(app: FastAPI) -> None:
             "Dữ liệu không hợp lệ.",
             details,
         )
+
+    @app.exception_handler(RequestTooLargeError)
+    async def handle_request_too_large(_: Request, exc: RequestTooLargeError) -> JSONResponse:
+        return exc.to_response()
 
     @app.exception_handler(StarletteHTTPException)
     async def handle_http_error(_: Request, exc: StarletteHTTPException) -> JSONResponse:

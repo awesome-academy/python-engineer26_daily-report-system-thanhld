@@ -186,6 +186,19 @@ USER_IMPORT_TEMPLATE_FILENAME = "mau-import-nhan-vien.xlsx"
 # cần mã hóa.
 REPORT_EXPORT_FILENAME = "bao-cao-{report_date}.xlsx"
 
+# Body của mọi request tối đa REQUEST_BODY_MAX_MB, lớn hơn thì trả 413 trước khi đọc. Đủ cho file
+# tải lên lớn nhất (AVATAR_MAX_MB, USER_IMPORT_MAX_MB) cộng phần khung multipart; endpoint upload
+# vẫn tự kiểm tra dung lượng file theo giới hạn riêng.
+REQUEST_BODY_MAX_MB = 3
+REQUEST_BODY_MAX_BYTES = REQUEST_BODY_MAX_MB * BYTES_PER_MB
+
+# CORS cho frontend khác origin: method API dùng; header client gửi thêm ngoài nhóm Starlette luôn
+# cho phép (Content-Type, Accept...); header frontend được đọc (tên file Excel tải về, số giây chờ
+# khi bị khóa đăng nhập tạm). Header X-Request-ID thêm ở main.py.
+CORS_ALLOW_METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
+CORS_ALLOW_HEADERS = ("Authorization",)
+CORS_EXPOSE_HEADERS = ("Content-Disposition", "Retry-After")
+
 # Celery task gặp lỗi tạm thời (SMTP, mất kết nối) thì thử lại tối đa TASK_MAX_RETRIES lần, lần
 # thứ n chờ TASK_RETRY_BACKOFF_SECONDS * 2**n giây (30s, 60s, 120s). Mọi task dùng chung.
 TASK_MAX_RETRIES = 3
