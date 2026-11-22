@@ -7,14 +7,16 @@ RAM. openpyxl là thư viện đồng bộ, hàm ghi file chạy trong `asyncio.
 import asyncio
 import os
 import re
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 from tempfile import SpooledTemporaryFile
-from typing import IO, Any
+from typing import IO, Any, NamedTuple
 
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
 from openpyxl.cell import WriteOnlyCell
 from openpyxl.cell.cell import Cell
+from openpyxl.styles import Font
+from openpyxl.utils import get_column_letter
 from openpyxl.worksheet._write_only import WriteOnlyWorksheet
 
 from app.core.constants import (
@@ -49,6 +51,39 @@ def text_cell(sheet: WriteOnlyWorksheet, value: str | None) -> Cell:
     cell = WriteOnlyCell(sheet, text)
     cell.data_type = "s"
     return cell
+
+
+class ExcelColumn(NamedTuple):
+    header: str
+    # Độ rộng cột theo đơn vị của Excel (khoảng số ký tự).
+    width: int
+    # Định dạng ô của cả cột: Excel áp cho ô người dùng gõ vào sau này. None là mặc định.
+    number_format: str | None = None
+
+
+HEADER_FONT = Font(bold=True)
+# Giữ dòng tiêu đề khi cuộn.
+FREEZE_BELOW_HEADER = "A2"
+
+
+def write_header(sheet: WriteOnlyWorksheet, columns: Sequence[ExcelColumn]) -> None:
+    """Độ rộng, định dạng từng cột và dòng tiêu đề in đậm, cố định khi cuộn.
+
+    Chế độ write-only: gọi trước khi ghi dòng nào khác (cột, cố định tiêu đề phải đặt trước).
+    """
+    # Stub types-openpyxl thiếu column_dimensions của WriteOnlyWorksheet; lúc chạy có (openpyxl
+    # dựng giống Worksheet).
+    dimensions = sheet.column_dimensions  # type: ignore[attr-defined]
+    for index, column in enumerate(columns, start=1):
+        dimension = dimensions[get_column_letter(index)]
+        dimension.width = column.width
+        if column.number_format is not None:
+            dimension.number_format = column.number_format
+    sheet.freeze_panes = FREEZE_BELOW_HEADER
+    header_cells = [text_cell(sheet, column.header) for column in columns]
+    for cell in header_cells:
+        cell.font = HEADER_FONT
+    sheet.append(header_cells)
 
 
 def save_workbook(workbook: Workbook) -> IO[bytes]:
