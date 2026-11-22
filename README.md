@@ -156,6 +156,6 @@ Chạy riêng một nhóm: `uv run pytest tests/e2e`.
 | [docs/requirements.md](docs/requirements.md) | 15 chức năng, endpoint, kỹ thuật, câu hỏi cần PM chốt |
 | [docs/architecture.md](docs/architecture.md) | Công nghệ, kiến trúc, cấu trúc thư mục, quyết định kỹ thuật |
 | [docs/database.md](docs/database.md) | ERD, bảng, ràng buộc, index |
-| [docs/api-design.md](docs/api-design.md) | Quy ước API, mã lỗi, 39 endpoint |
+| [docs/api-design.md](docs/api-design.md) | Quy ước API, mã lỗi, 41 endpoint |
 | [docs/security.md](docs/security.md) | Rà soát bảo mật theo OWASP API Top 10, checklist khi thêm endpoint, khi triển khai |
 | [docs/progress/](docs/progress/) | Kế hoạch 10 ngày, báo cáo từng ngày |

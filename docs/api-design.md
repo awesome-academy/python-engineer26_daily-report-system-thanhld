@@ -10,7 +10,7 @@
 - JSON snake_case. Ngày theo ISO 8601 (`2026-11-09`), thời điểm có múi giờ (`2026-11-09T08:30:00+07:00`).
 - Xác thực: OAuth2 password flow + JWT. Header `Authorization: Bearer <access_token>`.
 - `POST /auth/login` nhận form `application/x-www-form-urlencoded` với `username` (là email) và `password`, đúng chuẩn OAuth2, để nút **Authorize** trên Swagger đăng nhập được. Các endpoint khác nhận JSON.
-- Body của mọi request tối đa 3 MB (`REQUEST_BODY_MAX_MB`), lớn hơn thì trả 413 `REQUEST_TOO_LARGE` trước khi đọc body, trước cả bước kiểm tra token. Endpoint upload còn giới hạn riêng cho file (413 `FILE_TOO_LARGE`), nhỏ hơn mức chung.
+- Body của mọi request tối đa 3 MB (`REQUEST_BODY_MAX_MB`), lớn hơn thì trả 413 `REQUEST_TOO_LARGE`, trước cả bước kiểm tra token: có `Content-Length` thì từ chối trước khi đọc body, body gửi từng đoạn thì dừng khi vượt 3 MB. Endpoint upload còn giới hạn riêng cho file (413 `FILE_TOO_LARGE`), nhỏ hơn mức chung.
 
 ### Phân quyền
 

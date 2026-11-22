@@ -8,7 +8,7 @@
 | --- | --- | --- | --- |
 | 1 | FastAPI đọc hết body trước khi kiểm tra token và trước khi endpoint upload kiểm tra dung lượng: JSON vào RAM, file multipart ra file tạm, không giới hạn. Request chưa đăng nhập cũng làm đầy RAM, ổ đĩa được | API4 | `BodySizeLimitMiddleware` (`core/body_limit.py`): body quá 3 MB trả 413 `REQUEST_TOO_LARGE`, không đọc tiếp |
 | 2 | Log JSON (production) ghi biến cục bộ của mọi frame khi có exception: mật khẩu, token trong request, JWT secret trong `Settings`. Mặc định của structlog | API8 | Traceback không kèm biến cục bộ, cả log JSON và log console (`core/logging.py`) |
-| 3 | CORS bật `allow_credentials` dù API không dùng cookie, cho mọi method, header | API8 | Không gửi kèm credentials; chỉ method, header API dùng; cho frontend đọc `Content-Disposition` (tên file Excel), `X-Request-ID` |
+| 3 | CORS bật `allow_credentials` dù API không dùng cookie, cho mọi method, header | API8 | Không gửi kèm credentials; chỉ method, header API dùng; cho frontend đọc `Content-Disposition` (tên file Excel), `Retry-After` (khóa đăng nhập tạm), `X-Request-ID` |
 | 4 | Stack dev mở cổng trên mọi interface: Redis không mật khẩu, PostgreSQL, API dùng JWT secret mặc định có trong repo (ai cùng mạng LAN cũng ký được token admin) | API8 | Mọi cổng trong `docker-compose.yml` chỉ mở trên `127.0.0.1` |
 | 5 | Test ngoài phạm vi của báo cáo (M3), chi tiết nhân viên (M4), export (M5) lấy "bộ phận khác" là bộ phận chưa có manager. Đột biến bỏ điều kiện manager trong `managed_department_ids` (phạm vi thành "mọi bộ phận có manager"): các test đó vẫn xanh, chỉ ma trận của M1 và test e2e đỏ. Lỗi phạm vi nằm riêng ở một endpoint M3, M4, M5 sẽ lọt | API1 | `tests/api/test_cross_department_access.py`: hai bộ phận, mỗi bên một manager |
 | 6 | Chưa có test bảo đảm mọi endpoint cần đăng nhập, đúng role: endpoint mới quên dependency thì không test nào đỏ | API5 | `tests/api/test_access_control.py`: kiểm kê mọi endpoint lấy từ router |
@@ -38,13 +38,13 @@
 
 ### API3: Phân quyền theo thuộc tính (BOPLA)
 
-- [x] Schema nhận vào có `extra="forbid"`: field lạ trả 422 thay vì bị bỏ qua. `PATCH /me` chỉ sửa họ tên, số điện thoại, ngày sinh; email, role, bộ phận chỉ admin sửa.
+- [x] Schema tạo, sửa bản ghi (user, hồ sơ, bộ phận, manager, thành viên, báo cáo, đặt mật khẩu) có `extra="forbid"`: field lạ trả 422 thay vì bị bỏ qua. `PATCH /me` chỉ sửa họ tên, số điện thoại, ngày sinh; email, role, bộ phận chỉ admin sửa. `RefreshTokenRequest`, `PasswordChange` chỉ nhận token, mật khẩu, không ghi field nào vào bản ghi, nên bỏ qua field lạ.
 - [x] Schema trả ra không có `password_hash`, `token_version`, token. Người nhận, người viết đã bị xóa có `is_deleted`, không trả email.
 - Bằng chứng: `tests/api/test_me.py::test_update_me_cannot_change_email_or_role`, test schema của từng module.
 
 ### API4: Tiêu thụ tài nguyên không giới hạn
 
-- [x] Body của mọi request tối đa 3 MB, kiểm tra trước khi đọc và trước khi xác thực.
+- [x] Body của mọi request tối đa 3 MB, kiểm tra trước khi xác thực. Có `Content-Length` thì từ chối trước khi đọc; body gửi từng đoạn thì dừng khi đọc quá 3 MB. Endpoint không đọc body (GET) thì phần body gửi kèm bị bỏ, không vào RAM, ổ đĩa, nên không trả 413.
 - [x] File tải lên: ảnh đại diện 2 MB, file Excel 2 MB, giải nén tối đa 10 MB (chặn zip bomb), tối đa 1.000 dòng.
 - [x] Phân trang `page_size` tối đa 100, `page` tối đa 1.000.000; mọi chuỗi có `max_length`; danh sách id trong body có giới hạn.
 - [x] Timeout kết nối PostgreSQL, Redis, SMTP, S3.
@@ -55,7 +55,7 @@
 
 - [x] Role kiểm tra một lần ở nhóm router (`/admin`, `/manager`, nhóm báo cáo của role USER), đọc role từ DB ở mỗi request.
 - [x] Endpoint công khai chỉ có `GET /health`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/setup-password`.
-- Bằng chứng: `tests/api/test_access_control.py` duyệt mọi endpoint của app (đối chiếu Swagger để không sót): endpoint không cần đăng nhập đúng bằng danh sách trên, thiếu token trả 401, role ngoài nhóm trả 403. Đột biến bỏ dependency role của nhóm `/manager`: `GET /manager/candidates` thành công khai, 24 test đỏ. `tests/api/test_rbac.py` thử cơ chế nhóm.
+- Bằng chứng: `tests/api/test_access_control.py` duyệt mọi endpoint của app (đối chiếu Swagger để không sót): endpoint không cần đăng nhập đúng bằng danh sách trên, thiếu token trả 401, role ngoài nhóm trả 403, endpoint ngoài các nhóm role (`/me`, `/auth/logout`) mở cho mọi role (nhóm role mới quên khai tiền tố trong test thì đỏ). Đột biến bỏ dependency role của nhóm `/manager`: `GET /manager/candidates` thành công khai, 24 test đỏ. `tests/api/test_rbac.py` thử cơ chế nhóm.
 
 ### API6: Luồng nghiệp vụ nhạy cảm
 
@@ -70,6 +70,7 @@
 
 - [x] Lỗi 500 chỉ trả thông báo chung, chi tiết ở log kèm request-id. 404, 405, 422 theo format chung; 422 không trả lại giá trị đã nhập. Bằng chứng: `tests/unit/test_exceptions.py::test_unexpected_error_hides_internal_details`, `tests/api/test_app.py`.
 - [x] Log không ghi biến cục bộ của traceback, không ghi mật khẩu, token. Request-id client gửi chỉ nhận ký tự an toàn. Bằng chứng: `tests/unit/test_logging.py`.
+- Rủi ro chấp nhận: lỗi SQL (exception của SQLAlchemy) ghi kèm tham số của câu lệnh để debug: email, nội dung báo cáo; mật khẩu, token chỉ có bản băm. Log đưa ra dịch vụ bên ngoài thì bật `hide_parameters` của engine.
 - [x] CORS chỉ cho origin trong `CORS_ORIGINS`, không gửi kèm credentials. Bằng chứng: `tests/unit/test_main.py`.
 - [x] FastAPI không bật `debug`. debugpy chỉ có trong image dev; mọi cổng của stack dev chỉ mở trên `127.0.0.1`. Container chạy bằng user không phải root.
 - [x] Upload xét loại file bằng nội dung (magic bytes), không tin Content-Type, đuôi file; file lưu với đuôi theo loại thật.
@@ -88,16 +89,16 @@
 
 ## Secret
 
-- [x] gitleaks 8.30.1 quét 262 commit (mọi nhánh) và thư mục làm việc ngày 22/11/2026: không có secret.
+- [x] gitleaks 8.30.1 quét toàn bộ lịch sử (mọi nhánh) và thư mục làm việc ngày 22/11/2026: không có secret.
 - [x] Secret chỉ đọc từ biến môi trường qua `Settings`; production không chạy với `JWT_SECRET_KEY` mặc định.
 - [x] Giá trị mặc định trong code, `.env.example`, `docker-compose.yml` chỉ dùng cho dev; `.env` không vào git, không vào image Docker.
-- [x] Hook gitleaks chạy khi commit (`make install` cài hook); ruff bật nhóm luật `S` (bandit), báo mật khẩu ghi cứng.
+- [x] Hook gitleaks chạy khi commit (`make install` cài hook; CI chưa chạy gitleaks); ruff bật nhóm luật `S` (bandit), báo mật khẩu ghi cứng.
 
 ## Khi thêm endpoint
 
 - Đặt vào đúng nhóm role. Endpoint công khai thì thêm vào `PUBLIC_ENDPOINTS` của `tests/api/test_access_control.py`.
 - Dữ liệu theo bộ phận lọc qua `managed_department_ids` hoặc `ManagedDepartment`; endpoint `/manager` trả dữ liệu theo bộ phận thì thêm vào `tests/api/test_cross_department_access.py`.
-- Schema nhận vào có `extra="forbid"`, `max_length`; schema trả ra không có trường nhạy cảm.
+- Schema tạo, sửa bản ghi có `extra="forbid"`; chuỗi có `max_length`; schema trả ra không có trường nhạy cảm.
 - Upload đọc qua `read_upload`, `read_image` với giới hạn riêng nhỏ hơn giới hạn body chung.
 
 ## Khi triển khai production
