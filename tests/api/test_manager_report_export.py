@@ -5,16 +5,13 @@ quyền ở tests/api/test_department_scope.py; ở đây là nội dung file.
 """
 
 from datetime import UTC, date, datetime, timedelta, tzinfo
-from io import BytesIO
 from typing import IO, Any, Self
 from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient, Response
-from openpyxl import load_workbook
 from openpyxl.cell.cell import Cell, MergedCell
-from openpyxl.worksheet.worksheet import Worksheet
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import clock
@@ -34,7 +31,7 @@ from app.modules.reports.models import DailyReport
 from app.modules.reports.schemas import ReportExportRow
 from app.modules.users.models import User, UserRole
 from tests.factories import auth_headers, create_department, create_report, create_user
-from tests.helpers import error_json, recorded_queries
+from tests.helpers import error_json, load_sheet, recorded_queries
 
 API = get_settings().api_v1_prefix
 EXPORT_URL = f"{API}/manager/reports/export"
@@ -48,12 +45,6 @@ MISSING = SubmissionStatus.MISSING
 STATUS_COLUMN = 4
 CONTENT_COLUMNS = slice(5, 9)
 SUBMITTED_AT_COLUMN = 9
-
-
-def load_sheet(response: Response) -> Worksheet:
-    sheet = load_workbook(BytesIO(response.content)).active
-    assert isinstance(sheet, Worksheet)
-    return sheet
 
 
 def sheet_rows(response: Response) -> list[tuple[Any, ...]]:
