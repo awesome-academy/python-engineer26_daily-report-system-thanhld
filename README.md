@@ -101,7 +101,7 @@ docker compose exec api daily-report send-monthly-summary --month 2026-10   # ho
 
 Bỏ `--month` thì thống kê tháng trước. Manager đã nhận email của tháng đó thì không nhận lại, nên lệnh này cũng dùng để gửi bù khi cả ba lượt theo lịch đều lỡ hoặc lỗi (log `monthly_summary_failed`). Lệnh chỉ đẩy task; số email đã gửi xem ở log worker (`monthly_summary_done sent=... already_sent=...`).
 
-Dữ liệu seed tạo tài khoản vào ngày chạy seed, nên tháng trước chưa ai phải nộp và lệnh không gửi email nào. Muốn thử thì cần tài khoản tạo trước tháng đó và báo cáo trong tháng.
+Dữ liệu seed có tài khoản, báo cáo từ ngày đầu tháng trước: chạy lệnh trên (bỏ `--month`) ngay sau khi seed thì mỗi manager nhận một email thống kê tháng trước trên Mailpit.
 
 Worker, beat không tự reload khi sửa code: `docker compose restart worker beat`. Xem log: `make logs`; mức log của worker, beat (cả log của Celery) lấy từ `LOG_LEVEL`.
 
@@ -120,7 +120,7 @@ File người dùng tải lên (ảnh đại diện) lưu theo `STORAGE_BACKEND`
 docker compose exec api daily-report seed --password Matkhau@123   # hoặc: make seed (chạy trên máy host)
 ```
 
-- Tạo 3 bộ phận (DEV, QA, HR), 1 admin, 3 manager, 5 nhân viên và báo cáo 5 ngày làm việc gần nhất (không có báo cáo hôm nay, để thử tạo báo cáo).
+- Tạo 3 bộ phận (DEV, QA, HR), 1 admin, 3 manager, 5 nhân viên. Tài khoản mẫu coi như có từ ngày đầu tháng trước; báo cáo mẫu cho các ngày làm việc từ đó đến hôm qua, mỗi nhân viên bỏ trống khoảng 1/5 số ngày (để export, thống kê tháng có người chưa nộp). Không có báo cáo hôm nay, để thử tạo báo cáo.
 - Mật khẩu chung của tài khoản mẫu: `--password`, biến `SEED_USER_PASSWORD`, hoặc bỏ trống để nhập ẩn khi chạy. Không có mật khẩu viết cứng.
 - Chỉ thêm phần còn thiếu, chạy lại không tạo trùng. `--reset` xóa toàn bộ dữ liệu rồi seed lại.
 - Không chạy được khi `ENVIRONMENT=production`.

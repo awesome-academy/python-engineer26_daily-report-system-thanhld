@@ -1,6 +1,10 @@
 """Lệnh `daily-report seed`: dữ liệu mẫu để demo và test thủ công.
 
 Chỉ thêm những gì còn thiếu, nên chạy lại nhiều lần (kể cả các ngày sau) không tạo trùng.
+
+Tài khoản mẫu coi như có từ ngày đầu tháng trước, báo cáo mẫu cho các ngày làm việc từ đó đến hôm
+qua: dữ liệu theo đúng quy tắc của API (không có báo cáo trước ngày tạo tài khoản), và có sẵn tháng
+trước để thử thống kê tháng (S3), export (M5) những ngày có người chưa nộp.
 """
 
 import asyncio
@@ -15,7 +19,7 @@ from sqlalchemy import func, select, text, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.cli._db import cli_session, exit_with_validation_errors
-from app.core.clock import local_today
+from app.core.clock import local_date, local_day_start, local_today
 from app.core.config import get_settings
 from app.core.constants import Environment
 from app.core.database import Base
@@ -23,12 +27,14 @@ from app.core.security import hash_password
 from app.core.workdays import is_working_day
 from app.modules.departments.models import Department, DepartmentManager
 from app.modules.reports.models import DailyReport, ReportRecipient
+from app.modules.reports.monthly_summary import previous_month
 from app.modules.users.models import User, UserRole
 from app.modules.users.schemas import Password
 from app.seed_data import DEPARTMENTS, EXAMPLE_EMPLOYEE, EXAMPLE_MANAGER, SAMPLE_WORK, USERS
 
-# Số ngày làm việc gần nhất (trước hôm nay) có báo cáo mẫu.
-REPORT_DAYS = 5
+# Mỗi nhân viên không nộp một trong mỗi chừng này ngày (lệch nhau giữa các nhân viên), để export,
+# thống kê tháng có người chưa nộp.
+MISSED_REPORT_EVERY = 5
 
 
 @dataclass
@@ -45,15 +51,24 @@ class SeedResult:
         return self.departments + self.users + self.managers + self.reports
 
 
-def working_days_before(today: date, count: int) -> list[date]:
-    """`count` ngày làm việc gần nhất trước `today`, sắp từ cũ đến mới."""
-    days: list[date] = []
-    day = today
-    while len(days) < count:
-        day -= timedelta(days=1)
-        if is_working_day(day):
-            days.append(day)
-    return sorted(days)
+def history_start(today: date) -> date:
+    """Ngày bắt đầu dữ liệu mẫu: ngày đầu tháng trước, tài khoản mẫu tạo mới coi như có từ đó."""
+    return previous_month(today)
+
+
+def report_days(today: date) -> list[date]:
+    """Ngày làm việc từ `history_start` đến hôm qua, sắp từ cũ đến mới.
+
+    Không có hôm nay, để thử tạo báo cáo.
+    """
+    start = history_start(today)
+    days = (start + timedelta(days=n) for n in range((today - start).days))
+    return [day for day in days if is_working_day(day)]
+
+
+def is_missed(day: date, author_index: int) -> bool:
+    """Ngày nhân viên thứ `author_index` không nộp. Tính theo ngày, nên seed lại hôm sau vẫn vậy."""
+    return (day.toordinal() + author_index) % MISSED_REPORT_EVERY == 0
 
 
 async def reset_data(session: AsyncSession) -> None:
@@ -82,7 +97,12 @@ async def _ensure_departments(session: AsyncSession, result: SeedResult) -> dict
 
 
 async def _ensure_users(
-    session: AsyncSession, departments: dict[str, Department], password: str, result: SeedResult
+    session: AsyncSession,
+    departments: dict[str, Department],
+    *,
+    password: str,
+    today: date,
+    result: SeedResult,
 ) -> dict[str, User]:
     emails = [u.email for u in USERS]
     existing = {
@@ -102,6 +122,7 @@ async def _ensure_users(
                 role=item.role,
                 department_id=department.id if department else None,
                 password_hash=password_hash,
+                created_at=local_day_start(history_start(today)),
             )
             session.add(existing[item.email])
         result.users += len(missing)
@@ -182,7 +203,7 @@ async def _ensure_reports(
     authors = _report_authors(users, result)
     if not authors:
         return
-    days = working_days_before(today, REPORT_DAYS)
+    days = report_days(today)
     # Bộ phận và người nhận theo dữ liệu thật của author, vì tài khoản có thể đã có sẵn.
     managers = await _active_managers(session, {department_id for _, department_id in authors})
     pairs = [(author.id, day) for author, _ in authors for day in days]
@@ -193,8 +214,11 @@ async def _ensure_reports(
     )
     existing = {tuple(row) for row in rows}
     for index, (author, department_id) in enumerate(authors):
+        # Tài khoản có sẵn có thể tạo sau ngày đầu dữ liệu mẫu: API không nhận báo cáo cho ngày
+        # trước khi có tài khoản, seed cũng vậy.
+        first_day = local_date(author.created_at)
         for offset, day in enumerate(days):
-            if (author.id, day) in existing:
+            if day < first_day or is_missed(day, index) or (author.id, day) in existing:
                 continue
             planned, actual, reason, next_day = SAMPLE_WORK[(index + offset) % len(SAMPLE_WORK)]
             report = DailyReport(
@@ -216,7 +240,7 @@ async def seed_data(session: AsyncSession, *, password: str, today: date) -> See
     """Thêm dữ liệu mẫu còn thiếu. Không commit; caller quyết định transaction."""
     result = SeedResult()
     departments = await _ensure_departments(session, result)
-    users = await _ensure_users(session, departments, password, result)
+    users = await _ensure_users(session, departments, password=password, today=today, result=result)
     await _ensure_managers(session, departments, users, result)
     await _ensure_reports(session, users=users, today=today, result=result)
     return result
