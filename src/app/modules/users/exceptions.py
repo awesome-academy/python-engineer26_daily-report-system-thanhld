@@ -1,3 +1,7 @@
+from collections.abc import Sequence
+from dataclasses import asdict, dataclass
+
+from app.core import messages
 from app.core.exceptions import (
     AppError,
     ConflictError,
@@ -5,6 +9,27 @@ from app.core.exceptions import (
     NotFoundError,
     UnprocessableError,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class ImportRowError:
+    """Một lỗi trong file import: `row` là số dòng trên Excel, `field` là cột (None: cả dòng)."""
+
+    row: int
+    field: str | None
+    message: str
+
+
+class ImportValidationError(UnprocessableError):
+    """File import có lỗi: không tạo tài khoản nào, trả mọi lỗi theo dòng để sửa một lần."""
+
+    code = ErrorCode.IMPORT_VALIDATION_FAILED
+
+    def __init__(self, errors: Sequence[ImportRowError]) -> None:
+        super().__init__(
+            messages.IMPORT_FAILED.format(count=len(errors)),
+            details=[asdict(error) for error in errors],
+        )
 
 
 class EmailAlreadyExistsError(ConflictError):

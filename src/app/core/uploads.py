@@ -27,8 +27,9 @@ class UnsupportedFileTypeError(AppError):
     status_code = status.HTTP_415_UNSUPPORTED_MEDIA_TYPE
     code = ErrorCode.UNSUPPORTED_FILE_TYPE
 
-    def __init__(self, allowed: Iterable[ImageType]) -> None:
-        types = [image_type.value for image_type in allowed]
+    def __init__(self, allowed: Iterable[str]) -> None:
+        # MIME type: ImageType (StrEnum) của ảnh hay chuỗi như XLSX_MEDIA_TYPE.
+        types = [str(media_type) for media_type in allowed]
         super().__init__(
             f"Loại file không được hỗ trợ, chỉ nhận {', '.join(types)}.",
             details={"field": UPLOAD_FIELD, "allowed_types": types},

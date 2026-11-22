@@ -3,18 +3,17 @@
 from collections.abc import Iterable
 from datetime import date
 from enum import StrEnum
-from typing import IO, NamedTuple
+from typing import IO
 
 from openpyxl import Workbook
 from openpyxl.cell import WriteOnlyCell
 from openpyxl.cell.cell import Cell
 from openpyxl.styles import Alignment, Font, PatternFill
-from openpyxl.utils import get_column_letter
 from openpyxl.worksheet._write_only import WriteOnlyWorksheet
 
 from app.core.clock import local_datetime
 from app.core.constants import EXCEL_DATETIME_FORMAT
-from app.core.excel import save_workbook, text_cell
+from app.core.excel import ExcelColumn, save_workbook, text_cell, write_header
 from app.modules.reports.schemas import ReportExportRow
 
 
@@ -23,28 +22,19 @@ class SubmissionStatus(StrEnum):
     MISSING = "Chưa nộp"
 
 
-class Column(NamedTuple):
-    header: str
-    # Độ rộng cột theo đơn vị của Excel (khoảng số ký tự).
-    width: int
-
-
 # Tên nội dung báo cáo giống email S1.
 COLUMNS = (
-    Column("Mã bộ phận", 14),
-    Column("Bộ phận", 24),
-    Column("Nhân viên", 24),
-    Column("Email", 30),
-    Column("Trạng thái", 12),
-    Column("Công việc dự định", 40),
-    Column("Công việc thực tế", 40),
-    Column("Lý do chưa hoàn thành", 30),
-    Column("Dự định ngày tiếp theo", 40),
-    Column("Giờ gửi", 18),
+    ExcelColumn("Mã bộ phận", 14),
+    ExcelColumn("Bộ phận", 24),
+    ExcelColumn("Nhân viên", 24),
+    ExcelColumn("Email", 30),
+    ExcelColumn("Trạng thái", 12),
+    ExcelColumn("Công việc dự định", 40),
+    ExcelColumn("Công việc thực tế", 40),
+    ExcelColumn("Lý do chưa hoàn thành", 30),
+    ExcelColumn("Dự định ngày tiếp theo", 40),
+    ExcelColumn("Giờ gửi", 18),
 )
-# Giữ dòng tiêu đề khi cuộn.
-FREEZE_BELOW_HEADER = "A2"
-HEADER_FONT = Font(bold=True)
 # Nhân viên chưa nộp: chữ đỏ đậm trên nền đỏ nhạt (kiểu "Bad" có sẵn của Excel).
 MISSING_FONT = Font(bold=True, color="9C0006")
 MISSING_FILL = PatternFill(fill_type="solid", fgColor="FFC7CE")
@@ -59,21 +49,11 @@ def write_report_workbook(report_date: date, rows: Iterable[ReportExportRow]) ->
     `asyncio.to_thread`.
     """
     workbook = Workbook(write_only=True)
-    # Chế độ write-only: độ rộng cột, cố định tiêu đề phải đặt trước khi ghi dòng đầu tiên.
     sheet = workbook.create_sheet(title=report_date.isoformat())
-    for index, column in enumerate(COLUMNS, start=1):
-        sheet.column_dimensions[get_column_letter(index)].width = column.width
-    sheet.freeze_panes = FREEZE_BELOW_HEADER
-    sheet.append([_header_cell(sheet, column.header) for column in COLUMNS])
+    write_header(sheet, COLUMNS)
     for row in rows:
         sheet.append(_row_cells(sheet, row))
     return save_workbook(workbook)
-
-
-def _header_cell(sheet: WriteOnlyWorksheet, header: str) -> Cell:
-    cell = text_cell(sheet, header)
-    cell.font = HEADER_FONT
-    return cell
 
 
 def _row_cells(sheet: WriteOnlyWorksheet, row: ReportExportRow) -> list[Cell]:

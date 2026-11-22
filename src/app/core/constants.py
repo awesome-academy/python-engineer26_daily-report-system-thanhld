@@ -54,7 +54,9 @@ FULL_NAME_MIN_LENGTH = 1
 FULL_NAME_MAX_LENGTH = 100
 PHONE_MAX_LENGTH = 20
 # Số điện thoại: chỉ chữ số, có thể có dấu + đầu, từ 9 đến 15 chữ số (E.164 tối đa 15).
-PHONE_PATTERN = r"^\+?[0-9]{9,15}$"
+PHONE_MIN_DIGITS = 9
+PHONE_MAX_DIGITS = 15
+PHONE_PATTERN = rf"^\+?[0-9]{{{PHONE_MIN_DIGITS},{PHONE_MAX_DIGITS}}}$"
 DEPARTMENT_CODE_MIN_LENGTH = 1
 DEPARTMENT_CODE_MAX_LENGTH = 20
 # Mã bộ phận chỉ gồm chữ cái không dấu (ASCII), chữ số, gạch ngang, gạch dưới để dùng được
@@ -156,6 +158,29 @@ EXCEL_SPOOL_MAX_BYTES = BYTES_PER_MB
 DOWNLOAD_CHUNK_BYTES = 64 * 1024
 # Ngày giờ trong file Excel (giờ Việt Nam), theo mã định dạng ô của Excel.
 EXCEL_DATETIME_FORMAT = "dd/mm/yyyy hh:mm"
+EXCEL_DATE_FORMAT = "dd/mm/yyyy"
+# Ô định dạng chữ (Text): Excel giữ nguyên chuỗi đã gõ, không đổi "0901..." thành số 901...
+EXCEL_TEXT_FORMAT = "@"
+# Số dòng tối đa của một sheet Excel: file .xlsx tải lên có dòng sau mốc này là file không hợp lệ.
+EXCEL_MAX_ROWS = 1_048_576
+# File .xlsx tải lên là file zip: kiểm tra các byte đầu trước khi giải nén.
+ZIP_SIGNATURE = b"PK\x03\x04"
+# File zip nhỏ có thể giải nén ra rất lớn (zip bomb), openpyxl nạp cả bảng chuỗi vào RAM: tổng dung
+# lượng giải nén quá giới hạn này thì từ chối trước khi đọc. 1.000 dòng import chỉ vài trăm KB.
+XLSX_MAX_UNCOMPRESSED_MB = 10
+XLSX_MAX_UNCOMPRESSED_BYTES = XLSX_MAX_UNCOMPRESSED_MB * BYTES_PER_MB
+# Đọc từng phần của file .xlsx tải lên mỗi lần chừng này byte: deflate chỉ giải nén tới đó.
+XLSX_READ_CHUNK_BYTES = 64 * 1024
+
+# Import nhân viên từ Excel (A4): file .xlsx tối đa USER_IMPORT_MAX_MB, tối đa USER_IMPORT_MAX_ROWS
+# dòng có dữ liệu (không tính dòng tiêu đề). Nhiều hơn thì phải chuyển sang job nền (architecture,
+# quyết định 5).
+USER_IMPORT_MAX_MB = 2
+USER_IMPORT_MAX_BYTES = USER_IMPORT_MAX_MB * BYTES_PER_MB
+USER_IMPORT_MAX_ROWS = 1000
+# Ngày sinh nhập dạng chữ: cách viết ở Việt Nam hoặc ISO 8601.
+USER_IMPORT_DATE_FORMATS = ("%d/%m/%Y", "%Y-%m-%d")
+USER_IMPORT_TEMPLATE_FILENAME = "mau-import-nhan-vien.xlsx"
 # Export báo cáo một ngày (M5). Tên file chỉ gồm ký tự ASCII để header Content-Disposition không
 # cần mã hóa.
 REPORT_EXPORT_FILENAME = "bao-cao-{report_date}.xlsx"

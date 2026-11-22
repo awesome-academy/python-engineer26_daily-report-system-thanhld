@@ -54,7 +54,7 @@ Phụ thuộc một chiều: router → service → repository → model. Module
 │   ├── core/                  # dùng chung, không chứa nghiệp vụ
 │   │   ├── config.py          # Settings từ biến môi trường
 │   │   ├── database.py        # engine, session (async cho API, đồng bộ cho worker), Base, mixin
-│   │   ├── excel.py           # file .xlsx tải về: ô chữ an toàn, ghi ra file tạm, gửi từng đoạn
+│   │   ├── excel.py           # file .xlsx: ghi file tải về (ô chữ an toàn, gửi từng đoạn), đọc file tải lên
 │   │   ├── exceptions.py      # AppError, ErrorCode, exception handler
 │   │   ├── logging.py         # structlog, middleware request-id
 │   │   ├── pagination.py      # PageParams, Page, paginate()
@@ -87,7 +87,7 @@ Phụ thuộc một chiều: router → service → repository → model. Module
 | 2 | JWT + refresh token xoay vòng; thu hồi bằng blacklist Redis và `token_version` | Đăng xuất, đổi mật khẩu có hiệu lực ngay, không phải chờ access token hết hạn. |
 | 3 | API dùng SQLAlchemy async, Celery worker dùng session đồng bộ riêng | Celery chạy đồng bộ; không chạy event loop bên trong task. |
 | 4 | Nhóm API theo vai trò (`/me`, `/manager`, `/admin`) | Khớp requirement, service không rẽ nhánh theo role, test phân quyền đơn giản. |
-| 5 | Import Excel đồng bộ, "tất cả hoặc không", tối đa 1.000 dòng | Quy mô nhỏ, đơn giản. Vượt giới hạn thì chuyển sang job nền. |
+| 5 | Import Excel đồng bộ, "tất cả hoặc không", tối đa 1.000 dòng: openpyxl read-only đọc trong thread, kiểm tra cả file (ô, trùng email, mã bộ phận) rồi mới ghi trong một transaction | Quy mô nhỏ, đơn giản: 1.000 dòng khoảng 1 giây. Admin sửa mọi lỗi một lần, không có file import dở dang. Vượt giới hạn thì chuyển sang job nền. |
 | 6 | Test chạy trên PostgreSQL thật (DB riêng), rollback sau mỗi test | Bắt được lỗi riêng của PostgreSQL (unaccent, partial index) mà SQLite bỏ sót. |
 | 7 | Lưu file qua interface `FileStorage`; DB chỉ lưu key, URL tính lúc trả response | Đổi local sang S3 chỉ bằng cấu hình. S3 dùng boto3 (đồng bộ) chạy trong thread, bucket private, URL ký sẵn có hạn. |
 | 8 | Export Excel: openpyxl write-only ghi ra file tạm trong thread, ghi xong mới trả `StreamingResponse` từng đoạn | openpyxl không giữ các ô trong RAM. File .xlsx là zip, phải ghi xong mới hợp lệ; lỗi giữa chừng vẫn trả lỗi JSON thay vì file dở. Dữ liệu một ngày của một manager nhỏ (mỗi nhân viên một dòng) nên đọc một lần, đọc xong trả kết nối DB rồi mới ghi, gửi file; khoảng ngày dài thì chuyển sang job nền. |

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Response, status
+from fastapi.responses import StreamingResponse
 
 from app.api.deps import CurrentTokenClaims, CurrentUser, IdPath, Storage
 from app.core.constants import (
@@ -7,7 +8,11 @@ from app.core.constants import (
     LOGIN_ATTEMPT_WINDOW_MINUTES,
     LOGIN_MAX_FAILED_ATTEMPTS,
     SETUP_PASSWORD_TOKEN_EXPIRE_HOURS,
+    USER_IMPORT_MAX_MB,
+    USER_IMPORT_MAX_ROWS,
+    USER_IMPORT_TEMPLATE_FILENAME,
 )
+from app.core.excel import XLSX_FILE_RESPONSE, xlsx_response
 from app.core.exceptions import error_responses
 from app.core.pagination import Page
 from app.modules.auth.dependencies import AuthServiceDep
@@ -16,6 +21,8 @@ from app.modules.users.dependencies import (
     AvatarImage,
     AvatarServiceDep,
     EmployeeListQuery,
+    UserImportFile,
+    UserImportServiceDep,
     UserServiceDep,
 )
 from app.modules.users.schemas import (
@@ -25,6 +32,7 @@ from app.modules.users.schemas import (
     EmployeeOut,
     PasswordChange,
     ProfileOut,
+    UserImportResult,
     UserListQuery,
     UserProfileUpdate,
 )
@@ -135,6 +143,49 @@ async def list_users(params: UserListQuery, user_service: UserServiceDep) -> Pag
 )
 async def create_user(data: AdminUserCreate, user_service: UserServiceDep) -> AdminUserOut:
     return AdminUserOut.model_validate(await user_service.create_by_admin(data))
+
+
+# Route tĩnh (/import-template, /import) phải khai trước /{user_id}.
+@admin_users_router.get(
+    "/import-template",
+    summary="Tải file Excel mẫu để import user",
+    description=(
+        "Sheet đầu là nơi điền (giữ nguyên dòng tiêu đề, mỗi dòng một tài khoản), sheet sau là "
+        "quy tắc từng cột."
+    ),
+    response_class=StreamingResponse,
+    responses=XLSX_FILE_RESPONSE,
+)
+async def download_import_template(import_service: UserImportServiceDep) -> StreamingResponse:
+    return xlsx_response(await import_service.template(), USER_IMPORT_TEMPLATE_FILENAME)
+
+
+@admin_users_router.post(
+    "/import",
+    status_code=status.HTTP_201_CREATED,
+    summary="Import user từ file Excel",
+    description=(
+        f"`multipart/form-data`, field `file`: file .xlsx theo mẫu, tối đa {USER_IMPORT_MAX_MB} "
+        f"MB, {USER_IMPORT_MAX_ROWS} dòng. Mỗi ô theo đúng quy tắc của tạo user, bộ phận ghi bằng "
+        "mã. Kiểm tra cả file rồi mới ghi: có lỗi thì không tạo tài khoản nào, trả 422 "
+        "`IMPORT_VALIDATION_FAILED`, `details` là danh sách `{row, field, message}` (số dòng như "
+        "trên Excel). Mỗi tài khoản mới nhận email link đặt mật khẩu. Quá dung lượng nhận 413, "
+        "không phải file .xlsx nhận 415."
+    ),
+    responses=error_responses(
+        status.HTTP_409_CONFLICT,
+        status.HTTP_413_CONTENT_TOO_LARGE,
+        status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+    ),
+)
+async def import_users(
+    file: UserImportFile, import_service: UserImportServiceDep
+) -> UserImportResult:
+    users = await import_service.import_users(file)
+    return UserImportResult(
+        created_count=len(users), users=[AdminUserOut.model_validate(user) for user in users]
+    )
 
 
 @admin_users_router.get(
