@@ -13,7 +13,7 @@ from typing import IO, Any, NamedTuple
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
-from pydantic import BaseModel, ConfigDict, PastDate, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, PastDate, TypeAdapter, ValidationError, field_validator
 
 from app.core import messages
 from app.core.constants import (
@@ -80,6 +80,12 @@ class UserImportRow(BaseModel):
         if isinstance(value, str) and value.isascii():
             return value.upper()
         return value
+
+
+# Ô email, mã bộ phận kiểm tra riêng bằng đúng kiểu và cấu hình của UserImportRow: dòng có ô khác
+# sai vẫn lấy được giá trị đã chuẩn hóa (email NFC, mã chữ hoa) để xét trùng, xét mã bộ phận.
+_EMAIL_CELL = TypeAdapter(Email)
+_DEPARTMENT_CODE_CELL = TypeAdapter(DepartmentCode, config=ConfigDict(coerce_numbers_to_str=True))
 
 
 class ImportColumn(NamedTuple):
@@ -275,17 +281,20 @@ def _parse_row(row: int, cells: dict[str, Any]) -> tuple[ImportRow, list[ImportR
         user = UserImportRow.model_validate(cells)
     except ValidationError as exc:
         errors = [ImportRowError(row, str(error["loc"][0]), error["msg"]) for error in exc.errors()]
-        invalid = {error.field for error in errors}
-        # Ô không có lỗi đã qua đúng kiểu của cột nên dùng được giá trị gốc (đã trim).
-        email = cells.get("email") if "email" not in invalid else None
-        code = cells.get("department_code") if "department_code" not in invalid else None
-        return ImportRow(
-            row,
-            None,
-            None if email is None else str(email).lower(),
-            None if code is None else str(code).upper(),
-        ), errors
+        email = _valid_cell(_EMAIL_CELL, cells.get("email"))
+        code = _valid_cell(_DEPARTMENT_CODE_CELL, cells.get("department_code"))
+        return ImportRow(row, None, None if email is None else email.lower(), code), errors
     return ImportRow(row, user, user.email.lower(), user.department_code), []
+
+
+def _valid_cell[T](adapter: TypeAdapter[T], value: object) -> T | None:
+    """Giá trị đã chuẩn hóa của một ô, None khi ô trống hoặc sai."""
+    if value is None:
+        return None
+    try:
+        return adapter.validate_python(value)
+    except ValidationError:
+        return None
 
 
 def _duplicate_email_errors(rows: Sequence[ImportRow]) -> list[ImportRowError]:

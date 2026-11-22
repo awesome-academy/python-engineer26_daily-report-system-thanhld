@@ -1,3 +1,4 @@
+import unicodedata
 from datetime import date, datetime, time
 from typing import Any
 
@@ -6,8 +7,9 @@ from pydantic import ValidationError
 
 from app.core import messages
 from app.modules.users.exceptions import ImportRowError
-from app.modules.users.importing import FIELDS, UserImportRow, sort_errors
+from app.modules.users.importing import FIELDS, UserImportRow, parse_import_file, sort_errors
 from app.modules.users.models import UserRole
+from tests.helpers import user_import_file
 
 REQUIRED = {"email": "an@example.com", "full_name": "Nguyễn Văn An"}
 
@@ -94,3 +96,21 @@ def test_sort_errors_orders_by_row_then_column() -> None:
         (3, "email"),
         (3, "role"),
     ]
+
+
+def test_row_with_invalid_cell_still_checks_normalized_email_and_department_code() -> None:
+    # Dòng 3 có ô số điện thoại sai: ô email (dạng Unicode NFD) và mã bộ phận (ô số) vẫn được
+    # chuẩn hóa như dòng hợp lệ, nên lỗi trùng email báo ngay, không đợi admin sửa số điện thoại.
+    email = "é@example.com"
+    decomposed = unicodedata.normalize("NFD", email)
+    assert decomposed != email
+
+    parsed = parse_import_file(
+        user_import_file([email, "Nguyễn Văn An"], [decomposed, "Trần Thị Bình", "abc", None, 101])
+    )
+
+    assert [(error.row, error.field) for error in sort_errors(parsed.errors)] == [
+        (3, "email"),
+        (3, "phone"),
+    ]
+    assert parsed.rows[1].department_code == "101"
