@@ -161,6 +161,8 @@ EXCEL_DATETIME_FORMAT = "dd/mm/yyyy hh:mm"
 EXCEL_DATE_FORMAT = "dd/mm/yyyy"
 # Ô định dạng chữ (Text): Excel giữ nguyên chuỗi đã gõ, không đổi "0901..." thành số 901...
 EXCEL_TEXT_FORMAT = "@"
+# Số dòng tối đa của một sheet Excel: file .xlsx tải lên có dòng sau mốc này là file không hợp lệ.
+EXCEL_MAX_ROWS = 1_048_576
 # File .xlsx tải lên là file zip: kiểm tra các byte đầu trước khi giải nén.
 ZIP_SIGNATURE = b"PK\x03\x04"
 # File zip nhỏ có thể giải nén ra rất lớn (zip bomb), openpyxl nạp cả bảng chuỗi vào RAM: tổng dung

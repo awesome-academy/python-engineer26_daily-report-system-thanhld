@@ -1,6 +1,8 @@
+import re
 import struct
 import tracemalloc
 import zlib
+from collections.abc import Callable
 from io import BytesIO
 from zipfile import ZIP_BZIP2, ZIP_DEFLATED, ZIP_LZMA, ZipFile
 
@@ -8,7 +10,13 @@ import pytest
 from openpyxl import Workbook, load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
-from app.core.constants import BYTES_PER_MB, DOWNLOAD_CHUNK_BYTES, XLSX_MEDIA_TYPE, ZIP_SIGNATURE
+from app.core.constants import (
+    BYTES_PER_MB,
+    DOWNLOAD_CHUNK_BYTES,
+    EXCEL_MAX_ROWS,
+    XLSX_MEDIA_TYPE,
+    ZIP_SIGNATURE,
+)
 from app.core.excel import iter_file, iter_xlsx_rows, save_workbook, text_cell, xlsx_response
 from app.core.uploads import UnsupportedFileTypeError
 from tests.helpers import xlsx_file
@@ -190,3 +198,39 @@ def test_iter_xlsx_rows_rejects_compression_excel_does_not_use(method: int) -> N
 
     with pytest.raises(UnsupportedFileTypeError):
         list(iter_xlsx_rows(recompress(data, STYLES_XML, styles, method), 1))
+
+
+def edit_sheet(data: bytes, edit: Callable[[bytes], bytes]) -> bytes:
+    with ZipFile(BytesIO(data)) as archive:
+        sheet = archive.read(SHEET_XML)
+    edited = edit(sheet)
+    assert edited != sheet
+    return rewrite_zip(data, {SHEET_XML: edited})
+
+
+def test_iter_xlsx_rows_reads_past_wrong_dimension_tag() -> None:
+    # Công cụ tạo file có thể ghi sai thẻ <dimension>: read-only của openpyxl dừng ở đó, các dòng
+    # sau bị bỏ mà không báo lỗi (import thiếu người).
+    data = xlsx_file([[f"dòng {index}"] for index in range(1, 51)])
+    wrong = edit_sheet(
+        data, lambda sheet: re.sub(rb'<dimension ref="[^"]*"', b'<dimension ref="A1:A3"', sheet)
+    )
+
+    rows = list(iter_xlsx_rows(wrong, 1))
+
+    assert (len(rows), rows[-1]) == (50, ("dòng 50",))
+
+
+def test_iter_xlsx_rows_rejects_row_beyond_excel_limit() -> None:
+    # openpyxl chèn một dòng trống cho mỗi số dòng bị bỏ qua: không chặn thì file vài KB có dòng
+    # số hàng tỷ chạy hàng giờ.
+    far_row = str(EXCEL_MAX_ROWS + 1).encode()
+    data = edit_sheet(
+        xlsx_file([["tiêu đề"], ["dòng 2"]]),
+        lambda sheet: sheet.replace(b'<row r="2"', b'<row r="' + far_row + b'"').replace(
+            b'r="A2"', b'r="A' + far_row + b'"'
+        ),
+    )
+
+    with pytest.raises(UnsupportedFileTypeError):
+        list(iter_xlsx_rows(data, 1))

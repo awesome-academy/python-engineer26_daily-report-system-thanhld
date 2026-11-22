@@ -22,10 +22,12 @@ from openpyxl.cell import WriteOnlyCell
 from openpyxl.cell.cell import Cell
 from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet._read_only import ReadOnlyWorksheet
 from openpyxl.worksheet._write_only import WriteOnlyWorksheet
 
 from app.core.constants import (
     DOWNLOAD_CHUNK_BYTES,
+    EXCEL_MAX_ROWS,
     EXCEL_SPOOL_MAX_BYTES,
     XLSX_MAX_UNCOMPRESSED_BYTES,
     XLSX_MAX_UNCOMPRESSED_MB,
@@ -84,11 +86,28 @@ def iter_xlsx_rows(data: bytes, max_col: int) -> Generator[tuple[Any, ...]]:
         workbook = load_workbook(_copy_xlsx(data), read_only=True, data_only=True)
         try:
             for sheet in workbook.worksheets[:1]:
-                yield from sheet.iter_rows(max_col=max_col, values_only=True)
+                yield from _iter_sheet_rows(sheet, max_col)
         finally:
             workbook.close()
     except XLSX_READ_ERRORS as exc:
         raise UnsupportedFileTypeError((XLSX_MEDIA_TYPE,)) from exc
+
+
+def _iter_sheet_rows(sheet: ReadOnlyWorksheet, max_col: int) -> Generator[tuple[Any, ...]]:
+    # Đọc đến dòng cuối thật, không theo thẻ <dimension> công cụ tạo file ghi (có thể sai): đọc
+    # theo thẻ thì các dòng sau bị bỏ mà không báo lỗi.
+    sheet.reset_dimensions()
+    # Stub types-openpyxl khai iter_rows của ReadOnlyWorksheet bằng hàm của Worksheet (sai kiểu
+    # self); lúc chạy là hàm của ReadOnlyWorksheet.
+    rows = sheet.iter_rows(  # type: ignore[misc]
+        max_row=EXCEL_MAX_ROWS + 1, max_col=max_col, values_only=True
+    )
+    for row_number, row in enumerate(rows, start=1):
+        # openpyxl chèn một dòng trống cho mỗi số dòng bị bỏ qua: file vài KB có dòng số hàng
+        # triệu tốn CPU theo số dòng đó. File Excel thật không quá EXCEL_MAX_ROWS dòng.
+        if row_number > EXCEL_MAX_ROWS:
+            raise UnsupportedFileTypeError((XLSX_MEDIA_TYPE,))
+        yield row
 
 
 def _copy_xlsx(data: bytes) -> BytesIO:
