@@ -6,7 +6,7 @@ quyền ở tests/api/test_department_scope.py; ở đây là nội dung file.
 
 from datetime import UTC, date, datetime, timedelta
 from io import BytesIO
-from typing import Any
+from typing import IO, Any
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -22,8 +22,15 @@ from app.core.config import get_settings
 from app.core.constants import EXCEL_DATETIME_FORMAT, XLSX_MEDIA_TYPE
 from app.core.exceptions import AppError, ForbiddenError, UnauthorizedError
 from app.modules.departments.models import Department
-from app.modules.reports.export import COLUMNS, MISSING_FILL, SubmissionStatus
+from app.modules.reports import service as report_service
+from app.modules.reports.export import (
+    COLUMNS,
+    MISSING_FILL,
+    SubmissionStatus,
+    write_report_workbook,
+)
 from app.modules.reports.models import DailyReport
+from app.modules.reports.schemas import ReportExportRow
 from app.modules.users.models import User, UserRole
 from tests.factories import auth_headers, create_department, create_report, create_user
 from tests.helpers import error_json, recorded_queries
@@ -62,6 +69,10 @@ def sheet_cells(response: Response) -> list[tuple[Cell | MergedCell, ...]]:
 def summary(rows: list[tuple[Any, ...]]) -> list[tuple[str, str, SubmissionStatus]]:
     """Mã bộ phận, họ tên, trạng thái của từng dòng."""
     return [(row[0], row[2], SubmissionStatus(row[STATUS_COLUMN])) for row in rows]
+
+
+def data_queries(queries: list[tuple[str, Any]]) -> list[str]:
+    return [statement for statement, _ in queries if "SAVEPOINT" not in statement]
 
 
 @pytest.fixture(autouse=True)
@@ -324,6 +335,30 @@ async def test_user_text_is_written_as_plain_text(
     ]
 
 
+async def test_export_releases_db_connection_before_writing_file(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    headers: dict[str, str],
+    department: Department,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Session của request chỉ đóng sau khi gửi xong file (StreamingResponse): còn transaction thì
+    # kết nối DB bị giữ suốt lúc ghi file và lúc client tải.
+    await employee(db_session, department)
+    in_transaction: list[bool] = []
+
+    def write(report_date: date, rows: list[ReportExportRow]) -> IO[bytes]:
+        in_transaction.append(db_session.in_transaction())
+        return write_report_workbook(report_date, rows)
+
+    monkeypatch.setattr(report_service, "write_report_workbook", write)
+
+    rows = await export(client, headers)
+
+    assert len(rows) == 1
+    assert in_transaction == [False]
+
+
 async def test_export_query_count_does_not_grow_with_rows(
     client: AsyncClient,
     db_session: AsyncSession,
@@ -343,7 +378,9 @@ async def test_export_query_count_does_not_grow_with_rows(
         big = await export(client, headers, department_id=large.id)
 
     assert (len(small), len(big)) == (1, 6)
-    assert len(large_queries) == len(small_queries)
+    # Bỏ câu SAVEPOINT của transaction test: service commit để trả kết nối, lần gọi sau mở
+    # savepoint mới. Đếm câu đọc dữ liệu.
+    assert len(data_queries(large_queries)) == len(data_queries(small_queries))
 
 
 # Ngày

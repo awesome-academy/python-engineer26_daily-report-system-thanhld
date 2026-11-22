@@ -93,6 +93,11 @@ class ReportService:
             ReportExportRow.from_models(*row)
             for row in await self.reports.list_daily_export_rows(scope, params)
         ]
+        # Session của request chỉ đóng sau khi gửi xong file (StreamingResponse). Kết thúc
+        # transaction đọc (không có gì để lưu) để trả kết nối về pool ngay, không giữ nó suốt lúc
+        # ghi file và lúc client tải. Commit chứ không rollback: rollback làm hết hạn mọi object
+        # đã load của session, kể cả `manager` mà router đang dùng.
+        await self.session.commit()
         return await asyncio.to_thread(write_report_workbook, params.report_date, rows)
 
     async def create_report(self, author: User, data: ReportCreate, *, today: date) -> DailyReport:
