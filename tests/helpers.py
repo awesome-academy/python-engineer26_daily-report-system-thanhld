@@ -14,6 +14,7 @@ from typing import Any
 import jwt
 import pytest
 import structlog
+from fastapi.dependencies.models import Dependant
 from httpx import AsyncClient, Response
 from openpyxl import Workbook, load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
@@ -177,8 +178,17 @@ async def invoke(*args: str) -> Result:
     return await asyncio.to_thread(run)
 
 
+def dependency_calls(dependant: Dependant) -> Iterator[Callable[..., Any]]:
+    """Mọi dependency một endpoint chạy, kể cả dependency lồng và dependency của nhóm router."""
+    for sub in dependant.dependencies:
+        if sub.call is not None:
+            yield sub.call
+        yield from dependency_calls(sub)
+
+
 def make_token(user_id: int, **overrides: Any) -> str:
-    """Ghép JWT bằng tay để thử token hết hạn, sai chữ ký, sai loại. Mặc định là access token."""
+    """Ghép JWT bằng tay để thử token hết hạn, sai chữ ký, sai loại, không ký (`algorithm="none"`,
+    `secret=None`). Mặc định là access token."""
     now = datetime.now(UTC)
     claims: dict[str, Any] = {
         "sub": str(user_id),
@@ -192,8 +202,9 @@ def make_token(user_id: int, **overrides: Any) -> str:
     }
     settings = get_settings()
     secret = overrides.pop("secret", settings.jwt_secret_key)
+    algorithm = overrides.pop("algorithm", settings.jwt_algorithm)
     claims.update(overrides)
-    return jwt.encode(claims, secret, algorithm=settings.jwt_algorithm)
+    return jwt.encode(claims, secret, algorithm=algorithm)
 
 
 async def login(client: AsyncClient, email: str, password: str) -> Response:

@@ -14,8 +14,6 @@ chạy cùng ma trận: bộ phận lọc ngoài phạm vi trả đúng lỗi nh
 """
 
 import re
-from collections.abc import Callable, Iterator
-from typing import Any
 
 import pytest
 from fastapi import APIRouter, FastAPI, status
@@ -44,6 +42,7 @@ from tests.helpers import (
     DEPARTMENT_SCOPE_ALLOWED,
     DEPARTMENT_SCOPE_DENIED,
     ArrangeScope,
+    dependency_calls,
     error_json,
 )
 
@@ -95,13 +94,6 @@ SCOPED_ENDPOINTS = [
     if (path := route.path) is not None
     for method in sorted(route.methods or ())
 ]
-
-
-def dependency_calls(dependant: Dependant) -> Iterator[Callable[..., Any]]:
-    for sub in dependant.dependencies:
-        if sub.call is not None:
-            yield sub.call
-        yield from dependency_calls(sub)
 
 
 def fill_path(path: str, department_id: int | str) -> str:
