@@ -54,15 +54,19 @@ Lỗi validate (422) có `details` là danh sách `{ "field": "body.report_date"
 | HTTP | Khi nào |
 | --- | --- |
 | 200, 201, 204 | Thành công |
+| 202 | Đã nhận, việc chạy nền (gửi lại link đặt mật khẩu) |
+| 400 | Đúng định dạng nhưng không thực hiện được: mật khẩu hiện tại sai, link đặt mật khẩu không dùng được, admin tự khóa, đổi role, xóa chính mình. Request hỏng không đọc được (multipart thiếu boundary) trả `BAD_REQUEST` |
 | 401 | Chưa đăng nhập, token hết hạn hoặc đã thu hồi |
 | 403 | Sai role |
 | 404 | Không tồn tại hoặc ngoài phạm vi quyền |
+| 405 | Phương thức HTTP không có ở đường dẫn này |
 | 409 | Trùng dữ liệu |
 | 413 | Body hoặc file tải lên quá dung lượng |
 | 415 | Loại file tải lên không được hỗ trợ |
 | 422 | Dữ liệu không hợp lệ |
 | 429 | Quá số lần thử |
 | 500 | Lỗi hệ thống |
+| 503 | DB hoặc Redis không sẵn sàng (`/health`), không đẩy được task (gửi lại link đặt mật khẩu) |
 
 ### Mã lỗi
 
@@ -71,6 +75,7 @@ Lỗi validate (422) có `details` là danh sách `{ "field": "body.report_date"
 | `VALIDATION_ERROR` | 422 | 1 |
 | `NOT_FOUND` | 404 | 1 |
 | `METHOD_NOT_ALLOWED` | 405 | 1 |
+| `BAD_REQUEST` | 400 | 1 |
 | `INTERNAL_ERROR` | 500 | 1 |
 | `UNAUTHORIZED` | 401 | 1 |
 | `FORBIDDEN` | 403 | 3 |
