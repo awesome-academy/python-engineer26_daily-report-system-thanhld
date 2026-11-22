@@ -54,6 +54,7 @@ Phụ thuộc một chiều: router → service → repository → model. Module
 │   ├── core/                  # dùng chung, không chứa nghiệp vụ
 │   │   ├── config.py          # Settings từ biến môi trường
 │   │   ├── database.py        # engine, session (async cho API, đồng bộ cho worker), Base, mixin
+│   │   ├── excel.py           # file .xlsx tải về: ô chữ an toàn, ghi ra file tạm, gửi từng đoạn
 │   │   ├── exceptions.py      # AppError, ErrorCode, exception handler
 │   │   ├── logging.py         # structlog, middleware request-id
 │   │   ├── pagination.py      # PageParams, Page, paginate()
@@ -89,6 +90,7 @@ Phụ thuộc một chiều: router → service → repository → model. Module
 | 5 | Import Excel đồng bộ, "tất cả hoặc không", tối đa 1.000 dòng | Quy mô nhỏ, đơn giản. Vượt giới hạn thì chuyển sang job nền. |
 | 6 | Test chạy trên PostgreSQL thật (DB riêng), rollback sau mỗi test | Bắt được lỗi riêng của PostgreSQL (unaccent, partial index) mà SQLite bỏ sót. |
 | 7 | Lưu file qua interface `FileStorage`; DB chỉ lưu key, URL tính lúc trả response | Đổi local sang S3 chỉ bằng cấu hình. S3 dùng boto3 (đồng bộ) chạy trong thread, bucket private, URL ký sẵn có hạn. |
+| 8 | Export Excel: openpyxl write-only ghi ra file tạm trong thread, ghi xong mới trả `StreamingResponse` từng đoạn | Bộ nhớ không tăng theo số dòng. File .xlsx là zip, phải ghi xong mới hợp lệ; lỗi giữa chừng vẫn trả lỗi JSON thay vì file dở. Dữ liệu một ngày của một manager nhỏ nên đọc một lần; khoảng ngày dài thì chuyển sang job nền. |
 
 ## Môi trường local
 
