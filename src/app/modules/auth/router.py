@@ -11,6 +11,11 @@ from app.core.constants import (
 )
 from app.core.exceptions import error_responses
 from app.modules.auth.dependencies import AuthServiceDep
+from app.modules.auth.exceptions import (
+    TOO_MANY_ATTEMPTS_EXAMPLE,
+    InvalidCredentialsError,
+    SetupTokenInvalidError,
+)
 from app.modules.auth.schemas import PasswordSetup, RefreshTokenRequest, TokenResponse
 
 router = APIRouter(prefix="/auth", tags=["Xác thực"])
@@ -26,9 +31,7 @@ router = APIRouter(prefix="/auth", tags=["Xác thực"])
         "thì bị khóa tạm (429) đến hết khoảng thời gian đó."
     ),
     responses=error_responses(
-        status.HTTP_401_UNAUTHORIZED,
-        status.HTTP_422_UNPROCESSABLE_CONTENT,
-        status.HTTP_429_TOO_MANY_REQUESTS,
+        InvalidCredentialsError(), status.HTTP_422_UNPROCESSABLE_CONTENT, TOO_MANY_ATTEMPTS_EXAMPLE
     ),
 )
 async def login(
@@ -71,7 +74,7 @@ async def logout(_: CurrentUser, claims: CurrentTokenClaims, auth_service: AuthS
         "Token sai, đã dùng, hết hạn, hoặc tài khoản bị khóa, đã có mật khẩu: 400 "
         "`SETUP_TOKEN_INVALID`. Đặt xong thì đăng nhập bằng email và mật khẩu mới."
     ),
-    responses=error_responses(status.HTTP_400_BAD_REQUEST, status.HTTP_422_UNPROCESSABLE_CONTENT),
+    responses=error_responses(SetupTokenInvalidError(), status.HTTP_422_UNPROCESSABLE_CONTENT),
 )
 async def setup_password(data: PasswordSetup, auth_service: AuthServiceDep) -> None:
     await auth_service.setup_password(data)

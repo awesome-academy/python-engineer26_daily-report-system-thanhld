@@ -2,6 +2,7 @@ import math
 
 from fastapi import status
 
+from app.core.constants import LOGIN_ATTEMPT_WINDOW_MINUTES
 from app.core.exceptions import AppError, ErrorCode, UnauthorizedError
 
 
@@ -43,3 +44,8 @@ class TooManyAttemptsError(AppError):
         )
         # Chuẩn HTTP: báo client số giây cần chờ trước khi thử lại.
         self.headers = {"Retry-After": str(retry_after)}
+
+
+# Ví dụ trên Swagger (đăng nhập, đổi mật khẩu): bị khóa ngay khi vừa quá số lần thử thì chờ trọn
+# khoảng thời gian đếm.
+TOO_MANY_ATTEMPTS_EXAMPLE = TooManyAttemptsError(retry_after=LOGIN_ATTEMPT_WINDOW_MINUTES * 60)

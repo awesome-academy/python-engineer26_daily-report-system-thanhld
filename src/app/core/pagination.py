@@ -5,7 +5,7 @@ from datetime import date
 from typing import Annotated, Any, Self
 
 from fastapi import Query
-from pydantic import BaseModel, Field, ValidationInfo, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -50,6 +50,11 @@ class DateRangePageParams(PageParams, DateRange):
 
 
 class PageMeta(BaseModel):
+    # Ví dụ trên Swagger; ví dụ của `data` lấy từ schema của phần tử.
+    model_config = ConfigDict(
+        json_schema_extra={"examples": [{"page": 1, "page_size": DEFAULT_PAGE_SIZE, "total": 1}]}
+    )
+
     page: int
     page_size: int
     total: int

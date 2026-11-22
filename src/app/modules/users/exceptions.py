@@ -82,3 +82,12 @@ class UserInactiveError(UnprocessableError):
 
     def __init__(self) -> None:
         super().__init__(details={"field": "user_id"})
+
+
+# Ví dụ trên Swagger: lỗi theo dòng của file import, số dòng như trên Excel.
+IMPORT_VALIDATION_EXAMPLE = ImportValidationError(
+    [
+        ImportRowError(3, "email", EmailAlreadyExistsError.message),
+        ImportRowError(5, "department_code", messages.IMPORT_DEPARTMENT_NOT_FOUND),
+    ]
+)

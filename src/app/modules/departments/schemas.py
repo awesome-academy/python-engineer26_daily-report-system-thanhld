@@ -1,6 +1,6 @@
 import re
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import Query
 from pydantic import (
@@ -26,6 +26,14 @@ from app.core.constants import (
 from app.core.pagination import PageParams
 from app.core.validators import Id, Keyword, NoNul, blank_to_none, drop_duplicates, reject_null
 from app.modules.users.models import UserRole
+from app.seed_data import (
+    EXAMPLE_DEPARTMENT,
+    EXAMPLE_EMPLOYEE,
+    EXAMPLE_MANAGER,
+    EXAMPLE_NEW_USER,
+    EXAMPLE_NEW_USER_ID,
+    seed_id,
+)
 
 
 def _check_department_code(code: str) -> str:
@@ -65,8 +73,27 @@ DepartmentDescription = Annotated[
 ]
 
 
+# Ví dụ trên Swagger: bộ phận, manager, nhân viên của dữ liệu seed (app.seed_data).
+_DEPARTMENT_EXAMPLE: dict[str, Any] = {
+    "id": seed_id(EXAMPLE_DEPARTMENT),
+    "code": EXAMPLE_DEPARTMENT.code,
+    "name": EXAMPLE_DEPARTMENT.name,
+    "description": EXAMPLE_DEPARTMENT.description,
+    "created_at": "2026-10-26T02:00:00Z",
+    "updated_at": "2026-10-26T02:00:00Z",
+}
+_MANAGER_EXAMPLE: dict[str, Any] = {
+    "id": seed_id(EXAMPLE_MANAGER),
+    "email": EXAMPLE_MANAGER.email,
+    "full_name": EXAMPLE_MANAGER.full_name,
+    "assigned_at": "2026-10-26T02:00:00Z",
+}
+
+
 class DepartmentOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True, json_schema_extra={"examples": [_DEPARTMENT_EXAMPLE]}
+    )
 
     id: int
     code: str
@@ -78,7 +105,18 @@ class DepartmentOut(BaseModel):
 
 class DepartmentCreate(BaseModel):
     # Field lạ trả 422 như DepartmentUpdate, để client biết dữ liệu đó không được lưu.
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {
+                    "code": "MKT",
+                    "name": "Phòng Marketing",
+                    "description": "Truyền thông và quảng bá sản phẩm",
+                }
+            ]
+        },
+    )
 
     code: DepartmentCode
     name: DepartmentName
@@ -91,7 +129,14 @@ class DepartmentUpdate(BaseModel):
     Field lạ bị từ chối (422) thay vì bỏ qua, để client biết thay đổi đó không có hiệu lực.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {"name": "Phòng Truyền thông", "description": "Truyền thông nội bộ và đối ngoại"}
+            ]
+        },
+    )
 
     code: DepartmentCode | None = None
     name: DepartmentName | None = None
@@ -117,6 +162,21 @@ DepartmentMemberListQuery = Annotated[DepartmentMemberListParams, Query()]
 
 
 class DepartmentMemberOut(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "id": seed_id(EXAMPLE_EMPLOYEE),
+                    "email": EXAMPLE_EMPLOYEE.email,
+                    "full_name": EXAMPLE_EMPLOYEE.full_name,
+                    "role": EXAMPLE_EMPLOYEE.role,
+                    "is_active": True,
+                    "is_manager": False,
+                }
+            ]
+        }
+    )
+
     id: int
     email: str
     full_name: str
@@ -128,12 +188,16 @@ class DepartmentMemberOut(BaseModel):
 
 class ManagerAssign(BaseModel):
     # Field lạ trả 422 như DepartmentCreate, DepartmentUpdate.
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid", json_schema_extra={"examples": [{"user_id": seed_id(EXAMPLE_MANAGER)}]}
+    )
 
     user_id: Id
 
 
 class DepartmentManagerOut(BaseModel):
+    model_config = ConfigDict(json_schema_extra={"examples": [_MANAGER_EXAMPLE]})
+
     id: int
     email: str
     full_name: str
@@ -142,6 +206,12 @@ class DepartmentManagerOut(BaseModel):
 
 class DepartmentDetailOut(DepartmentOut):
     """Bộ phận kèm manager (sắp theo họ tên) và số thành viên, cho manager xem bộ phận mình."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [{**_DEPARTMENT_EXAMPLE, "managers": [_MANAGER_EXAMPLE], "member_count": 3}]
+        }
+    )
 
     managers: list[DepartmentManagerOut]
     member_count: int
@@ -157,7 +227,18 @@ MemberCandidateListQuery = Annotated[MemberCandidateListParams, Query()]
 
 
 class MemberCandidateOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "id": EXAMPLE_NEW_USER_ID,
+                    "email": EXAMPLE_NEW_USER.email,
+                    "full_name": EXAMPLE_NEW_USER.full_name,
+                }
+            ]
+        },
+    )
 
     id: int
     email: str
@@ -166,7 +247,9 @@ class MemberCandidateOut(BaseModel):
 
 class MembersAdd(BaseModel):
     # Field lạ trả 422 như các body khác của module.
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid", json_schema_extra={"examples": [{"user_ids": [EXAMPLE_NEW_USER_ID]}]}
+    )
 
     user_ids: Annotated[
         list[Id],

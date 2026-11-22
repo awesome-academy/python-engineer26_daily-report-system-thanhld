@@ -25,6 +25,14 @@ from app.core.validators import Id, Keyword, NoNul, blank_to_none, drop_duplicat
 from app.modules.departments.models import Department
 from app.modules.reports.models import DailyReport, ReportRecipient
 from app.modules.users.models import User
+from app.seed_data import (
+    EXAMPLE_DEPARTMENT,
+    EXAMPLE_EMPLOYEE,
+    EXAMPLE_MANAGER,
+    EXAMPLE_WORK,
+    SeedUser,
+    seed_id,
+)
 
 ReportContent = Annotated[
     str,
@@ -48,9 +56,49 @@ RecipientIds = Annotated[
     AfterValidator(drop_duplicates),
 ]
 
+# Ví dụ trên Swagger (request, response, lỗi): báo cáo của nhân viên seed gửi cho manager bộ phận
+# đó (app.seed_data), dùng được ngay sau khi seed.
+EXAMPLE_REPORT_DATE = date(2026, 11, 9)
+_planned, _actual, _reason, _next_day = EXAMPLE_WORK
+_REPORT_CONTENT_EXAMPLE: dict[str, Any] = {
+    "report_date": EXAMPLE_REPORT_DATE.isoformat(),
+    "planned_work": _planned,
+    "actual_work": _actual,
+    "incomplete_reason": _reason,
+    "next_day_plan": _next_day,
+}
+_REPORT_SUMMARY_EXAMPLE: dict[str, Any] = {
+    "id": 128,
+    **_REPORT_CONTENT_EXAMPLE,
+    "department_id": seed_id(EXAMPLE_DEPARTMENT),
+    "created_at": "2026-11-09T10:15:00Z",
+    "updated_at": "2026-11-09T10:15:00Z",
+}
+
+
+def _person_example(user: SeedUser) -> dict[str, Any]:
+    return {"id": seed_id(user), "full_name": user.full_name, "email": user.email}
+
+
+_RECIPIENT_EXAMPLE = _person_example(EXAMPLE_MANAGER)
+_DEPARTMENT_EXAMPLE: dict[str, Any] = {
+    "id": seed_id(EXAMPLE_DEPARTMENT),
+    "code": EXAMPLE_DEPARTMENT.code,
+    "name": EXAMPLE_DEPARTMENT.name,
+}
+_RECIPIENT_USER_EXAMPLE: dict[str, Any] = {**_RECIPIENT_EXAMPLE, "is_deleted": False}
+_AUTHOR_EXAMPLE: dict[str, Any] = {**_person_example(EXAMPLE_EMPLOYEE), "is_deleted": False}
+_REPORT_DETAIL_EXAMPLE: dict[str, Any] = {
+    **_REPORT_SUMMARY_EXAMPLE,
+    "department": _DEPARTMENT_EXAMPLE,
+    "recipients": [_RECIPIENT_USER_EXAMPLE],
+}
+
 
 class RecipientOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True, json_schema_extra={"examples": [_RECIPIENT_EXAMPLE]}
+    )
 
     id: int
     full_name: str
@@ -59,7 +107,12 @@ class RecipientOut(BaseModel):
 
 class ReportCreate(BaseModel):
     # Field lạ trả 422, để client biết dữ liệu đó không được lưu.
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [{**_REPORT_CONTENT_EXAMPLE, "recipient_ids": [_RECIPIENT_EXAMPLE["id"]]}]
+        },
+    )
 
     report_date: date
     planned_work: ReportContent
@@ -78,7 +131,9 @@ class ReportCreate(BaseModel):
 class ReportSummaryOut(BaseModel):
     """Báo cáo không kèm người nhận: phần tử của lịch sử báo cáo, phần chung của các schema sau."""
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True, json_schema_extra={"examples": [_REPORT_SUMMARY_EXAMPLE]}
+    )
 
     id: int
     report_date: date
@@ -92,6 +147,12 @@ class ReportSummaryOut(BaseModel):
 
 
 class ReportOut(ReportSummaryOut):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [{**_REPORT_SUMMARY_EXAMPLE, "recipients": [_RECIPIENT_EXAMPLE]}]
+        }
+    )
+
     recipients: list[RecipientOut]
 
     @field_validator("recipients", mode="before")
@@ -105,7 +166,9 @@ class ReportOut(ReportSummaryOut):
 
 
 class ReportDepartmentOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True, json_schema_extra={"examples": [_DEPARTMENT_EXAMPLE]}
+    )
 
     id: int
     code: str
@@ -114,6 +177,8 @@ class ReportDepartmentOut(BaseModel):
 
 class ReportUserOut(BaseModel):
     """Người viết hoặc người nhận của một báo cáo."""
+
+    model_config = ConfigDict(json_schema_extra={"examples": [_AUTHOR_EXAMPLE]})
 
     id: int
     full_name: str
@@ -134,6 +199,8 @@ class ReportUserOut(BaseModel):
 
 
 class ReportDetailOut(ReportSummaryOut):
+    model_config = ConfigDict(json_schema_extra={"examples": [_REPORT_DETAIL_EXAMPLE]})
+
     # Bộ phận lúc viết báo cáo, có thể khác bộ phận hiện tại của người viết.
     department: ReportDepartmentOut
     recipients: list[ReportUserOut]
@@ -174,6 +241,10 @@ class ManagerReportListParams(DateRangePageParams):
 
 
 class ManagerReportSummaryOut(ReportSummaryOut):
+    model_config = ConfigDict(
+        json_schema_extra={"examples": [{**_REPORT_SUMMARY_EXAMPLE, "author": _AUTHOR_EXAMPLE}]}
+    )
+
     author: ReportUserOut
 
     @classmethod
@@ -186,6 +257,10 @@ class ManagerReportSummaryOut(ReportSummaryOut):
 
 
 class ManagerReportDetailOut(ReportDetailOut):
+    model_config = ConfigDict(
+        json_schema_extra={"examples": [{**_REPORT_DETAIL_EXAMPLE, "author": _AUTHOR_EXAMPLE}]}
+    )
+
     author: ReportUserOut
 
     @classmethod

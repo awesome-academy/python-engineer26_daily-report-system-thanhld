@@ -6,14 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.cli import seed as seed_module
-from app.cli.seed import (
-    DEPARTMENTS,
-    REPORT_DAYS,
-    USERS,
-    reset_data,
-    seed_data,
-    working_days_before,
-)
+from app.cli.seed import REPORT_DAYS, reset_data, seed_data, working_days_before
 from app.core.config import Settings
 from app.core.constants import Environment
 from app.core.database import Base
@@ -21,10 +14,11 @@ from app.core.security import verify_password
 from app.modules.departments.models import Department
 from app.modules.reports.models import DailyReport, ReportRecipient
 from app.modules.users.models import User, UserRole
+from app.seed_data import DEPARTMENTS, EXAMPLE_PASSWORD, USERS, seed_id
 from tests.factories import create_department, create_user
 from tests.helpers import invoke
 
-SEED_PASSWORD = "Matkhau@123"
+SEED_PASSWORD = EXAMPLE_PASSWORD
 MONDAY = date(2026, 10, 26)
 EMPLOYEES = [u for u in USERS if u.role is UserRole.USER]
 
@@ -51,6 +45,22 @@ async def test_seed_creates_sample_data(db_session: AsyncSession) -> None:
         len(EMPLOYEES) * REPORT_DAYS,
     )
     assert await count(db_session, DailyReport) == len(EMPLOYEES) * REPORT_DAYS
+
+
+async def test_seed_ids_follow_order_of_sample_data(db_session: AsyncSession) -> None:
+    # Ví dụ trên Swagger dùng seed_id: seed vào DB trống thì id theo đúng thứ tự trong tuple. DB
+    # test không đặt lại sequence giữa các test, nên so độ lệch với bản ghi đầu tiên.
+    await seed_data(db_session, password=SEED_PASSWORD, today=MONDAY)
+
+    departments = dict(list(await db_session.execute(select(Department.code, Department.id))))
+    users = dict(list(await db_session.execute(select(User.email, User.id))))
+
+    first_department = departments[DEPARTMENTS[0].code] - seed_id(DEPARTMENTS[0])
+    first_user = users[USERS[0].email] - seed_id(USERS[0])
+    assert [departments[d.code] - first_department for d in DEPARTMENTS] == [
+        seed_id(d) for d in DEPARTMENTS
+    ]
+    assert [users[u.email] - first_user for u in USERS] == [seed_id(u) for u in USERS]
 
 
 async def test_seeded_accounts_can_log_in_with_given_password(db_session: AsyncSession) -> None:

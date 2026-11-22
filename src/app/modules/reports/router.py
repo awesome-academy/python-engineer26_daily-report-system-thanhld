@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from fastapi import APIRouter, status
 from fastapi.responses import StreamingResponse
 
@@ -6,12 +8,22 @@ from app.core.constants import REPORT_BACKDATE_DAYS, REPORT_EXPORT_FILENAME
 from app.core.excel import XLSX_FILE_RESPONSE, xlsx_response
 from app.core.exceptions import error_responses
 from app.core.pagination import Page
+from app.modules.departments.exceptions import DepartmentNotFoundError
 from app.modules.reports.dependencies import (
     ManagerReportListQuery,
     ReportExportQuery,
     ReportServiceDep,
 )
+from app.modules.reports.exceptions import (
+    InvalidRecipientError,
+    NoRecipientError,
+    ReportAlreadyExistsError,
+    ReportDateOutOfRangeError,
+    ReportExportDateOutOfRangeError,
+    ReportNotFoundError,
+)
 from app.modules.reports.schemas import (
+    EXAMPLE_REPORT_DATE,
     ManagerReportDetailOut,
     ManagerReportSummaryOut,
     RecipientOut,
@@ -46,7 +58,16 @@ async def list_my_recipients(user: CurrentUser, service: ReportServiceDep) -> li
         "(giờ Việt Nam). Người nhận lấy từ `GET /me/recipients`; bỏ trống `recipient_ids` thì "
         "gửi cho mọi manager của bộ phận. Báo cáo đã tạo không sửa, xóa được."
     ),
-    responses=error_responses(status.HTTP_409_CONFLICT, status.HTTP_422_UNPROCESSABLE_CONTENT),
+    responses=error_responses(
+        ReportAlreadyExistsError(EXAMPLE_REPORT_DATE),
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+        ReportDateOutOfRangeError(
+            min_date=EXAMPLE_REPORT_DATE - timedelta(days=REPORT_BACKDATE_DAYS),
+            max_date=EXAMPLE_REPORT_DATE,
+        ),
+        InvalidRecipientError(invalid_ids=[42]),
+        NoRecipientError(),
+    ),
 )
 async def create_my_report(
     data: ReportCreate, user: CurrentUser, service: ReportServiceDep, today: Today
@@ -79,7 +100,7 @@ async def list_my_reports(
         "Gồm bộ phận lúc viết báo cáo và người nhận (sắp theo tên). Người nhận đã bị xóa vẫn "
         "hiện, `is_deleted` là `true` và không trả email. Báo cáo của người khác trả 404."
     ),
-    responses=error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
+    responses=error_responses(ReportNotFoundError(), status.HTTP_422_UNPROCESSABLE_CONTENT),
 )
 async def get_my_report(
     report_id: IdPath, user: CurrentUser, service: ReportServiceDep
@@ -100,7 +121,7 @@ manager_report_router = APIRouter(prefix="/reports", tags=["Manager: báo cáo"]
         "viết (không dấu), lọc theo khoảng ngày, bộ phận; mặc định sắp ngày mới nhất trước. "
         "`department_id` ngoài phạm vi trả 404."
     ),
-    responses=error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
+    responses=error_responses(DepartmentNotFoundError(), status.HTTP_422_UNPROCESSABLE_CONTENT),
 )
 async def list_department_reports(
     params: ManagerReportListQuery, manager: CurrentUser, service: ReportServiceDep
@@ -125,7 +146,11 @@ async def list_department_reports(
     response_class=StreamingResponse,
     responses={
         **XLSX_FILE_RESPONSE,
-        **error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
+        **error_responses(
+            DepartmentNotFoundError(),
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            ReportExportDateOutOfRangeError(max_date=EXAMPLE_REPORT_DATE),
+        ),
     },
 )
 async def export_department_reports(
@@ -143,7 +168,7 @@ async def export_department_reports(
         "Gồm người viết, bộ phận lúc viết và người nhận (sắp theo tên). Người đã bị xóa có "
         "`is_deleted` là `true`, không trả email. Báo cáo ngoài phạm vi trả 404."
     ),
-    responses=error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
+    responses=error_responses(ReportNotFoundError(), status.HTTP_422_UNPROCESSABLE_CONTENT),
 )
 async def get_department_report(
     report_id: IdPath, manager: CurrentUser, service: ReportServiceDep
