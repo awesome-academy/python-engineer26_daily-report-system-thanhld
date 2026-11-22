@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute, Session, contains_eager, joinedload
 
 from app.core.clock import local_date_sql, local_day_start
-from app.core.pagination import DateRange, DateRangePageParams, paginate
+from app.core.pagination import DateRange, DateRangePageParams, count_rows, paginate
 from app.core.workdays import is_working_day_sql
 from app.modules.departments.models import Department, DepartmentManager
 from app.modules.reports.models import DailyReport, ReportRecipient
@@ -109,19 +109,35 @@ class ReportRepository:
 
         Điều kiện bộ phận và ngày dùng index (department_id, report_date). Người viết lấy cùng câu
         (JOIN) vì cần để tìm, sắp theo tên.
+
+        Phải đếm và sắp mọi báo cáo khớp điều kiện rồi mới cắt trang; không lọc ngày thì là mọi
+        báo cáo từ trước tới nay của các bộ phận. Nên câu đếm và câu chọn id của trang chỉ dùng
+        cột có trong index (bộ phận, ngày, người viết, id) và bảng users, không đọc dòng báo cáo.
+        Đủ cột chỉ đọc cho các báo cáo trong trang, vẫn trong một câu SQL (id của trang là câu
+        con). Lấy thẳng đủ cột rồi mới sắp thì phải đọc cả dòng của mọi báo cáo trong phạm vi.
         """
+        sort = _SORTS[params.sort]
+        matching = (
+            select(DailyReport.id)
+            .join(DailyReport.author)
+            .where(DailyReport.department_id.in_(department_ids))
+        )
+        if params.department_id is not None:
+            matching = matching.where(DailyReport.department_id == params.department_id)
+        if params.keyword:
+            matching = matching.where(full_name_matches(params.keyword))
+        matching = _in_date_range(matching, params)
+        page_ids = matching.order_by(*sort).limit(params.page_size).offset(params.offset)
         statement = (
             select(DailyReport)
             .join(DailyReport.author)
             .options(contains_eager(DailyReport.author))
-            .where(DailyReport.department_id.in_(department_ids))
-            .order_by(*_SORTS[params.sort])
+            .where(DailyReport.id.in_(page_ids))
+            .order_by(*sort)
         )
-        if params.department_id is not None:
-            statement = statement.where(DailyReport.department_id == params.department_id)
-        if params.keyword:
-            statement = statement.where(full_name_matches(params.keyword))
-        return await paginate(self.session, _in_date_range(statement, params), params)
+        total = await count_rows(self.session, matching)
+        reports = await self.session.scalars(statement)
+        return reports.all(), total
 
     async def list_daily_export_rows(
         self, department_ids: Select[int], params: ReportExportParams

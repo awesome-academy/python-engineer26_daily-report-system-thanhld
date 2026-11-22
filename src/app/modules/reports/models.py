@@ -19,8 +19,14 @@ class DailyReport(TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint("author_id", "report_date", name=REPORT_AUTHOR_DATE_UNIQUE),
         # Màn hình manager, export lọc theo bộ phận và ngày. Thống kê tháng đếm theo người viết,
-        # dùng unique (author_id, report_date).
-        Index("ix_daily_reports_department_date", "department_id", "report_date"),
+        # dùng unique (author_id, report_date). INCLUDE người viết, id: danh sách M3 đếm và chọn id
+        # của trang chỉ bằng index, không đọc dòng báo cáo.
+        Index(
+            "ix_daily_reports_department_date",
+            "department_id",
+            "report_date",
+            postgresql_include=["author_id", "id"],
+        ),
     )
 
     id: Mapped[BigIntPK]
