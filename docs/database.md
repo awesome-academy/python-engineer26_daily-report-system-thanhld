@@ -145,7 +145,7 @@ Link đặt mật khẩu lần đầu (S2, Ngày 7). Celery worker sinh token ng
 | departments | `UNIQUE (lower(code)) WHERE deleted_at IS NULL` | mã bộ phận không trùng, không phân biệt hoa thường (như email) |
 | department_managers | `(user_id)` | lấy các bộ phận một manager quản lý, dùng khi kiểm tra quyền |
 | daily_reports | `UNIQUE (author_id, report_date)` | mỗi người 1 báo cáo / ngày; thống kê tháng đếm báo cáo theo người viết |
-| daily_reports | `(department_id, report_date)` | màn hình manager, export |
+| daily_reports | `(department_id, report_date) INCLUDE (author_id, id)` | màn hình manager, export; `INCLUDE` để danh sách báo cáo của manager đếm và chọn trang chỉ bằng index (mục Hiệu năng truy vấn) |
 | report_recipients | `(recipient_id)` | báo cáo gửi tới một manager |
 | refresh_tokens | `(user_id)` | thu hồi mọi phiên của một user; xóa cascade không phải quét cả bảng |
 | refresh_tokens | `(session_id)` | đăng xuất thu hồi mọi refresh token của một phiên |
@@ -186,3 +186,58 @@ Hàm `unaccent()` của PostgreSQL là `STABLE` nên không dùng trực tiếp 
 ```sql
 WHERE immutable_unaccent(lower(full_name)) LIKE '%' || immutable_unaccent(lower(:keyword)) || '%'
 ```
+
+## Hiệu năng truy vấn
+
+### Không có N+1
+
+- Quan hệ ORM để `lazy="raise"`: quên nạp quan hệ thì lỗi ngay trong test, không âm thầm chạy thêm một câu SQL cho mỗi dòng. Dữ liệu kèm theo lấy trong cùng câu (`contains_eager`, `joinedload`) hoặc một câu cho cả trang (cờ `is_manager` của danh sách thành viên).
+- `tests/api/test_list_endpoints.py` lấy mọi endpoint GET trả danh sách từ route của app, gọi mỗi endpoint khi danh sách có 1 phần tử và 5 phần tử: số câu SQL hai lần phải bằng nhau và bằng số trong bảng dưới. Endpoint mới trả danh sách mà chưa có trong test thì test đỏ. Endpoint ghi nhận một danh sách đếm theo cùng cách.
+
+| Endpoint | Số câu | Các câu |
+| --- | --- | --- |
+| `GET /me/recipients` | 2 | user đăng nhập, danh sách |
+| `GET /me/reports` | 3 | user, đếm, trang |
+| `GET /me/reports/{id}` | 3 | user, báo cáo kèm bộ phận, người nhận |
+| `GET /admin/users`, `GET /admin/departments` | 3 | user, đếm, trang |
+| `GET /admin/departments/{id}/members` | 5 | user, bộ phận, đếm, trang, cờ manager của cả trang |
+| `GET /admin/departments/{id}/managers` | 4 | user, bộ phận, đếm, trang |
+| `GET /manager/departments` | 3 | user, đếm, trang |
+| `GET /manager/departments/{department_id}` | 4 | user, bộ phận trong phạm vi, manager, số thành viên |
+| `GET /manager/departments/{department_id}/members` | 5 | user, bộ phận trong phạm vi, đếm, trang, cờ manager của cả trang |
+| `GET /manager/candidates`, `GET /manager/employees` | 3 | user, đếm, trang |
+| `GET /manager/reports` | 3 | user, đếm, trang kèm người viết |
+| `GET /manager/reports/{report_id}` | 3 | user, báo cáo kèm bộ phận và người viết, người nhận |
+| `GET /manager/reports/export` | 2 | user, mọi dòng của file trong một câu |
+| `POST /me/reports` | 5 | user, trùng ngày, người nhận hợp lệ, thêm báo cáo, thêm mọi người nhận (một lệnh `executemany`) |
+| `POST /manager/departments/{department_id}/members` | 4 | user, khóa bộ phận, khóa các user, cập nhật (một lệnh `executemany`) |
+| `POST /admin/users/import` | 4 | user, khóa bộ phận theo mã, email đã có, thêm mọi user trong một câu `INSERT` |
+
+Lọc theo `department_id` (`/manager/employees`, `/manager/reports`, export) thêm một câu kiểm tra bộ phận thuộc phạm vi.
+
+### Phân trang
+
+Mọi danh sách có thể lớn dần (user, bộ phận, báo cáo, nhân viên) đều phân trang, `page_size` tối đa 100 (`MAX_PAGE_SIZE`), `page` tối đa 1.000.000. Không phân trang, có test liệt kê đúng các chỗ này:
+
+- `GET /me/recipients`, `managers` trong `GET /manager/departments/{department_id}`: manager của một bộ phận, do admin gán, ít người. Màn hình tạo báo cáo cần cả danh sách để chọn người nhận.
+- `recipients` trong chi tiết báo cáo: người nhận của một báo cáo, tối đa 50 khi chọn, hoặc là các manager của bộ phận.
+- Export Excel: báo cáo của một ngày, mỗi nhân viên trong phạm vi một dòng.
+
+### Đo trên dữ liệu lớn
+
+Dữ liệu đo: 100 bộ phận, 10.010 user (9.500 nhân viên, mỗi bộ phận 95 người, mỗi bộ phận 3 manager, một manager quản lý 10 bộ phận), mỗi nhân viên một báo cáo mỗi ngày làm việc trong một năm (2,47 triệu báo cáo). PostgreSQL 17 trong Docker trên máy dev, cấu hình mặc định (`shared_buffers` 128 MB, bảng báo cáo khoảng 670 MB nên không nằm hết trong cache). Gọi API thật qua ASGI, mỗi trường hợp 5 lần sau một lần làm ấm, lấy trung vị; chạy lại từng câu SQL bằng `EXPLAIN (ANALYZE, BUFFERS)`.
+
+Tìm kiếm user (theo tên, email), danh sách bộ phận, thành viên, ứng viên, nhân viên, lịch sử báo cáo của tôi, chi tiết báo cáo: dưới 10 ms. Tìm tên, email dùng hai GIN index (BitmapOr); lịch sử báo cáo của tôi đọc ngược unique index `(author_id, report_date)` và dừng sau đủ một trang. Export một ngày cho 10 bộ phận (950 dòng) khoảng 130 ms, phần lớn là ghi file Excel.
+
+Chỗ chậm duy nhất là `GET /manager/reports` khi không lọc ngày: phải đếm và sắp mọi báo cáo của các bộ phận từ trước tới nay rồi mới cắt trang. Trước đây câu lấy trang đọc đủ cột của mọi báo cáo trong phạm vi để sắp (mỗi báo cáo một lần đọc ngẫu nhiên, bộ phận 95 người một năm là 24.700 lần), câu đếm cũng phải đọc bảng để lấy người viết. Nay index có thêm `author_id`, `id` (`INCLUDE`), câu đếm và câu chọn id của trang chỉ đọc index (Index Only Scan) và bảng users; đủ cột chỉ đọc cho các báo cáo trong trang, theo khóa chính, vẫn trong một câu SQL.
+
+| `GET /manager/reports` | `total` | Trước | Sau |
+| --- | --- | --- | --- |
+| 1 bộ phận, mặc định | 24.700 | 342 ms | 60 ms |
+| 10 bộ phận, mặc định | 247.000 | 2.670 ms | 411 ms |
+| 10 bộ phận, sắp theo tên | 247.000 | 1.266 ms | 408 ms |
+| 10 bộ phận, tìm theo tên | 18.460 | 302 ms | 85 ms |
+| 10 bộ phận, một tháng | 14.250 | 55 ms | 34 ms |
+| 10 bộ phận, trang cuối (`page_size` 100) | 247.000 | 2.977 ms | 562 ms |
+
+Còn lại: manager nhiều bộ phận xem không lọc ngày vẫn khoảng 0,4 s. Theo EXPLAIN, gần hết thời gian là tính khóa sắp theo tên `immutable_unaccent(lower(full_name))` cho từng báo cáo (247.000 lần). Muốn nhanh hơn thì lưu sẵn khóa này thành cột của `users` (generated column) để mỗi user chỉ tính một lần, đổi cả `order_by_full_name()` và GIN index tên. Chưa làm vì đụng schema users và mọi danh sách sắp theo tên, trong khi màn hình thường lọc theo khoảng ngày (một tháng: 34 ms).
