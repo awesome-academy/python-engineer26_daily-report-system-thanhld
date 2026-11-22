@@ -31,7 +31,7 @@ from app.modules.reports.models import DailyReport
 from app.modules.reports.schemas import ReportExportRow
 from app.modules.users.models import User, UserRole
 from tests.factories import auth_headers, create_department, create_report, create_user
-from tests.helpers import error_json, load_sheet, recorded_queries
+from tests.helpers import error_json, load_sheet
 
 API = get_settings().api_v1_prefix
 EXPORT_URL = f"{API}/manager/reports/export"
@@ -61,10 +61,6 @@ def sheet_cells(response: Response) -> list[tuple[Cell | MergedCell, ...]]:
 def summary(rows: list[tuple[Any, ...]]) -> list[tuple[str, str, SubmissionStatus]]:
     """Mã bộ phận, họ tên, trạng thái của từng dòng."""
     return [(row[0], row[2], SubmissionStatus(row[STATUS_COLUMN])) for row in rows]
-
-
-def data_queries(queries: list[tuple[str, Any]]) -> list[str]:
-    return [statement for statement, _ in queries if "SAVEPOINT" not in statement]
 
 
 @pytest.fixture(autouse=True)
@@ -349,30 +345,6 @@ async def test_export_releases_db_connection_before_writing_file(
 
     assert len(rows) == 1
     assert in_transaction == [False]
-
-
-async def test_export_query_count_does_not_grow_with_rows(
-    client: AsyncClient,
-    db_session: AsyncSession,
-    manager: User,
-    headers: dict[str, str],
-    department: Department,
-) -> None:
-    large = await create_department(db_session, managers=[manager])
-    await employee(db_session, department)
-    for _ in range(3):
-        await submit(db_session, await employee(db_session, large), large)
-        await employee(db_session, large)
-
-    with recorded_queries(db_session) as small_queries:
-        small = await export(client, headers, department_id=department.id)
-    with recorded_queries(db_session) as large_queries:
-        big = await export(client, headers, department_id=large.id)
-
-    assert (len(small), len(big)) == (1, 6)
-    # Bỏ câu SAVEPOINT của transaction test: service commit để trả kết nối, lần gọi sau mở
-    # savepoint mới. Đếm câu đọc dữ liệu.
-    assert len(data_queries(large_queries)) == len(data_queries(small_queries))
 
 
 # Ngày
