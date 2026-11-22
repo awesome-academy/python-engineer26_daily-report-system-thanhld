@@ -80,7 +80,8 @@ services:
       REDIS_URL: redis://redis:6379/0
     volumes:
       - ./src:/app/src
-      # Lần chạy cuối của từng lịch: beat dừng đúng lúc tới giờ thì khởi động lại vẫn chạy bù.
+      # Lần chạy cuối của từng lịch: beat không chạy lúc tới giờ thì lần khởi động sau chạy bù một
+      # lần. Không chạy bù nếu lúc đó Redis lỗi; khi ấy gửi bù bằng lệnh send-monthly-summary.
       - beat-data:/app/beat
     depends_on:
       redis:

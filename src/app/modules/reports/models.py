@@ -18,7 +18,8 @@ class DailyReport(TimestampMixin, Base):
     __tablename__ = "daily_reports"
     __table_args__ = (
         UniqueConstraint("author_id", "report_date", name=REPORT_AUTHOR_DATE_UNIQUE),
-        # Màn hình manager, export và thống kê tháng lọc theo bộ phận và ngày.
+        # Màn hình manager, export lọc theo bộ phận và ngày. Thống kê tháng đếm theo người viết,
+        # dùng unique (author_id, report_date).
         Index("ix_daily_reports_department_date", "department_id", "report_date"),
     )
 

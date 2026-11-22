@@ -144,8 +144,8 @@ Link đặt mật khẩu lần đầu (S2, Ngày 7). Celery worker sinh token ng
 | users | `(department_id)` | lấy thành viên bộ phận |
 | departments | `UNIQUE (lower(code)) WHERE deleted_at IS NULL` | mã bộ phận không trùng, không phân biệt hoa thường (như email) |
 | department_managers | `(user_id)` | lấy các bộ phận một manager quản lý, dùng khi kiểm tra quyền |
-| daily_reports | `UNIQUE (author_id, report_date)` | mỗi người 1 báo cáo / ngày |
-| daily_reports | `(department_id, report_date)` | màn hình manager, export, thống kê tháng |
+| daily_reports | `UNIQUE (author_id, report_date)` | mỗi người 1 báo cáo / ngày; thống kê tháng đếm báo cáo theo người viết |
+| daily_reports | `(department_id, report_date)` | màn hình manager, export |
 | report_recipients | `(recipient_id)` | báo cáo gửi tới một manager |
 | refresh_tokens | `(user_id)` | thu hồi mọi phiên của một user; xóa cascade không phải quét cả bảng |
 | refresh_tokens | `(session_id)` | đăng xuất thu hồi mọi refresh token của một phiên |

@@ -66,15 +66,17 @@ Khi dev, mọi email đều vào Mailpit (http://localhost:8026), không gửi r
 
 Tài khoản admin tạo (`POST /api/v1/admin/users`) chưa có mật khẩu; worker gửi email có link `FRONTEND_URL/setup-password?token=...` (hết hạn sau 24 giờ, dùng một lần). Chưa có frontend thì mở email trên Mailpit, chép giá trị `token` trên link, gọi `POST /api/v1/auth/setup-password` trên Swagger với body `{"token": "...", "password": "..."}`, rồi đăng nhập bằng email và mật khẩu vừa đặt. Link hết hạn hay email không tới thì admin gửi lại bằng `POST /api/v1/admin/users/{id}/setup-link`.
 
-**Thống kê tháng (S3):** Celery Beat (container `beat`) đẩy task lúc 08:00 ngày 1 hằng tháng theo giờ Việt Nam. Mỗi manager nhận một email cho từng bộ phận mình quản lý: số ngày đã nộp báo cáo so với số ngày làm việc (thứ 2 đến thứ 6, chưa trừ ngày lễ) của từng nhân viên tháng trước. Nhân viên mới vào giữa tháng tính từ ngày tạo tài khoản. Mỗi email ghi `dedup_key` vào `email_logs`, nên task chạy lại không gửi trùng. Gửi ngay, không chờ lịch (chỉ tháng đã kết thúc):
+**Thống kê tháng (S3):** Celery Beat (container `beat`) đẩy task lúc 08:00 ngày 1 hằng tháng theo giờ Việt Nam. Mỗi manager nhận một email cho từng bộ phận mình quản lý: số ngày đã nộp báo cáo so với số ngày làm việc (thứ 2 đến thứ 6, chưa trừ ngày lễ) của từng nhân viên trong tháng trước. Nhân viên mới vào giữa tháng tính từ ngày tạo tài khoản. Email ghi thời điểm tính số liệu: báo cáo bù cho các ngày cuối tháng (được nộp lùi 3 ngày) mà nộp sau 08:00 ngày 1 không có trong thống kê. Mỗi email ghi `dedup_key` vào `email_logs`, nên task chạy lại không gửi trùng. Gửi ngay, không chờ lịch (chỉ tháng đã kết thúc):
 
 ```bash
 docker compose exec api daily-report send-monthly-summary --month 2026-10   # hoặc: make monthly-summary month=2026-10
 ```
 
-Bỏ `--month` thì thống kê tháng trước. Manager đã nhận email của tháng đó thì không nhận lại.
+Bỏ `--month` thì thống kê tháng trước. Manager đã nhận email của tháng đó thì không nhận lại, nên lệnh này cũng dùng để gửi bù khi lượt chạy theo lịch bị lỡ: Redis không kết nối được đúng lúc Beat đẩy task, hay SMTP vẫn lỗi sau 3 lần thử lại (log `monthly_summary_failed`). Beat không tự chạy lại các trường hợp này. Lệnh chỉ đẩy task; số email đã gửi xem ở log worker (`monthly_summary_done sent=... already_sent=...`).
 
-Worker, beat không tự reload khi sửa code: `docker compose restart worker beat`. Xem log: `make logs`; mức log của worker (cả log của Celery) lấy từ `LOG_LEVEL`.
+Dữ liệu seed tạo tài khoản vào ngày chạy seed, nên tháng trước chưa ai phải nộp và lệnh không gửi email nào. Muốn thử thì cần tài khoản tạo trước tháng đó và báo cáo trong tháng.
+
+Worker, beat không tự reload khi sửa code: `docker compose restart worker beat`. Xem log: `make logs`; mức log của worker, beat (cả log của Celery) lấy từ `LOG_LEVEL`.
 
 ## Lưu trữ file
 
