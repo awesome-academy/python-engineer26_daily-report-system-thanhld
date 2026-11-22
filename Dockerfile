@@ -27,10 +27,10 @@ COPY src ./src
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev $([ "$INSTALL_DEBUGPY" = "true" ] && echo --group debug)
 
-# Thư mục ảnh đại diện (STORAGE_BACKEND=local) phải ghi được bằng user app. Volume gắn vào đây
-# lần đầu nhận luôn quyền sở hữu này.
+# Thư mục ảnh đại diện (STORAGE_BACKEND=local), file lịch của Celery Beat phải ghi được bằng user
+# app. Volume gắn vào đây lần đầu nhận luôn quyền sở hữu này.
 RUN useradd --system --uid 1001 --no-create-home app \
-    && mkdir -p /app/media && chown app /app/media
+    && mkdir -p /app/media /app/beat && chown app /app/media /app/beat
 USER app
 
 EXPOSE 8000

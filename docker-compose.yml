@@ -69,6 +69,23 @@ services:
       mailpit:
         condition: service_started
 
+  # Celery Beat: tới giờ thì đẩy task định kỳ (thống kê tháng S3) vào Redis cho worker chạy. Chỉ
+  # chạy một instance: mỗi instance đẩy task một lần (email vẫn không gửi trùng nhờ dedup_key).
+  beat:
+    build: .
+    command: celery -A app.worker beat --schedule /app/beat/schedule
+    environment:
+      ENVIRONMENT: local
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./src:/app/src
+      # Lần chạy cuối của từng lịch: beat dừng đúng lúc tới giờ thì khởi động lại vẫn chạy bù.
+      - beat-data:/app/beat
+    depends_on:
+      redis:
+        condition: service_healthy
+
   postgres:
     image: postgres:17-alpine
     environment:
@@ -104,3 +121,4 @@ services:
 volumes:
   postgres-data:
   media-data:
+  beat-data:

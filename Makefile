@@ -19,8 +19,8 @@ debug: ## Chạy stack với API dưới debugpy (cổng 5678), rồi attach b�
 down: ## Dừng stack
 	$(COMPOSE) down
 
-logs: ## Xem log API và Celery worker
-	$(COMPOSE) logs -f api worker
+logs: ## Xem log API, Celery worker và Celery Beat
+	$(COMPOSE) logs -f api worker beat
 
 services: ## Chỉ chạy PostgreSQL, Redis, Mailpit (để chạy API hoặc test trên máy host)
 	$(COMPOSE) up -d --wait postgres redis mailpit

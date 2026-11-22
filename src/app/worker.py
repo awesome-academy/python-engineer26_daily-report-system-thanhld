@@ -1,7 +1,8 @@
-"""Celery app: hàng đợi tác vụ nền (gửi email) trên Redis.
+"""Celery app: hàng đợi tác vụ nền (gửi email) trên Redis, lịch chạy định kỳ (Celery Beat).
 
-Chạy worker: `celery -A app.worker worker` (Docker Compose có sẵn service `worker`).
-API chỉ đẩy task vào Redis qua `enqueue_task(...)`, không chờ worker xử lý.
+Chạy worker: `celery -A app.worker worker`; lịch: `celery -A app.worker beat` (Docker Compose có
+sẵn service `worker`, `beat`). API chỉ đẩy task vào Redis qua `enqueue_task(...)`, không chờ
+worker xử lý.
 """
 
 import asyncio
@@ -10,13 +11,21 @@ from typing import Any
 
 import structlog
 from celery import Celery, Task
+from celery.schedules import crontab
 from celery.signals import after_setup_logger, after_setup_task_logger, worker_init
 from kombu.exceptions import OperationalError
 from sqlalchemy import exc as sa_exc
 
 from app import models as _models  # noqa: F401 (nạp đủ model trước khi SQLAlchemy nối quan hệ)
 from app.core.config import get_settings
-from app.core.constants import REDIS_TIMEOUT_SECONDS, TASK_MAX_RETRIES, TASK_RETRY_BACKOFF_SECONDS
+from app.core.constants import (
+    MONTHLY_SUMMARY_DAY_OF_MONTH,
+    MONTHLY_SUMMARY_TASK,
+    MONTHLY_SUMMARY_TIME,
+    REDIS_TIMEOUT_SECONDS,
+    TASK_MAX_RETRIES,
+    TASK_RETRY_BACKOFF_SECONDS,
+)
 from app.core.logging import configure_logging
 
 logger = structlog.get_logger(__name__)
@@ -39,6 +48,8 @@ celery_app.conf.update(
     accept_content=["json"],
     # Không có result backend: API đẩy task rồi thôi, kết quả gửi email ghi ở bảng email_logs.
     task_ignore_result=True,
+    # Không có kết quả để dọn: Beat không tự thêm lịch celery.backend_cleanup (04:00 hằng ngày).
+    result_expires=None,
     # Ack sau khi task chạy xong: worker bị dừng giữa chừng (restart container) thì task được giao
     # lại thay vì mất. Đổi lại, task có thể chạy lại, nên task phải chịu được chạy hai lần.
     task_acks_late=True,
@@ -51,8 +62,20 @@ celery_app.conf.update(
     broker_connection_retry_on_startup=True,
     # structlog tự in ra stdout; Celery mặc định chuyển stdout thành log WARNING, in lặp hai lần.
     worker_redirect_stdouts=False,
+    # Lịch của Beat (crontab) tính theo giờ Việt Nam.
     timezone=settings.timezone,
     enable_utc=True,
+    beat_schedule={
+        # Thống kê báo cáo tháng trước (S3). Gọi task theo tên: module task import app này.
+        "monthly-summary": {
+            "task": MONTHLY_SUMMARY_TASK,
+            "schedule": crontab(
+                minute=MONTHLY_SUMMARY_TIME.minute,
+                hour=MONTHLY_SUMMARY_TIME.hour,
+                day_of_month=MONTHLY_SUMMARY_DAY_OF_MONTH,
+            ),
+        },
+    },
 )
 
 
