@@ -993,8 +993,19 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "// Worker gửi email sau khi API trả response: chờ một chút để email tới Mailpit.",
-                  "setTimeout(() => {}, 2000);"
+                  "// Worker gửi email sau khi API trả response: hỏi Mailpit mỗi 0,5 giây tới khi email tới",
+                  "// (tối đa 10 giây), rồi mới gửi request này.",
+                  "const search = `${pm.variables.get(\"mailpitUrl\")}/api/v1/search?query=`",
+                  "    + encodeURIComponent(`to:${pm.variables.get(\"newUserEmail\")}`);",
+                  "const waitForEmail = (attempt) => {",
+                  "    pm.sendRequest(search, (error, response) => {",
+                  "        const arrived = !error && response.json().messages.length > 0;",
+                  "        if (!arrived && attempt < 20) {",
+                  "            setTimeout(() => waitForEmail(attempt + 1), 500);",
+                  "        }",
+                  "    });",
+                  "};",
+                  "waitForEmail(1);"
                 ]
               }
             },
