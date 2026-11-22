@@ -8,6 +8,7 @@ khai.
 
 import re
 from dataclasses import dataclass
+from datetime import date
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
@@ -21,6 +22,7 @@ from app.core.constants import EMAIL_DATE_FORMAT, SETUP_PASSWORD_PATH, XLSX_MEDI
 from app.modules.auth.tasks import send_account_setup_email
 from app.modules.notifications.models import EmailStatus, EmailTemplate
 from app.modules.notifications.rendering import RenderedEmail
+from app.modules.reports.exceptions import ReportNotFoundError
 from app.modules.reports.export import COLUMNS, SubmissionStatus
 from app.modules.reports.tasks import send_report_notification
 from app.modules.users.models import UserRole
@@ -30,6 +32,7 @@ from tests.helpers import (
     QueuedTask,
     bearer,
     email_logs,
+    error_json,
     invoke,
     load_sheet,
     login,
@@ -39,12 +42,30 @@ from tests.helpers import (
 
 API = get_settings().api_v1_prefix
 ADMIN_EMAIL = "admin@example.com"
-DEPARTMENT = {"code": "DEV", "name": "Phòng Phát triển"}
-MANAGER = {"email": "binh.tran@example.com", "full_name": "Trần Thị Bình", "role": UserRole.MANAGER}
-# Theo thứ tự họ tên, cũng là thứ tự dòng trong file export.
-EMPLOYEES = (
-    {"email": "an.nguyen@example.com", "full_name": "Nguyễn Văn An"},
-    {"email": "dung.pham@example.com", "full_name": "Phạm Thị Dung"},
+
+
+@dataclass(frozen=True)
+class TeamSpec:
+    """Dữ liệu admin nhập để dựng một bộ phận: bộ phận, manager, nhân viên."""
+
+    department: dict[str, str]
+    manager: dict[str, str]
+    # Theo thứ tự họ tên, cũng là thứ tự dòng trong file export.
+    employees: tuple[dict[str, str], ...]
+
+
+DEV = TeamSpec(
+    department={"code": "DEV", "name": "Phòng Phát triển"},
+    manager={"email": "binh.tran@example.com", "full_name": "Trần Thị Bình"},
+    employees=(
+        {"email": "an.nguyen@example.com", "full_name": "Nguyễn Văn An"},
+        {"email": "dung.pham@example.com", "full_name": "Phạm Thị Dung"},
+    ),
+)
+QA = TeamSpec(
+    department={"code": "QA", "name": "Phòng Kiểm thử"},
+    manager={"email": "cuong.le@example.com", "full_name": "Lê Văn Cường"},
+    employees=({"email": "giang.vo@example.com", "full_name": "Võ Thị Giang"},),
 )
 REPORT = {
     "planned_work": "Làm API export Excel",
@@ -105,12 +126,19 @@ async def sign_in_first_admin(client: AsyncClient) -> dict[str, str]:
     return bearer(tokens["access_token"])
 
 
-async def admin_builds_department(client: AsyncClient, admin: dict[str, str]) -> NewDepartment:
+async def admin_builds_department(
+    client: AsyncClient, admin: dict[str, str], spec: TeamSpec
+) -> NewDepartment:
     """Admin tạo bộ phận, tài khoản manager và nhân viên của bộ phận, rồi gán manager."""
     department = json_of(
-        await client.post(f"{API}/admin/departments", json=DEPARTMENT, headers=admin), 201
+        await client.post(f"{API}/admin/departments", json=spec.department, headers=admin), 201
     )
-    manager = json_of(await client.post(f"{API}/admin/users", json=MANAGER, headers=admin), 201)
+    manager = json_of(
+        await client.post(
+            f"{API}/admin/users", json={**spec.manager, "role": UserRole.MANAGER}, headers=admin
+        ),
+        201,
+    )
     employees = [
         json_of(
             await client.post(
@@ -120,7 +148,7 @@ async def admin_builds_department(client: AsyncClient, admin: dict[str, str]) ->
             ),
             201,
         )
-        for employee in EMPLOYEES
+        for employee in spec.employees
     ]
     json_of(
         await client.post(
@@ -159,14 +187,33 @@ async def sign_in_from_setup_email(
     )
 
 
-async def build_team(client: AsyncClient, redis: Redis, mailbox: FakeMailer) -> Team:
+async def build_team(
+    client: AsyncClient, redis: Redis, mailbox: FakeMailer, admin: dict[str, str], spec: TeamSpec
+) -> Team:
     """Dựng bộ phận qua API như luồng của admin; mọi tài khoản đặt mật khẩu qua email, đăng nhập."""
-    department = await admin_builds_department(client, await sign_in_first_admin(client))
+    department = await admin_builds_department(client, admin, spec)
     await run_queued_tasks(redis)
     manager, *employees = [
         await sign_in_from_setup_email(client, account, mailbox) for account in department.accounts
     ]
     return Team(department.id, manager, employees)
+
+
+async def export_rows(client: AsyncClient, manager: Account, day: date) -> list[tuple[Any, ...]]:
+    """Dòng của file export ngày `day` mà `manager` tải về (đã kiểm tra dòng tiêu đề).
+
+    Bỏ cột cuối (giờ gửi): thời điểm thật lúc chạy test.
+    """
+    response = await client.get(
+        f"{API}/manager/reports/export",
+        params={"report_date": day.isoformat()},
+        headers=manager.headers,
+    )
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"] == XLSX_MEDIA_TYPE
+    header, *rows = load_sheet(response).iter_rows(values_only=True)
+    assert header == tuple(column.header for column in COLUMNS)
+    return [row[:-1] for row in rows]
 
 
 async def test_admin_builds_department_and_new_accounts_sign_in_from_emailed_link(
@@ -175,7 +222,7 @@ async def test_admin_builds_department_and_new_accounts_sign_in_from_emailed_lin
     client = e2e_client
     admin = await sign_in_first_admin(client)
 
-    department = await admin_builds_department(client, admin)
+    department = await admin_builds_department(client, admin, DEV)
 
     # Admin thấy đúng manager và thành viên của bộ phận.
     department_url = f"{API}/admin/departments/{department.id}"
@@ -211,15 +258,21 @@ async def test_admin_builds_department_and_new_accounts_sign_in_from_emailed_lin
         assert [user["id"] for user in recipients] == [manager.id]
 
 
-async def test_employee_report_emails_manager_who_reviews_and_exports_it(
+async def test_employee_report_reaches_own_manager_who_reviews_and_exports_it(
     e2e_client: AsyncClient, redis: Redis, mailbox: FakeMailer, engine: AsyncEngine
 ) -> None:
     client = e2e_client
-    team = await build_team(client, redis, mailbox)
+    admin = await sign_in_first_admin(client)
+    team = await build_team(client, redis, mailbox, admin, DEV)
+    # Bộ phận khác: manager ở đây không được thấy báo cáo của nhân viên DEV.
+    other = await build_team(client, redis, mailbox, admin, QA)
     author, absent = team.employees
     manager = team.manager
     mailbox.sent.clear()
     today = local_today()
+    # Nhân viên chọn người nhận trong danh sách API trả: chỉ có manager bộ phận mình.
+    recipients = json_of(await client.get(f"{API}/me/recipients", headers=author.headers))
+    assert [user["id"] for user in recipients] == [manager.id]
 
     report = json_of(
         await client.post(
@@ -230,7 +283,7 @@ async def test_employee_report_emails_manager_who_reviews_and_exports_it(
         201,
     )
 
-    # Email báo cáo mới nằm trên hàng đợi; worker gửi cho manager kèm nội dung báo cáo.
+    # Email báo cáo mới nằm trên hàng đợi; worker gửi cho đúng manager, kèm nội dung báo cáo.
     tasks = await run_queued_tasks(redis)
     assert tasks == [QueuedTask(send_report_notification.name, [report["id"]], {})]
     [(to_email, email)] = mailbox.sent
@@ -253,18 +306,8 @@ async def test_employee_report_emails_manager_who_reviews_and_exports_it(
     assert {field: detail[field] for field in REPORT} == REPORT
     assert [user["id"] for user in detail["recipients"]] == [manager.id]
     # Export ngày hôm nay: người đã nộp kèm nội dung, người chưa nộp được đánh dấu.
-    response = await client.get(
-        f"{API}/manager/reports/export",
-        params={"report_date": today.isoformat()},
-        headers=manager.headers,
-    )
-    assert response.status_code == 200
-    assert response.headers["content-type"] == XLSX_MEDIA_TYPE
-    header, *rows = load_sheet(response).iter_rows(values_only=True)
-    assert header == tuple(column.header for column in COLUMNS)
-    department = (DEPARTMENT["code"], DEPARTMENT["name"])
-    # Bỏ cột cuối (giờ gửi): thời điểm thật lúc chạy test.
-    assert [row[:-1] for row in rows] == [
+    department = (DEV.department["code"], DEV.department["name"])
+    assert await export_rows(client, manager, today) == [
         (
             *department,
             author.full_name,
@@ -276,6 +319,24 @@ async def test_employee_report_emails_manager_who_reviews_and_exports_it(
             REPORT["next_day_plan"],
         ),
         (*department, absent.full_name, absent.email, SubmissionStatus.MISSING, *[None] * 4),
+    ]
+    # Manager bộ phận khác không thấy báo cáo; file export của họ chỉ có nhân viên của họ.
+    outsider = other.manager
+    hidden = json_of(await client.get(f"{API}/manager/reports", headers=outsider.headers))
+    assert hidden["data"] == []
+    response = await client.get(f"{API}/manager/reports/{report['id']}", headers=outsider.headers)
+    assert response.status_code == 404
+    assert response.json() == error_json(ReportNotFoundError())
+    [colleague] = other.employees
+    assert await export_rows(client, outsider, today) == [
+        (
+            QA.department["code"],
+            QA.department["name"],
+            colleague.full_name,
+            colleague.email,
+            SubmissionStatus.MISSING,
+            *[None] * 4,
+        )
     ]
     # Người viết thấy báo cáo trong lịch sử của mình.
     history = json_of(await client.get(f"{API}/me/reports", headers=author.headers))
