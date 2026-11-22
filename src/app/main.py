@@ -60,6 +60,9 @@ có id {seed_id(EXAMPLE_DEPARTMENT)}, `{EXAMPLE_MANAGER.email}` id {seed_id(EXAM
 
 - Lỗi: `{{"error": {{"code": ..., "message": ..., "details": ...}}}}`, client xử lý theo `code`. \
 Mỗi endpoint có ví dụ cho từng mã lỗi ở phần Responses.
+- Lỗi validate (422): `details` là danh sách `{{"field": ..., "message": ...}}`, `field` có \
+tiền tố vị trí (`body.`, `query.`, `path.`). Ví dụ 422 giống nhau ở mọi endpoint, chỉ minh họa \
+format.
 - Danh sách có phân trang: query `page`, `page_size` (tối đa {MAX_PAGE_SIZE}), response \
 `{{"data": [...], "meta": {{"page": ..., "page_size": ..., "total": ...}}}}`.
 - Ngày báo cáo theo giờ Việt Nam (`2026-11-09`); thời điểm theo UTC, ISO 8601 \

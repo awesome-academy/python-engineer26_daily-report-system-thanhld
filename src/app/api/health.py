@@ -32,6 +32,10 @@ class HealthResponse(BaseModel):
     checks: dict[str, CheckStatus]
 
 
+# Ví dụ 503 trên Swagger, tạo qua model để sai kiểu, sai giá trị thì lỗi ngay lúc import.
+_UNHEALTHY_EXAMPLE = HealthResponse(status="error", checks={"database": "ok", "redis": "error"})
+
+
 async def _check_database(session: AsyncSession) -> CheckStatus:
     try:
         async with asyncio.timeout(HEALTH_CHECK_TIMEOUT_SECONDS):
@@ -59,11 +63,7 @@ async def _check_redis(redis: Redis) -> CheckStatus:
     responses={
         status.HTTP_503_SERVICE_UNAVAILABLE: {
             "model": HealthResponse,
-            "content": {
-                "application/json": {
-                    "example": {"status": "error", "checks": {"database": "ok", "redis": "error"}}
-                }
-            },
+            "content": {"application/json": {"example": _UNHEALTHY_EXAMPLE.model_dump()}},
         }
     },
 )
