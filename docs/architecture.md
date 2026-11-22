@@ -48,7 +48,7 @@ Phụ thuộc một chiều: router → service → repository → model. Module
 ├── scripts/                   # seed dữ liệu, tạo admin
 ├── src/app/
 │   ├── main.py                # create_app(): middleware, exception handler, router
-│   ├── worker.py              # Celery app: celery -A app.worker worker
+│   ├── worker.py              # Celery app, lịch Celery Beat: celery -A app.worker worker | beat
 │   ├── cli.py                 # Typer: create-admin, seed
 │   ├── models.py              # import model của mọi module cho Alembic
 │   ├── core/                  # dùng chung, không chứa nghiệp vụ
@@ -60,7 +60,8 @@ Phụ thuộc một chiều: router → service → repository → model. Module
 │   │   ├── pagination.py      # PageParams, Page, paginate()
 │   │   ├── redis.py           # client Redis
 │   │   ├── storage.py         # FileStorage: LocalFileStorage, S3FileStorage, chọn theo STORAGE_BACKEND
-│   │   └── uploads.py         # đọc UploadFile có giới hạn dung lượng, nhận diện ảnh theo nội dung
+│   │   ├── uploads.py         # đọc UploadFile có giới hạn dung lượng, nhận diện ảnh theo nội dung
+│   │   └── workdays.py        # ngày làm việc (thứ 2–6), dùng cho code Python và câu SQL
 │   ├── api/
 │   │   ├── deps.py            # dependency dùng chung (DB session, Redis)
 │   │   ├── health.py          # GET /health
@@ -91,6 +92,7 @@ Phụ thuộc một chiều: router → service → repository → model. Module
 | 6 | Test chạy trên PostgreSQL thật (DB riêng), rollback sau mỗi test | Bắt được lỗi riêng của PostgreSQL (unaccent, partial index) mà SQLite bỏ sót. |
 | 7 | Lưu file qua interface `FileStorage`; DB chỉ lưu key, URL tính lúc trả response | Đổi local sang S3 chỉ bằng cấu hình. S3 dùng boto3 (đồng bộ) chạy trong thread, bucket private, URL ký sẵn có hạn. |
 | 8 | Export Excel: openpyxl write-only ghi ra file tạm trong thread, ghi xong mới trả `StreamingResponse` từng đoạn | openpyxl không giữ các ô trong RAM. File .xlsx là zip, phải ghi xong mới hợp lệ; lỗi giữa chừng vẫn trả lỗi JSON thay vì file dở. Dữ liệu một ngày của một manager nhỏ (mỗi nhân viên một dòng) nên đọc một lần, đọc xong trả kết nối DB rồi mới ghi, gửi file; khoảng ngày dài thì chuyển sang job nền. |
+| 9 | Thống kê tháng (S3): một task Beat gửi lần lượt; mỗi email giữ `dedup_key` bằng `INSERT ... ON CONFLICT DO NOTHING` ngay trước khi gửi, cùng transaction | Task chạy lại (Beat chạy bù, worker giao lại, thử lại) chỉ gửi email còn thiếu; hai task chạy song song thì task sau chờ ở unique index rồi bỏ qua. Gửi lỗi thì rollback, key được nhả cho lần thử lại. Worker dừng sau khi SMTP nhận thư mà chưa kịp commit thì email đó vẫn có thể gửi lại: SMTP không có giao dịch. |
 
 ## Môi trường local
 

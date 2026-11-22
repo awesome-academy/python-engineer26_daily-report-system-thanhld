@@ -129,7 +129,7 @@ Link đặt mật khẩu lần đầu (S2, Ngày 7). Celery worker sinh token ng
 | id | bigint | PK, identity | |
 | to_email | varchar(255) | not null | không FK, ghi được cả địa chỉ chưa có tài khoản |
 | template | varchar(64) | not null | tên mẫu email (`EmailTemplate`): `test` (lệnh `send-test-email`), `report_created`, `account_setup`, `monthly_summary` |
-| dedup_key | varchar(128) | null, unique | chống gửi trùng cho S3 (ví dụ `monthly:2026-10:dept:3:user:7`) |
+| dedup_key | varchar(128) | null, unique | chống gửi trùng cho S3: `monthly:{tháng}:dept:{bộ phận}:user:{manager}`, ví dụ `monthly:2026-10:dept:3:user:7`. Worker ghi dòng `SENT` kèm key ngay trước khi gửi, cùng transaction với lần gửi; key đã có thì không gửi. Dòng `FAILED` không giữ key để chạy lại vẫn gửi được |
 | status | varchar(16) | not null, `CHECK (status IN ('SENT', 'FAILED'))` | worker ghi một dòng cho mỗi email: `SENT` khi gửi được, `FAILED` khi hết 3 lần thử lại |
 | error | text | null | lý do gửi lỗi |
 | created_at | timestamptz | not null, default now() | |
