@@ -4,10 +4,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.constants import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
+    EMAIL_MAX_LENGTH,
     JWT_MAX_LENGTH,
     ONE_TIME_TOKEN_MAX_LENGTH,
     ONE_TIME_TOKEN_PATTERN,
+    PASSWORD_MAX_LENGTH,
 )
+from app.core.validators import NoNul
 from app.modules.users.schemas import Password
 from app.seed_data import EXAMPLE_PASSWORD
 
@@ -18,6 +21,22 @@ _ACCESS_JWT_EXAMPLE = (
 _REFRESH_JWT_EXAMPLE = (
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1IiwidHlwZSI6InJlZnJlc2gifQ.c2lnbg"
 )
+
+
+class LoginForm(BaseModel):
+    """Form đăng nhập theo OAuth2 password flow, các field như `OAuth2PasswordRequestForm`.
+
+    Khai thành model để kiểm tra trước khi tra DB: `username` (là email) chứa ký tự NUL thì
+    PostgreSQL không so sánh được, gửi xuống DB là lỗi 500. Độ dài tối đa như lúc tạo tài khoản:
+    chuỗi dài hơn không khớp tài khoản nào. Field khác của chuẩn OAuth2 (`scope`, `client_id`...)
+    API không dùng, gửi kèm thì bỏ qua.
+    """
+
+    grant_type: Literal["password"] | None = None
+    username: Annotated[str, Field(max_length=EMAIL_MAX_LENGTH), NoNul]
+    password: Annotated[
+        str, Field(max_length=PASSWORD_MAX_LENGTH, json_schema_extra={"format": "password"})
+    ]
 
 
 class TokenResponse(BaseModel):

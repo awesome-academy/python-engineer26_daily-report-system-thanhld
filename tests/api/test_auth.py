@@ -7,12 +7,15 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import messages
 from app.core.config import get_settings
 from app.core.constants import (
+    EMAIL_MAX_LENGTH,
     JWT_MAX_LENGTH,
     JWT_SECRET_MIN_LENGTH,
     LOGIN_ATTEMPT_WINDOW_MINUTES,
     LOGIN_MAX_FAILED_ATTEMPTS,
+    PASSWORD_MAX_LENGTH,
     REDIS_REVOKED_SESSION_PREFIX,
     REFRESH_TOKEN_REUSE_GRACE_SECONDS,
 )
@@ -113,6 +116,97 @@ async def test_login_requires_username_and_password(client: AsyncClient) -> None
     assert response.status_code == 422
     fields = {detail["field"] for detail in response.json()["error"]["details"]}
     assert fields == {"body.username", "body.password"}
+
+
+@pytest.mark.parametrize("username", ["\x00", "an\x00@example.com"])
+async def test_login_rejects_nul_in_username(
+    client: AsyncClient, db_session: AsyncSession, username: str
+) -> None:
+    # PostgreSQL không so sánh được chuỗi chứa NUL: gửi xuống DB là lỗi, API từng trả 500 (#45).
+    await create_user(db_session, email="an@example.com")
+
+    response = await login(client, username, DEFAULT_PASSWORD)
+
+    assert response.status_code == 422
+    [detail] = response.json()["error"]["details"]
+    assert detail["field"] == "body.username"
+    assert messages.NUL_CHARACTER in detail["message"]
+
+
+async def test_login_rejected_by_validation_is_not_counted_for_lock(client: AsyncClient) -> None:
+    # 422 trả trước bước đếm đăng nhập sai: username chứa NUL không khớp được tài khoản nào.
+    for _ in range(LOGIN_MAX_FAILED_ATTEMPTS + 1):
+        response = await login(client, "an\x00@example.com", WRONG_PASSWORD)
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("form", "field"),
+    [
+        pytest.param(
+            {"username": "a" * (EMAIL_MAX_LENGTH + 1), "password": DEFAULT_PASSWORD},
+            "body.username",
+            id="username",
+        ),
+        pytest.param(
+            {"username": "an@example.com", "password": "a" * (PASSWORD_MAX_LENGTH + 1)},
+            "body.password",
+            id="password",
+        ),
+    ],
+)
+async def test_login_rejects_credentials_longer_than_any_account(
+    client: AsyncClient, db_session: AsyncSession, form: dict[str, str], field: str
+) -> None:
+    # Tài khoản nào cũng có email, mật khẩu không quá giới hạn lúc tạo: chuỗi dài hơn không thể
+    # khớp, trả 422 trước khi tra DB, băm mật khẩu.
+    await create_user(db_session, email="an@example.com")
+
+    response = await client.post(LOGIN_URL, data=form)
+
+    assert response.status_code == 422
+    assert [d["field"] for d in response.json()["error"]["details"]] == [field]
+
+
+async def test_login_accepts_credentials_at_max_length(client: AsyncClient) -> None:
+    form = {"username": "a" * EMAIL_MAX_LENGTH, "password": "a" * PASSWORD_MAX_LENGTH}
+
+    response = await client.post(LOGIN_URL, data=form)
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "INVALID_CREDENTIALS"
+
+
+async def test_login_accepts_full_oauth2_form(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    # Nút Authorize của Swagger gửi kèm grant_type, scope, client_id, client_secret.
+    await create_user(db_session, email="an@example.com")
+    form = {
+        "grant_type": "password",
+        "username": "an@example.com",
+        "password": DEFAULT_PASSWORD,
+        "scope": "",
+        "client_id": "swagger",
+        "client_secret": "",
+    }
+
+    response = await client.post(LOGIN_URL, data=form)
+
+    assert response.status_code == 200
+
+
+async def test_login_rejects_other_grant_type(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    await create_user(db_session, email="an@example.com")
+    form = {"grant_type": "client_credentials", "username": "an@example.com", "password": "x"}
+
+    response = await client.post(LOGIN_URL, data=form)
+
+    assert response.status_code == 422
+    assert response.json()["error"]["details"][0]["field"] == "body.grant_type"
 
 
 async def test_swagger_uses_login_endpoint_for_authorize_button(client: AsyncClient) -> None:
