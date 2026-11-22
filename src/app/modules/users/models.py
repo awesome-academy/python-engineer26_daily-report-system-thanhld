@@ -10,6 +10,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Index,
+    Select,
     String,
     and_,
     func,
@@ -145,6 +146,19 @@ Index(
     postgresql_using="gin",
     postgresql_ops={"email_search": "gin_trgm_ops"},
 )
+
+
+def is_employee_in(department_ids: Select[int]) -> ColumnElement[bool]:
+    """Nhân viên của các bộ phận `department_ids` (câu select con): định nghĩa dùng cho M4, M5.
+
+    Nhân viên là role USER như khi manager gỡ thành viên (M2): manager, admin được admin xếp vào
+    bộ phận không do manager quản lý. Tài khoản bị khóa vẫn tính, chỉ bỏ user đã xóa.
+    """
+    return and_(
+        User.role == UserRole.USER,
+        User.deleted_at.is_(None),
+        User.department_id.in_(department_ids),
+    )
 
 
 def order_by_full_name() -> tuple[ColumnElement[Any] | InstrumentedAttribute[Any], ...]:
