@@ -13,8 +13,8 @@ class BodySizeLimitMiddleware:
     dung lượng file (`read_upload`): JSON vào RAM, file multipart ra file tạm. Không chặn ở đây thì
     request chưa đăng nhập cũng làm đầy RAM, ổ đĩa được.
 
-    Không dùng `max_body_size` có sẵn của Starlette: FastAPI không nhận tham số này, và khi endpoint
-    không đọc body thì middleware đó trả lỗi dạng chữ, không theo format lỗi chung.
+    Không dùng `RequestBodyLimitMiddleware` có sẵn của Starlette: khi endpoint không đọc body, nó
+    trả 413 dạng chữ, không theo format lỗi chung.
     """
 
     def __init__(self, app: ASGIApp, max_bytes: int) -> None:
@@ -27,22 +27,39 @@ class BodySizeLimitMiddleware:
             return
 
         # Khai báo trước dung lượng: từ chối ngay, không nhận phần body nào.
-        content_length = Headers(scope=scope).get("content-length", "")
-        if content_length.isdigit() and int(content_length) > self.max_bytes:
+        if declared_length(scope) > self.max_bytes:
             await RequestTooLargeError(self.max_bytes).to_response()(scope, receive, send)
             return
 
         received = 0
+        response_started = False
+
+        async def send_marking_start(message: Message) -> None:
+            nonlocal response_started
+            if message["type"] == "http.response.start":
+                response_started = True
+            await send(message)
 
         async def receive_with_limit() -> Message:
             # Body gửi từng đoạn (không có Content-Length): đếm dần, quá giới hạn thì dừng đọc. Lỗi
             # ném ra trong lúc FastAPI đọc body, exception handler đổi thành response 413.
             nonlocal received
             message = await receive()
-            if message["type"] == "http.request":
+            # Response đã bắt đầu gửi thì không trả 413 được nữa, ném lỗi chỉ làm ngắt response giữa
+            # chừng. Lúc này endpoint đã chạy mà không cần body: chỉ còn Starlette đọc bỏ phần body
+            # còn lại trong lúc gửi StreamingResponse, để biết client ngắt kết nối.
+            if message["type"] == "http.request" and not response_started:
                 received += len(message.get("body", b""))
                 if received > self.max_bytes:
                     raise RequestTooLargeError(self.max_bytes)
             return message
 
-        await self.app(scope, receive_with_limit, send)
+        await self.app(scope, receive_with_limit, send_marking_start)
+
+
+def declared_length(scope: Scope) -> int:
+    """Dung lượng ghi ở header Content-Length; không có, không phải số thì 0 (vẫn đếm byte)."""
+    try:
+        return int(Headers(scope=scope).get("content-length", ""))
+    except ValueError:
+        return 0
