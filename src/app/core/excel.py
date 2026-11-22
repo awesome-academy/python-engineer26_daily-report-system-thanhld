@@ -6,6 +6,7 @@ RAM. openpyxl là thư viện đồng bộ, hàm ghi file chạy trong `asyncio.
 
 import asyncio
 import os
+import re
 from collections.abc import AsyncGenerator
 from tempfile import SpooledTemporaryFile
 from typing import IO, Any
@@ -13,10 +14,17 @@ from typing import IO, Any
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
 from openpyxl.cell import WriteOnlyCell
-from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE, Cell
+from openpyxl.cell.cell import Cell
 from openpyxl.worksheet._write_only import WriteOnlyWorksheet
 
-from app.core.constants import DOWNLOAD_CHUNK_BYTES, EXCEL_SPOOL_MAX_BYTES, XLSX_MEDIA_TYPE
+from app.core.constants import (
+    DOWNLOAD_CHUNK_BYTES,
+    EXCEL_SPOOL_MAX_BYTES,
+    XLSX_MEDIA_TYPE,
+    XML_ILLEGAL_CHARACTERS_PATTERN,
+)
+
+_XML_ILLEGAL_CHARACTERS = re.compile(XML_ILLEGAL_CHARACTERS_PATTERN)
 
 # Response 200 trên Swagger của endpoint trả file .xlsx (mặc định FastAPI ghi là JSON).
 XLSX_FILE_RESPONSE: dict[int | str, dict[str, Any]] = {
@@ -31,10 +39,11 @@ def text_cell(sheet: WriteOnlyWorksheet, value: str | None) -> Cell:
     """Ô chữ từ dữ liệu người dùng nhập: luôn hiện đúng chữ đã nhập, không bao giờ thành công thức.
 
     openpyxl tự coi chuỗi bắt đầu bằng "=" là công thức và "#N/A", "#REF!"… là ô lỗi: nội dung báo
-    cáo "=HYPERLINK(...)" sẽ chạy khi mở file (formula injection). Ký tự điều khiển (trừ tab, xuống
-    dòng) XML của file không chứa được, openpyxl báo lỗi: bỏ đi thay vì để cả file export lỗi.
+    cáo "=HYPERLINK(...)" sẽ chạy khi mở file (formula injection). Ký tự XML của file không chứa
+    được thì bỏ đi: ký tự điều khiển làm openpyxl báo lỗi (500), còn U+FFFE, U+FFFF openpyxl không
+    chặn mà ghi ra file hỏng (Excel báo cần sửa file).
     """
-    text = ILLEGAL_CHARACTERS_RE.sub("", value) if value else None
+    text = _XML_ILLEGAL_CHARACTERS.sub("", value) if value else None
     if not text:
         return WriteOnlyCell(sheet, None)
     cell = WriteOnlyCell(sheet, text)

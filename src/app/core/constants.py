@@ -148,6 +148,9 @@ AVATAR_KEY_PREFIX = "avatars"
 
 # File Excel (.xlsx) tải về: ghi xong ra file tạm rồi gửi từng đoạn DOWNLOAD_CHUNK_BYTES
 # (StreamingResponse). File tạm nhỏ hơn EXCEL_SPOOL_MAX_BYTES giữ trong RAM, lớn hơn thì ra đĩa.
+# Ký tự XML 1.0 không chứa được (ngoài tab, xuống dòng, về đầu dòng): ký tự điều khiển, surrogate,
+# U+FFFE, U+FFFF. Bỏ khỏi chữ người dùng nhập trước khi ghi vào file Excel.
+XML_ILLEGAL_CHARACTERS_PATTERN = "[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]"
 XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 EXCEL_SPOOL_MAX_BYTES = BYTES_PER_MB
 DOWNLOAD_CHUNK_BYTES = 64 * 1024

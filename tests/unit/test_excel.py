@@ -14,9 +14,11 @@ from app.core.excel import iter_file, save_workbook, text_cell, xlsx_response
         ("=1+1", "=1+1"),
         ("#REF!", "#REF!"),
         ("a\x00b\x07c\x1fd", "abcd"),
+        # Ngoài khoảng ký tự XML: openpyxl không chặn, ghi ra là file hỏng.
+        ("a\ufffeb\uffffc\ud800d", "abcd"),
         ("Dòng 1\n\tDòng 2", "Dòng 1\n\tDòng 2"),
     ],
-    ids=["formula", "error-code", "control-chars", "tab-newline"],
+    ids=["formula", "error-code", "control-chars", "xml-noncharacters", "tab-newline"],
 )
 def test_text_cell_keeps_user_text_as_plain_text(value: str, expected: str) -> None:
     workbook = Workbook(write_only=True)
@@ -30,7 +32,7 @@ def test_text_cell_keeps_user_text_as_plain_text(value: str, expected: str) -> N
     assert (cell.value, cell.data_type) == (expected, "s")
 
 
-@pytest.mark.parametrize("value", [None, "", "\x07\x1b"])
+@pytest.mark.parametrize("value", [None, "", "\x07\x1b\uffff"])
 def test_text_cell_leaves_empty_text_blank(value: str | None) -> None:
     workbook = Workbook(write_only=True)
     sheet = workbook.create_sheet()

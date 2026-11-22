@@ -303,18 +303,19 @@ async def test_export_includes_reports_of_locked_and_deleted_authors(
 async def test_user_text_is_written_as_plain_text(
     client: AsyncClient, db_session: AsyncSession, headers: dict[str, str], department: Department
 ) -> None:
-    author = await employee(db_session, department, full_name="=Bình\x07")
+    author = await employee(db_session, department, full_name="=Bình\x07\uffff")
     report = await submit(db_session, author, department)
     report.planned_work = '=HYPERLINK("http://evil.example","Bấm vào")'
     report.actual_work = "#N/A"
-    report.next_day_plan = "Dòng 1\n\tDòng 2\x1b"
+    report.next_day_plan = "Dòng 1\n\tDòng 2\x1b\ufffe"
     await db_session.flush()
 
     response = await client.get(EXPORT_URL, params={"date": DAY.isoformat()}, headers=headers)
 
     assert response.status_code == 200
     cells = sheet_cells(response)[0]
-    # Công thức, mã lỗi trong nội dung vẫn là chữ; ký tự điều khiển (trừ tab, xuống dòng) bị bỏ.
+    # Công thức, mã lỗi trong nội dung vẫn là chữ; ký tự XML không chứa được (điều khiển trừ tab,
+    # xuống dòng; U+FFFE, U+FFFF) bị bỏ, file vẫn mở được.
     assert [(cell.value, cell.data_type) for cell in (cells[2], cells[5], cells[6], cells[8])] == [
         ("=Bình", "s"),
         ('=HYPERLINK("http://evil.example","Bấm vào")', "s"),
