@@ -48,9 +48,47 @@ RecipientIds = Annotated[
     AfterValidator(drop_duplicates),
 ]
 
+# Ví dụ trên Swagger (request, response, lỗi): báo cáo của an.nguyen@example.com (id 5, bộ phận DEV
+# id 1) gửi cho manager.dev@example.com (id 2), khớp dữ liệu seed khi seed vào DB trống.
+EXAMPLE_REPORT_DATE = date(2026, 11, 9)
+_REPORT_CONTENT_EXAMPLE: dict[str, Any] = {
+    "report_date": EXAMPLE_REPORT_DATE.isoformat(),
+    "planned_work": "Làm API hồ sơ cá nhân",
+    "actual_work": "Xong xem, sửa hồ sơ",
+    "incomplete_reason": "Đổi mật khẩu chờ chốt quy tắc",
+    "next_day_plan": "Đổi mật khẩu",
+}
+_REPORT_SUMMARY_EXAMPLE: dict[str, Any] = {
+    "id": 128,
+    **_REPORT_CONTENT_EXAMPLE,
+    "department_id": 1,
+    "created_at": "2026-11-09T10:15:00Z",
+    "updated_at": "2026-11-09T10:15:00Z",
+}
+_RECIPIENT_EXAMPLE: dict[str, Any] = {
+    "id": 2,
+    "full_name": "Trần Minh Quân",
+    "email": "manager.dev@example.com",
+}
+_DEPARTMENT_EXAMPLE: dict[str, Any] = {"id": 1, "code": "DEV", "name": "Phòng Phát triển"}
+_RECIPIENT_USER_EXAMPLE: dict[str, Any] = {**_RECIPIENT_EXAMPLE, "is_deleted": False}
+_AUTHOR_EXAMPLE: dict[str, Any] = {
+    "id": 5,
+    "full_name": "Nguyễn Văn An",
+    "email": "an.nguyen@example.com",
+    "is_deleted": False,
+}
+_REPORT_DETAIL_EXAMPLE: dict[str, Any] = {
+    **_REPORT_SUMMARY_EXAMPLE,
+    "department": _DEPARTMENT_EXAMPLE,
+    "recipients": [_RECIPIENT_USER_EXAMPLE],
+}
+
 
 class RecipientOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True, json_schema_extra={"examples": [_RECIPIENT_EXAMPLE]}
+    )
 
     id: int
     full_name: str
@@ -59,7 +97,12 @@ class RecipientOut(BaseModel):
 
 class ReportCreate(BaseModel):
     # Field lạ trả 422, để client biết dữ liệu đó không được lưu.
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [{**_REPORT_CONTENT_EXAMPLE, "recipient_ids": [_RECIPIENT_EXAMPLE["id"]]}]
+        },
+    )
 
     report_date: date
     planned_work: ReportContent
@@ -78,7 +121,9 @@ class ReportCreate(BaseModel):
 class ReportSummaryOut(BaseModel):
     """Báo cáo không kèm người nhận: phần tử của lịch sử báo cáo, phần chung của các schema sau."""
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True, json_schema_extra={"examples": [_REPORT_SUMMARY_EXAMPLE]}
+    )
 
     id: int
     report_date: date
@@ -92,6 +137,12 @@ class ReportSummaryOut(BaseModel):
 
 
 class ReportOut(ReportSummaryOut):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [{**_REPORT_SUMMARY_EXAMPLE, "recipients": [_RECIPIENT_EXAMPLE]}]
+        }
+    )
+
     recipients: list[RecipientOut]
 
     @field_validator("recipients", mode="before")
@@ -105,7 +156,9 @@ class ReportOut(ReportSummaryOut):
 
 
 class ReportDepartmentOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True, json_schema_extra={"examples": [_DEPARTMENT_EXAMPLE]}
+    )
 
     id: int
     code: str
@@ -114,6 +167,8 @@ class ReportDepartmentOut(BaseModel):
 
 class ReportUserOut(BaseModel):
     """Người viết hoặc người nhận của một báo cáo."""
+
+    model_config = ConfigDict(json_schema_extra={"examples": [_AUTHOR_EXAMPLE]})
 
     id: int
     full_name: str
@@ -134,6 +189,8 @@ class ReportUserOut(BaseModel):
 
 
 class ReportDetailOut(ReportSummaryOut):
+    model_config = ConfigDict(json_schema_extra={"examples": [_REPORT_DETAIL_EXAMPLE]})
+
     # Bộ phận lúc viết báo cáo, có thể khác bộ phận hiện tại của người viết.
     department: ReportDepartmentOut
     recipients: list[ReportUserOut]
@@ -174,6 +231,10 @@ class ManagerReportListParams(DateRangePageParams):
 
 
 class ManagerReportSummaryOut(ReportSummaryOut):
+    model_config = ConfigDict(
+        json_schema_extra={"examples": [{**_REPORT_SUMMARY_EXAMPLE, "author": _AUTHOR_EXAMPLE}]}
+    )
+
     author: ReportUserOut
 
     @classmethod
@@ -186,6 +247,10 @@ class ManagerReportSummaryOut(ReportSummaryOut):
 
 
 class ManagerReportDetailOut(ReportDetailOut):
+    model_config = ConfigDict(
+        json_schema_extra={"examples": [{**_REPORT_DETAIL_EXAMPLE, "author": _AUTHOR_EXAMPLE}]}
+    )
+
     author: ReportUserOut
 
     @classmethod

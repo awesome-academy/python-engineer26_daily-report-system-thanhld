@@ -8,6 +8,14 @@ from app.modules.departments.dependencies import (
     ManagedDepartment,
     ManagedDepartmentForShare,
 )
+from app.modules.departments.exceptions import (
+    DepartmentCodeExistsError,
+    DepartmentNotEmptyError,
+    DepartmentNotFoundError,
+    EmployeeRoleRequiredError,
+    InvalidMemberCandidateError,
+    ManagerRoleRequiredError,
+)
 from app.modules.departments.schemas import (
     DepartmentCreate,
     DepartmentDetailOut,
@@ -22,6 +30,7 @@ from app.modules.departments.schemas import (
     MemberCandidateOut,
     MembersAdd,
 )
+from app.modules.users.exceptions import UserInactiveError, UserNotFoundError
 
 # Include vào nhóm /admin (api/v1.py): role ADMIN được kiểm tra ở nhóm, 401, 403 khai ở nhóm.
 admin_department_router = APIRouter(prefix="/departments", tags=["Admin: bộ phận"])
@@ -49,7 +58,7 @@ async def list_departments(
     status_code=status.HTTP_201_CREATED,
     summary="Tạo bộ phận",
     description="Mã bộ phận được chuyển thành chữ hoa, không trùng với bộ phận chưa bị xóa.",
-    responses=error_responses(status.HTTP_409_CONFLICT, status.HTTP_422_UNPROCESSABLE_CONTENT),
+    responses=error_responses(DepartmentCodeExistsError(), status.HTTP_422_UNPROCESSABLE_CONTENT),
 )
 async def create_department(data: DepartmentCreate, service: DepartmentServiceDep) -> DepartmentOut:
     return DepartmentOut.model_validate(await service.create_department(data))
@@ -58,7 +67,7 @@ async def create_department(data: DepartmentCreate, service: DepartmentServiceDe
 @admin_department_router.get(
     "/{department_id}",
     summary="Xem bộ phận",
-    responses=error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
+    responses=error_responses(DepartmentNotFoundError(), status.HTTP_422_UNPROCESSABLE_CONTENT),
 )
 async def get_department(department_id: IdPath, service: DepartmentServiceDep) -> DepartmentOut:
     return DepartmentOut.model_validate(await service.get_department(department_id))
@@ -69,8 +78,8 @@ async def get_department(department_id: IdPath, service: DepartmentServiceDep) -
     summary="Sửa bộ phận",
     description="Cập nhật từng phần: field không gửi thì giữ nguyên, `null` xóa mô tả.",
     responses=error_responses(
-        status.HTTP_404_NOT_FOUND,
-        status.HTTP_409_CONFLICT,
+        DepartmentNotFoundError(),
+        DepartmentCodeExistsError(),
         status.HTTP_422_UNPROCESSABLE_CONTENT,
     ),
 )
@@ -89,8 +98,8 @@ async def update_department(
         "liên kết manager của bộ phận bị gỡ cùng lúc xóa."
     ),
     responses=error_responses(
-        status.HTTP_404_NOT_FOUND,
-        status.HTTP_409_CONFLICT,
+        DepartmentNotFoundError(),
+        DepartmentNotEmptyError(member_count=3),
         status.HTTP_422_UNPROCESSABLE_CONTENT,
     ),
 )
@@ -105,7 +114,7 @@ async def delete_department(department_id: IdPath, service: DepartmentServiceDep
         "Thành viên là user thuộc bộ phận, sắp theo họ tên (không phân biệt hoa thường, không "
         "dấu), kèm `is_manager` để chọn người gán manager."
     ),
-    responses=error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
+    responses=error_responses(DepartmentNotFoundError(), status.HTTP_422_UNPROCESSABLE_CONTENT),
 )
 async def list_department_members(
     department_id: IdPath, params: PageQuery, service: DepartmentServiceDep
@@ -120,7 +129,7 @@ async def list_department_members(
         "Manager không cần là thành viên bộ phận nên có thể không hiện ở `/members`; xem ở đây để "
         "gỡ. Sắp theo họ tên (không phân biệt hoa thường, không dấu)."
     ),
-    responses=error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
+    responses=error_responses(DepartmentNotFoundError(), status.HTTP_422_UNPROCESSABLE_CONTENT),
 )
 async def list_department_managers(
     department_id: IdPath, params: PageQuery, service: DepartmentServiceDep
@@ -136,7 +145,13 @@ async def list_department_managers(
         "một manager quản lý nhiều bộ phận. Gán lại người đã là manager không lỗi, trả về "
         "thời điểm gán lần đầu."
     ),
-    responses=error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
+    responses=error_responses(
+        DepartmentNotFoundError(),
+        UserNotFoundError(),
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+        ManagerRoleRequiredError(),
+        UserInactiveError(),
+    ),
 )
 async def assign_department_manager(
     department_id: IdPath, data: ManagerAssign, service: DepartmentServiceDep
@@ -152,7 +167,9 @@ async def assign_department_manager(
         "Chỉ gỡ liên kết, tài khoản giữ nguyên. Người không phải manager của bộ phận thì vẫn trả "
         "204; user không tồn tại hoặc đã xóa thì 404."
     ),
-    responses=error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
+    responses=error_responses(
+        DepartmentNotFoundError(), UserNotFoundError(), status.HTTP_422_UNPROCESSABLE_CONTENT
+    ),
 )
 async def remove_department_manager(
     department_id: IdPath, user_id: IdPath, service: DepartmentServiceDep
@@ -190,7 +207,7 @@ async def list_my_departments(
     "/{department_id}",
     summary="Xem bộ phận tôi quản lý",
     description="Kèm các manager của bộ phận (sắp theo họ tên) và số thành viên.",
-    responses=error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
+    responses=error_responses(DepartmentNotFoundError(), status.HTTP_422_UNPROCESSABLE_CONTENT),
 )
 async def get_my_department(
     department: ManagedDepartment, service: DepartmentServiceDep
@@ -205,7 +222,7 @@ async def get_my_department(
         "Tìm theo họ tên (không dấu) hoặc email, sắp theo họ tên (không phân biệt hoa thường, "
         "không dấu). Gồm cả tài khoản bị khóa, kèm `is_manager`."
     ),
-    responses=error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
+    responses=error_responses(DepartmentNotFoundError(), status.HTTP_422_UNPROCESSABLE_CONTENT),
 )
 async def list_my_department_members(
     department: ManagedDepartment,
@@ -224,7 +241,11 @@ async def list_my_department_members(
         "gửi lại không lỗi. Còn id sai thì không thêm ai, trả 422 `INVALID_MEMBER_CANDIDATE` "
         "kèm `invalid_ids`."
     ),
-    responses=error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
+    responses=error_responses(
+        DepartmentNotFoundError(),
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+        InvalidMemberCandidateError(invalid_ids=[42]),
+    ),
 )
 async def add_department_members(
     department: ManagedDepartmentForShare, data: MembersAdd, service: DepartmentServiceDep
@@ -241,7 +262,12 @@ async def add_department_members(
         "user không tồn tại hoặc đã xóa thì 404. Thành viên role khác USER do admin xếp bộ phận: "
         "422 `EMPLOYEE_ROLE_REQUIRED`."
     ),
-    responses=error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
+    responses=error_responses(
+        DepartmentNotFoundError(),
+        UserNotFoundError(),
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+        EmployeeRoleRequiredError(),
+    ),
 )
 async def remove_department_member(
     department: ManagedDepartmentForShare, user_id: IdPath, service: DepartmentServiceDep

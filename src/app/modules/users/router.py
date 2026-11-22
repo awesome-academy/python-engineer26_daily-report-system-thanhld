@@ -3,20 +3,27 @@ from fastapi.responses import StreamingResponse
 
 from app.api.deps import CurrentTokenClaims, CurrentUser, IdPath, Storage
 from app.core.constants import (
+    AVATAR_IMAGE_TYPES,
+    AVATAR_MAX_BYTES,
     AVATAR_MAX_MB,
     AVATAR_TYPES_LABEL,
     LOGIN_ATTEMPT_WINDOW_MINUTES,
     LOGIN_MAX_FAILED_ATTEMPTS,
     SETUP_PASSWORD_TOKEN_EXPIRE_HOURS,
+    USER_IMPORT_MAX_BYTES,
     USER_IMPORT_MAX_MB,
     USER_IMPORT_MAX_ROWS,
     USER_IMPORT_TEMPLATE_FILENAME,
+    XLSX_MEDIA_TYPE,
 )
-from app.core.excel import XLSX_FILE_RESPONSE, xlsx_response
+from app.core.excel import XLSX_FILE_RESPONSE, XlsxTooLargeError, xlsx_response
 from app.core.exceptions import error_responses
 from app.core.pagination import Page
+from app.core.uploads import FileTooLargeError, UnsupportedFileTypeError
 from app.modules.auth.dependencies import AuthServiceDep
+from app.modules.auth.exceptions import TOO_MANY_ATTEMPTS_EXAMPLE, CurrentPasswordIncorrectError
 from app.modules.auth.schemas import TokenResponse
+from app.modules.departments.exceptions import DepartmentNotFoundError
 from app.modules.users.dependencies import (
     AvatarImage,
     AvatarServiceDep,
@@ -24,6 +31,16 @@ from app.modules.users.dependencies import (
     UserImportFile,
     UserImportServiceDep,
     UserServiceDep,
+)
+from app.modules.users.exceptions import (
+    IMPORT_VALIDATION_EXAMPLE,
+    CannotModifyOwnAccountError,
+    EmailAlreadyExistsError,
+    LastActiveAdminError,
+    PasswordAlreadySetError,
+    UserInactiveError,
+    UserManagesDepartmentsError,
+    UserNotFoundError,
 )
 from app.modules.users.schemas import (
     AdminUserCreate,
@@ -79,8 +96,8 @@ async def update_me(
     ),
     responses=error_responses(
         status.HTTP_401_UNAUTHORIZED,
-        status.HTTP_413_CONTENT_TOO_LARGE,
-        status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+        FileTooLargeError(AVATAR_MAX_BYTES),
+        UnsupportedFileTypeError(AVATAR_IMAGE_TYPES),
         status.HTTP_422_UNPROCESSABLE_CONTENT,
     ),
 )
@@ -100,10 +117,10 @@ async def update_my_avatar(
         f"{LOGIN_MAX_FAILED_ATTEMPTS} lần trong {LOGIN_ATTEMPT_WINDOW_MINUTES} phút thì nhận 429."
     ),
     responses=error_responses(
-        status.HTTP_400_BAD_REQUEST,
+        CurrentPasswordIncorrectError(),
         status.HTTP_401_UNAUTHORIZED,
         status.HTTP_422_UNPROCESSABLE_CONTENT,
-        status.HTTP_429_TOO_MANY_REQUESTS,
+        TOO_MANY_ATTEMPTS_EXAMPLE,
     ),
 )
 async def change_my_password(
@@ -138,7 +155,7 @@ async def list_users(params: UserListQuery, user_service: UserServiceDep) -> Pag
         "lúc đó. Email không phân biệt hoa thường, trùng với user chưa bị xóa thì nhận 409."
     ),
     responses=error_responses(
-        status.HTTP_404_NOT_FOUND, status.HTTP_409_CONFLICT, status.HTTP_422_UNPROCESSABLE_CONTENT
+        DepartmentNotFoundError(), EmailAlreadyExistsError(), status.HTTP_422_UNPROCESSABLE_CONTENT
     ),
 )
 async def create_user(data: AdminUserCreate, user_service: UserServiceDep) -> AdminUserOut:
@@ -173,10 +190,12 @@ async def download_import_template(import_service: UserImportServiceDep) -> Stre
         "không phải file .xlsx nhận 415."
     ),
     responses=error_responses(
-        status.HTTP_409_CONFLICT,
-        status.HTTP_413_CONTENT_TOO_LARGE,
-        status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+        EmailAlreadyExistsError(),
+        FileTooLargeError(USER_IMPORT_MAX_BYTES),
+        XlsxTooLargeError(),
+        UnsupportedFileTypeError((XLSX_MEDIA_TYPE,)),
         status.HTTP_422_UNPROCESSABLE_CONTENT,
+        IMPORT_VALIDATION_EXAMPLE,
     ),
 )
 async def import_users(
@@ -191,7 +210,7 @@ async def import_users(
 @admin_users_router.get(
     "/{user_id}",
     summary="Xem user",
-    responses=error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
+    responses=error_responses(UserNotFoundError(), status.HTTP_422_UNPROCESSABLE_CONTENT),
 )
 async def get_user(user_id: IdPath, user_service: UserServiceDep) -> AdminUserOut:
     return AdminUserOut.model_validate(await user_service.get_user(user_id))
@@ -207,9 +226,12 @@ async def get_user(user_id: IdPath, user_service: UserServiceDep) -> AdminUserOu
         "đang hoạt động cuối cùng (409)."
     ),
     responses=error_responses(
-        status.HTTP_400_BAD_REQUEST,
-        status.HTTP_404_NOT_FOUND,
-        status.HTTP_409_CONFLICT,
+        CannotModifyOwnAccountError("is_active"),
+        UserNotFoundError(),
+        DepartmentNotFoundError(),
+        EmailAlreadyExistsError(),
+        UserManagesDepartmentsError(),
+        LastActiveAdminError(),
         status.HTTP_422_UNPROCESSABLE_CONTENT,
     ),
 )
@@ -231,8 +253,9 @@ async def update_user(
         "(Redis lỗi): 503, thử lại sau."
     ),
     responses=error_responses(
-        status.HTTP_404_NOT_FOUND,
-        status.HTTP_409_CONFLICT,
+        UserNotFoundError(),
+        PasswordAlreadySetError(),
+        UserInactiveError(),
         status.HTTP_422_UNPROCESSABLE_CONTENT,
         status.HTTP_503_SERVICE_UNAVAILABLE,
     ),
@@ -251,9 +274,10 @@ async def send_setup_link(user_id: IdPath, user_service: UserServiceDep) -> None
         "đang hoạt động cuối cùng (409)."
     ),
     responses=error_responses(
-        status.HTTP_400_BAD_REQUEST,
-        status.HTTP_404_NOT_FOUND,
-        status.HTTP_409_CONFLICT,
+        CannotModifyOwnAccountError(),
+        UserNotFoundError(),
+        UserManagesDepartmentsError(),
+        LastActiveAdminError(),
         status.HTTP_422_UNPROCESSABLE_CONTENT,
     ),
 )
@@ -269,7 +293,7 @@ async def delete_user(user_id: IdPath, admin: CurrentUser, user_service: UserSer
         'theo họ tên. `keyword` tìm trong họ tên (không phân biệt dấu, hoa thường: "nguyen" khớp '
         '"Nguyễn") hoặc email. `department_id` không phải bộ phận mình quản lý thì nhận 404.'
     ),
-    responses=error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
+    responses=error_responses(DepartmentNotFoundError(), status.HTTP_422_UNPROCESSABLE_CONTENT),
 )
 async def list_employees(
     params: EmployeeListQuery, manager: CurrentUser, user_service: UserServiceDep
@@ -282,7 +306,7 @@ async def list_employees(
     "/{user_id}",
     summary="Xem nhân viên",
     description="Nhân viên không thuộc bộ phận nào mình quản lý trả 404 như id không tồn tại.",
-    responses=error_responses(status.HTTP_404_NOT_FOUND, status.HTTP_422_UNPROCESSABLE_CONTENT),
+    responses=error_responses(UserNotFoundError(), status.HTTP_422_UNPROCESSABLE_CONTENT),
 )
 async def get_employee(
     user_id: IdPath, manager: CurrentUser, user_service: UserServiceDep

@@ -18,6 +18,7 @@ from app.core.constants import (
     CORS_ALLOW_METHODS,
     CORS_EXPOSE_HEADERS,
     LOCAL_STORAGE_URL_PATH,
+    MAX_PAGE_SIZE,
     REQUEST_BODY_MAX_BYTES,
     StorageBackend,
 )
@@ -25,6 +26,33 @@ from app.core.database import engine
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import REQUEST_ID_HEADER, RequestContextMiddleware, configure_logging
 from app.core.redis import redis_client
+
+# Phần đầu trang Swagger (Markdown): cách thử nhanh và quy ước chung, chi tiết ở docs/api-design.md.
+API_DESCRIPTION = f"""\
+Backend API cho hệ thống báo cáo công việc hằng ngày: nhân viên gửi báo cáo, manager theo dõi \
+theo bộ phận, admin quản lý user và bộ phận.
+
+**Thử nhanh**
+
+1. Tạo dữ liệu mẫu: `docker compose exec api daily-report seed --password Matkhau@123`.
+2. Bấm **Authorize**, ô `username` nhập email, ô `password` nhập mật khẩu ở bước 1: \
+`admin@example.com` (ADMIN), `manager.dev@example.com` (MANAGER), `an.nguyen@example.com` (USER).
+3. Gọi endpoint của role đó: nhóm `/admin` cho ADMIN, `/manager` cho MANAGER, `/me/reports` \
+cho USER; `/me` cho mọi role.
+
+Ví dụ request, response dùng dữ liệu mẫu: seed vào DB trống thì bộ phận DEV có id 1, \
+`manager.dev@example.com` id 2, `an.nguyen@example.com` id 5. Ví dụ không hiện field có giá trị \
+`null` (FastAPI bỏ `null` khi xuất OpenAPI): field nào nhận, trả `null` xem ở tab Schema.
+
+**Quy ước**
+
+- Lỗi: `{{"error": {{"code": ..., "message": ..., "details": ...}}}}`, client xử lý theo `code`. \
+Mỗi endpoint có ví dụ cho từng mã lỗi ở phần Responses.
+- Danh sách có phân trang: query `page`, `page_size` (tối đa {MAX_PAGE_SIZE}), response \
+`{{"data": [...], "meta": {{"page": ..., "page_size": ..., "total": ...}}}}`.
+- Ngày báo cáo theo giờ Việt Nam (`2026-11-09`); thời điểm theo UTC, ISO 8601 \
+(`2026-11-09T10:15:03.123456Z`).
+"""
 
 
 @asynccontextmanager
@@ -77,7 +105,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.app_name,
         version=version("daily-report-api"),
-        description="Backend API cho hệ thống báo cáo công việc hằng ngày.",
+        description=API_DESCRIPTION,
         lifespan=lifespan,
     )
 

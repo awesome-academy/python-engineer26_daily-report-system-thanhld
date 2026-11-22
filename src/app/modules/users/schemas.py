@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Annotated, Self
+from typing import Annotated, Any, Self
 
 from fastapi import Query
 from pydantic import (
@@ -65,8 +65,36 @@ Password = Annotated[
 ]
 
 
+# Ví dụ trên Swagger: khớp dữ liệu seed (an.nguyen@example.com là user id 5 thuộc bộ phận DEV id 1
+# khi seed vào DB trống), để thử ngay trên Swagger sau khi seed.
+_USER_EXAMPLE: dict[str, Any] = {
+    "id": 5,
+    "email": "an.nguyen@example.com",
+    "full_name": "Nguyễn Văn An",
+    "phone": "0912345678",
+    "date_of_birth": "1998-05-20",
+    "role": "USER",
+    "is_active": True,
+    "last_login_at": "2026-11-09T01:30:00Z",
+    "created_at": "2026-10-26T02:00:00Z",
+}
+# Tài khoản admin vừa tạo (A1) hoặc import (A4): chưa đặt mật khẩu nên chưa đăng nhập lần nào.
+_NEW_USER_EXAMPLE: dict[str, Any] = {
+    "id": 10,
+    "email": "hoa.do@example.com",
+    "full_name": "Đỗ Thị Hoa",
+    "phone": "0987654321",
+    "date_of_birth": "2000-03-15",
+    "role": "USER",
+    "is_active": True,
+    "last_login_at": None,
+    "created_at": "2026-11-09T03:00:00Z",
+    "department_id": 1,
+}
+
+
 class UserOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, json_schema_extra={"examples": [_USER_EXAMPLE]})
 
     id: int
     email: str
@@ -82,6 +110,17 @@ class UserOut(BaseModel):
 class ProfileOut(UserOut):
     """Hồ sơ của chính mình (`/me`), kèm URL ảnh đại diện."""
 
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    **_USER_EXAMPLE,
+                    "avatar_url": "http://localhost:8001/media/avatars/5/9f1c2b7e4d.png",
+                }
+            ]
+        }
+    )
+
     avatar_url: str | None = Field(
         description="Null khi chưa có ảnh. Backend S3 trả URL ký sẵn có hạn: lấy lại qua GET /me"
     )
@@ -94,17 +133,29 @@ class ProfileOut(UserOut):
 
 
 class AdminUserOut(UserOut):
+    model_config = ConfigDict(
+        json_schema_extra={"examples": [{**_USER_EXAMPLE, "department_id": 1}]}
+    )
+
     department_id: int | None
 
 
 class UserImportResult(BaseModel):
     """Kết quả import: mọi dòng của file đã thành tài khoản, theo thứ tự dòng."""
 
+    model_config = ConfigDict(
+        json_schema_extra={"examples": [{"created_count": 1, "users": [_NEW_USER_EXAMPLE]}]}
+    )
+
     created_count: int
     users: list[AdminUserOut]
 
 
 class EmployeeOut(UserOut):
+    model_config = ConfigDict(
+        json_schema_extra={"examples": [{**_USER_EXAMPLE, "department_id": 1}]}
+    )
+
     # Nhân viên luôn thuộc một bộ phận manager quản lý; manager quản lý nhiều bộ phận thì cần
     # biết người này ở bộ phận nào.
     department_id: int
@@ -124,7 +175,10 @@ class UserProfileUpdate(BaseModel):
     bỏ qua, để client biết thay đổi đó không có hiệu lực.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"examples": [{"phone": "0912345678", "date_of_birth": "1998-05-20"}]},
+    )
 
     full_name: FullName | None = None
     phone: Phone | None = None
@@ -134,6 +188,12 @@ class UserProfileUpdate(BaseModel):
 
 
 class PasswordChange(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [{"current_password": "Matkhau@123", "new_password": "Matkhau@456"}]
+        }
+    )
+
     current_password: Annotated[str, Field(max_length=PASSWORD_MAX_LENGTH)]
     new_password: Password
 
@@ -148,7 +208,18 @@ class PasswordChange(BaseModel):
 class AdminUserCreate(BaseModel):
     """Admin tạo tài khoản. Không có mật khẩu: user tự đặt qua link gửi email (Q8, S2)."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {
+                    key: _NEW_USER_EXAMPLE[key]
+                    for key in ("email", "full_name", "phone", "date_of_birth", "role")
+                }
+                | {"department_id": 1}
+            ]
+        },
+    )
 
     email: Email
     full_name: FullName
@@ -165,7 +236,10 @@ class AdminUserUpdate(BaseModel):
     bắt buộc nên không nhận `null`. `is_active = false` là khóa tài khoản.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"examples": [{"phone": "0987654321", "department_id": 2}]},
+    )
 
     email: Email | None = None
     full_name: FullName | None = None

@@ -6,7 +6,7 @@ Format: {"error": {"code": "...", "message": "...", "details": ...}}
 from collections.abc import Mapping
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Self
 
 import structlog
 from fastapi import FastAPI, Request, status
@@ -18,6 +18,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.core.constants import BYTES_PER_MB
 
 logger = structlog.get_logger(__name__)
+
+VALIDATION_ERROR_MESSAGE = "Dữ liệu không hợp lệ."
 
 
 class ErrorCode(StrEnum):
@@ -118,7 +120,7 @@ class UnprocessableError(AppError):
     """
 
     status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
-    message = "Dữ liệu không hợp lệ."
+    message = VALIDATION_ERROR_MESSAGE
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
@@ -169,10 +171,85 @@ class ErrorResponse(BaseModel):
 
     error: ErrorBody
 
+    @classmethod
+    def from_error(cls, exc: AppError) -> Self:
+        return cls(error=ErrorBody(code=exc.code, message=exc.message, details=exc.details))
 
-def error_responses(*status_codes: int) -> dict[int | str, dict[str, Any]]:
-    """Khai báo response lỗi trên Swagger theo format chung, thay schema mặc định của FastAPI."""
-    return {status_code: {"model": ErrorResponse} for status_code in status_codes}
+
+# Ví dụ trên Swagger cho lỗi validate (422) của mọi endpoint: details là danh sách field sai, tiền
+# tố là vị trí của field (body, query, path).
+_VALIDATION_ERROR_EXAMPLE = ErrorResponse(
+    error=ErrorBody(
+        code=ErrorCode.VALIDATION_ERROR,
+        message=VALIDATION_ERROR_MESSAGE,
+        details=[
+            {
+                "field": "body.email",
+                "message": "value is not a valid email address: An email address must have an "
+                "@-sign.",
+            }
+        ],
+    )
+)
+# Lỗi chung khai bằng HTTP status: mọi endpoint trả cùng mã. Status khác (400, 409, 413…) chỉ có lỗi
+# nghiệp vụ riêng của từng endpoint, phải khai bằng instance lỗi.
+_COMMON_ERRORS: Mapping[int, ErrorResponse] = MappingProxyType(
+    {
+        status.HTTP_401_UNAUTHORIZED: ErrorResponse.from_error(UnauthorizedError()),
+        status.HTTP_403_FORBIDDEN: ErrorResponse.from_error(ForbiddenError()),
+        status.HTTP_404_NOT_FOUND: ErrorResponse.from_error(NotFoundError()),
+        status.HTTP_422_UNPROCESSABLE_CONTENT: _VALIDATION_ERROR_EXAMPLE,
+        status.HTTP_503_SERVICE_UNAVAILABLE: ErrorResponse.from_error(ServiceUnavailableError()),
+    }
+)
+
+
+def error_responses(*errors: int | AppError) -> dict[int | str, dict[str, Any]]:
+    """Khai báo response lỗi trên Swagger theo format chung, kèm ví dụ cho từng lỗi.
+
+    Mỗi phần tử là một ví dụ: instance lỗi nghiệp vụ endpoint có thể trả
+    (`EmailAlreadyExistsError()`) cho ví dụ đúng mã, message, details như lúc chạy; HTTP status
+    cho lỗi chung (`_COMMON_ERRORS`). Các ví dụ cùng status gộp vào một response, Swagger cho chọn
+    từng ví dụ.
+    """
+    examples: dict[int, dict[str, dict[str, Any]]] = {}
+    for error in errors:
+        status_code, body = _error_example(error)
+        value = body.model_dump(mode="json")
+        status_examples = examples.setdefault(status_code, {})
+        if any(example["value"] == value for example in status_examples.values()):
+            msg = f"Ví dụ lỗi {body.error.code} của HTTP {status_code} bị khai hai lần."
+            raise ValueError(msg)
+        # Tên là mã lỗi, kèm field nếu có; hai lỗi khác nhau cùng tên (413 của file tải lên và của
+        # nội dung giải nén) thì đánh số.
+        base_name = _example_name(body.error)
+        name, number = base_name, 1
+        while name in status_examples:
+            number += 1
+            name = f"{base_name} ({number})"
+        status_examples[name] = {"summary": name, "value": value}
+    return {
+        status_code: {
+            "model": ErrorResponse,
+            "content": {"application/json": {"examples": status_examples}},
+        }
+        for status_code, status_examples in examples.items()
+    }
+
+
+def _error_example(error: int | AppError) -> tuple[int, ErrorResponse]:
+    if isinstance(error, AppError):
+        return error.status_code, ErrorResponse.from_error(error)
+    if error not in _COMMON_ERRORS:
+        msg = f"HTTP {error} không có lỗi chung: truyền instance lỗi nghiệp vụ endpoint trả về."
+        raise ValueError(msg)
+    return error, _COMMON_ERRORS[error]
+
+
+def _example_name(error: ErrorBody) -> str:
+    # Cùng mã khác field (NOT_FOUND của user_id, department_id) thì tên ví dụ kèm field.
+    field = error.details.get("field") if isinstance(error.details, dict) else None
+    return f"{error.code}: {field}" if field else error.code
 
 
 def error_response(
@@ -202,7 +279,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         return error_response(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
             ErrorCode.VALIDATION_ERROR,
-            "Dữ liệu không hợp lệ.",
+            VALIDATION_ERROR_MESSAGE,
             details,
         )
 

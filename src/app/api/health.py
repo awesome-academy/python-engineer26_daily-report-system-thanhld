@@ -5,7 +5,7 @@ from typing import Literal
 
 import structlog
 from fastapi import APIRouter, Response, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 from sqlalchemy import text
@@ -22,6 +22,12 @@ router = APIRouter(tags=["Hệ thống"])
 
 
 class HealthResponse(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [{"status": "ok", "checks": {"database": "ok", "redis": "ok"}}]
+        }
+    )
+
     status: CheckStatus
     checks: dict[str, CheckStatus]
 
@@ -49,7 +55,17 @@ async def _check_redis(redis: Redis) -> CheckStatus:
 @router.get(
     "/health",
     summary="Kiểm tra trạng thái hệ thống",
-    responses={status.HTTP_503_SERVICE_UNAVAILABLE: {"model": HealthResponse}},
+    description="Trả 503 khi PostgreSQL hoặc Redis lỗi, `checks` cho biết thành phần nào lỗi.",
+    responses={
+        status.HTTP_503_SERVICE_UNAVAILABLE: {
+            "model": HealthResponse,
+            "content": {
+                "application/json": {
+                    "example": {"status": "error", "checks": {"database": "ok", "redis": "error"}}
+                }
+            },
+        }
+    },
 )
 async def health(session: DbSession, redis: RedisClient, response: Response) -> HealthResponse:
     checks = {
