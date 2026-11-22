@@ -48,11 +48,14 @@ class EmailService:
 
         Dòng SENT kèm key ghi trước khi gửi, cùng transaction với lần gửi: task khác cùng key chạy
         song song phải chờ tới khi transaction này kết thúc rồi thấy key đã có. Gửi lỗi thì
-        rollback (bỏ dòng vừa ghi) rồi ném lỗi ra như `send`, để lần thử lại vẫn gửi được. Commit
-        và rollback cả session, nên người gọi không để thay đổi nào khác chưa commit.
+        rollback (bỏ dòng vừa ghi) rồi ném lỗi ra như `send`, để lần thử lại vẫn gửi được. Mọi
+        nhánh đều kết thúc transaction của cả session (commit hoặc rollback), nên người gọi không
+        để thay đổi nào khác chưa commit.
         """
         email = render_email(template, context)
         if not self.logs.claim(to_email, template, dedup_key):
+            # Không giữ transaction (idle in transaction) suốt phần còn lại của task.
+            self.session.rollback()
             return False
         try:
             self.mailer.send(to_email, email)

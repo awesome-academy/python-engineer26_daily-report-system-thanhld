@@ -95,6 +95,16 @@ def test_send_once_skips_key_already_sent(sync_db_session: Session) -> None:
     assert len(_logs(sync_db_session)) == 1
 
 
+def test_send_once_ends_transaction_when_key_already_sent(sync_db_session: Session) -> None:
+    mailer = FakeMailer()
+    _send_once(sync_db_session, mailer)
+
+    assert _send_once(sync_db_session, mailer) is False
+
+    # Không để kết nối "idle in transaction" suốt phần còn lại của task.
+    assert not sync_db_session.in_transaction()
+
+
 def test_send_once_failure_releases_key_for_retry(sync_db_session: Session) -> None:
     mailer = FakeMailer(errors=[smtplib.SMTPServerDisconnected("mất kết nối")])
 
