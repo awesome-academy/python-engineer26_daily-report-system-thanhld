@@ -290,7 +290,10 @@ class UserImportService:
         users = [
             self._new_user(row.user, department_ids) for row in parsed.rows if row.user is not None
         ]
-        self.users.add_all(users)
+        # Chèn theo thứ tự email, không theo thứ tự dòng: hai import cùng lúc có chung vài email
+        # (xếp khác thứ tự) thì đều chạm unique index theo cùng một thứ tự, request sau chờ request
+        # trước rồi nhận 409. Chèn theo thứ tự dòng thì hai bên giữ khóa chéo nhau (deadlock, 500).
+        self.users.add_all(sorted(users, key=lambda user: user.email.lower()))
         # Import khác, POST /admin/users chạy song song cùng email đều qua được bước kiểm tra trên.
         await commit_unique(self.session, USER_EMAIL_UNIQUE_INDEX, EmailAlreadyExistsError())
         await self._enqueue_setup_emails(users)

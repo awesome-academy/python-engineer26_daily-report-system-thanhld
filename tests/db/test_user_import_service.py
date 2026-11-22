@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import Collection
+from collections.abc import Collection, Sequence
 from datetime import UTC, datetime
 
 import pytest
@@ -16,9 +16,16 @@ from app.modules.users.service import UserImportService
 from tests.factories import create_user
 from tests.helpers import LOCK_WAIT_SECONDS, user_import_file
 
+# Đủ nhiều email để hai lệnh INSERT chạy cùng lúc chạm nhau giữa chừng.
+SHARED_EMAILS = 200
+
 
 async def no_taken_emails(_: UserRepository, __: Collection[str]) -> set[str]:
     return set()
+
+
+async def no_enqueue(_: Sequence[User]) -> None:
+    return None
 
 
 async def test_import_maps_concurrent_duplicate_email_to_email_already_exists(
@@ -67,3 +74,31 @@ async def test_import_waits_for_concurrent_department_delete_and_reports_missing
         async with engine.begin() as connection:
             await connection.execute(delete(User).where(User.email == email))
             await connection.execute(delete(Department).where(Department.id == department.id))
+
+
+async def test_concurrent_imports_with_shared_emails_in_different_order_do_not_deadlock(
+    engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Hai file chung email nhưng xếp ngược nhau: chèn theo thứ tự dòng thì mỗi transaction giữ
+    # một đầu của unique index rồi chờ đầu kia (deadlock, PostgreSQL hủy một bên, API trả 500).
+    monkeypatch.setattr(UserImportService, "_enqueue_setup_emails", staticmethod(no_enqueue))
+    emails = [f"race{index:03d}@example.com" for index in range(SHARED_EMAILS)]
+    forward = user_import_file(*[[email, "Nguyễn Văn An"] for email in emails])
+    backward = user_import_file(*[[email, "Nguyễn Văn An"] for email in reversed(emails)])
+    try:
+        async with AsyncSession(engine) as first, AsyncSession(engine) as second:
+            results = await asyncio.gather(
+                UserImportService(first).import_users(forward),
+                UserImportService(second).import_users(backward),
+                return_exceptions=True,
+            )
+
+        # Request chèn sau chờ request trước commit rồi vấp unique index: 409, không ai bị tạo
+        # trùng.
+        assert sorted(type(result).__name__ for result in results) == [
+            "EmailAlreadyExistsError",
+            "list",
+        ]
+    finally:
+        async with engine.begin() as connection:
+            await connection.execute(delete(User).where(User.email.in_(emails)))
