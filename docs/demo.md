@@ -19,7 +19,13 @@ git log --oneline -1   # commit merge mới nhất của master
 
 ## Dựng môi trường
 
-Làm một lần, trước buổi demo. Stack chạy bằng Docker Compose: API, Celery worker, Celery Beat, PostgreSQL 17, Redis 7, Mailpit. Container `api` tự chạy `alembic upgrade head` khi khởi động. Không cần file `.env`: giá trị mặc định đủ cho demo.
+Làm một lần, trước buổi demo. Stack chạy bằng Docker Compose: API, Celery worker, Celery Beat, PostgreSQL 17, Redis 7, Mailpit. Container `api` tự chạy `alembic upgrade head` khi khởi động.
+
+File `.env` chỉ cần một biến: access token sống 180 phút thay cho 15 phút mặc định, để Authorize 4 tab một lần là dùng hết buổi. Không đặt thì sau 15 phút tab nào cũng báo 401 và phải đăng nhập lại.
+
+```bash
+echo "ACCESS_TOKEN_EXPIRE_MINUTES=180" >> .env
+```
 
 Chạy cả buổi bằng `make debug` thay cho `make dev`: API chạy dưới debugpy (cổng 5678, chỉ mở trên 127.0.0.1), tới cảnh 9 chỉ cần attach VS Code, không phải khởi động lại giữa buổi.
 
@@ -27,6 +33,7 @@ Chạy cả buổi bằng `make debug` thay cho `make dev`: API chạy dưới d
 make debug
 docker compose ps                       # api healthy; worker, beat, postgres, redis, mailpit chạy
 curl http://localhost:8001/health       # "status": "ok"
+docker compose exec api printenv ACCESS_TOKEN_EXPIRE_MINUTES   # 180
 ```
 
 Reset hẳn dữ liệu (xóa volume PostgreSQL, Redis, ảnh đại diện): `docker compose down -v`, rồi `make debug` và làm lại mục "Chuẩn bị dữ liệu".
@@ -55,7 +62,7 @@ Tài khoản mẫu có từ ngày đầu tháng trước, báo cáo các ngày l
 - [ ] Mở sẵn trang Actions của repo, một lần chạy CI xanh (cảnh 10).
 - [ ] Có sẵn video quay buổi tổng duyệt, phòng khi môi trường hỏng.
 
-Access token hết hạn sau 15 phút. Swagger báo 401 giữa buổi thì bấm **Authorize** → **Logout** → đăng nhập lại, mất vài giây.
+Với `ACCESS_TOKEN_EXPIRE_MINUTES=180`, Authorize 4 tab một lần là dùng hết buổi. Authorize sau khi stack đã chạy với biến này: token cấp trước đó vẫn chỉ sống 15 phút.
 
 ## Tài khoản và id
 
@@ -109,7 +116,7 @@ Mục tiêu: cơ chế token và các thao tác tự phục vụ của người 
 
 | Tab | Request | Body, tham số | Kết quả |
 | --- | --- | --- | --- |
-| an | `POST /auth/login` (Try it out) | `username` `an.nguyen@example.com`, `password` `Matkhau@123` | 200, `access_token`, `refresh_token`, `expires_in` 900 |
+| an | `POST /auth/login` (Try it out) | `username` `an.nguyen@example.com`, `password` `Matkhau@123` | 200, `access_token`, `refresh_token`, `expires_in` 10800 (180 phút như đặt trong `.env`; mặc định 900) |
 | an | `POST /auth/refresh` | `{"refresh_token": "<token vừa nhận>"}` | 200, cặp token mới |
 | an | `POST /auth/refresh` | Gửi lại đúng refresh token cũ, trong 30 giây sau bước trên | 401 `UNAUTHORIZED` |
 | an | `GET /me` | | 200, `role` USER, `department` DEV |
@@ -120,6 +127,7 @@ Mục tiêu: cơ chế token và các thao tác tự phục vụ của người 
 
 Nói gì:
 
+- Access token mặc định sống 15 phút, refresh token 7 ngày; buổi demo đặt 180 phút qua `ACCESS_TOKEN_EXPIRE_MINUTES` để không phải đăng nhập lại giữa buổi. Bấm Execute lần hai ngay sau lần refresh đầu: ô body vẫn còn đúng token cũ.
 - Refresh token xoay vòng, mỗi token dùng một lần. Gửi lại token cũ trong 30 giây (client timeout rồi gửi lại) chỉ bị từ chối; sau 30 giây bị coi là token bị lộ: mọi phiên của tài khoản bị thu hồi.
 - Sai mật khẩu 5 lần thì khóa tạm 15 phút (429, header `Retry-After`), đếm theo email kể cả email không tồn tại, nên không dò được email nào có thật. Đăng xuất thu hồi cả phiên ngay: refresh token trong DB, access token qua blacklist Redis.
 - Sửa hồ sơ từng phần; field không được sửa (email, role) hay field lạ trả 422, không bỏ qua âm thầm. Loại ảnh xét theo nội dung file (magic bytes), không theo đuôi: file text đổi đuôi `.png` trả 415. Ảnh lưu local hoặc S3, đổi bằng cấu hình.
@@ -323,11 +331,11 @@ Thiếu giờ: bỏ phần debug, chỉ mở `.vscode/launch.json` và lệnh `m
 
 | Hiện tượng | Nguyên nhân thường gặp | Cách xử lý |
 | --- | --- | --- |
-| Swagger báo 401 giữa buổi | Access token hết hạn (15 phút), hoặc phiên bị thu hồi (gửi lại refresh token cũ sau 30 giây, đổi mật khẩu, bị khóa) | **Authorize** → **Logout** → đăng nhập lại |
+| Swagger báo 401 giữa buổi | Thiếu `ACCESS_TOKEN_EXPIRE_MINUTES=180` trong `.env` nên token chỉ sống 15 phút (đăng nhập thấy `expires_in` 900), hoặc phiên bị thu hồi (gửi lại refresh token cũ sau 30 giây, đổi mật khẩu, bị khóa) | **Authorize** → **Logout** → đăng nhập lại; thiếu biến thì thêm vào `.env`, chạy lại `make debug` |
 | Đăng nhập trả 429 | Sai mật khẩu 5 lần với email đó | Chờ theo `Retry-After` (tối đa 15 phút) hoặc dùng tài khoản khác |
 | Tạo báo cáo hôm nay trả 409 ngay lần đầu | Đã tạo lúc tổng duyệt | `seed --reset` (mục Chuẩn bị dữ liệu), hoặc dùng `binh.tran` |
 | Thống kê tháng không gửi email nào, log `already_sent=3` ngay lần đầu | Đã chạy lúc tổng duyệt | `seed --reset`, hoặc chỉ nói về lần chạy lại |
-| Đăng nhập trả 401 với tài khoản mẫu | Seed lần đầu bằng mật khẩu khác | `seed --reset -y --password Matkhau@123` |
+| Đăng nhập trả 401 "Email hoặc mật khẩu không đúng" | Thiếu đuôi `@example.com` ở username, để nguyên giá trị mẫu `string`, hoặc seed lần đầu bằng mật khẩu khác | Username là email đầy đủ, ví dụ `an.nguyen@example.com`; seed lại bằng `seed --reset -y --password Matkhau@123` |
 | Không thấy email trên Mailpit | Worker chưa chạy hoặc mất kết nối Redis | `docker compose logs worker`; `docker compose restart worker beat` |
 | VS Code không attach được | Stack chạy bằng `make dev` (không có debugpy) | `make debug` (khoảng 30 giây), hoặc bỏ phần debug, chỉ mở `launch.json` |
 | Breakpoint không dừng | Breakpoint đặt ở file ngoài `src/`, hoặc đã đặt lại sai dòng | Đặt lại ở `src/app/modules/reports/service.py` dòng 50 |
