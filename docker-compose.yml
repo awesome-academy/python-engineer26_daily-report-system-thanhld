@@ -13,6 +13,8 @@ services:
       DEBUGPY: ${DEBUGPY:-0}
       DEBUGPY_WAIT: ${DEBUGPY_WAIT:-0}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Thời gian sống của access token (phút). Buổi demo đặt 180 trong .env (docs/demo.md).
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-daily_report}:${POSTGRES_PASSWORD:-daily_report}@postgres:5432/${POSTGRES_DB:-daily_report}
       REDIS_URL: redis://redis:6379/0
       # Lưu trữ file: đặt trong .env (xem .env.example) để đổi sang S3.
