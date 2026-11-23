@@ -50,7 +50,7 @@ Chạy trên stack Docker đầy đủ (API, worker, beat, PostgreSQL 17, Redis 
 
 | Cách thử | Kết quả |
 | --- | --- |
-| Đi hết [kịch bản demo](../demo.md) theo từng vai (107 bước): mã HTTP, mã lỗi, email trên Mailpit, nội dung file Excel | Lần đầu lệch 2 bước (lỗi 2, 3 bên dưới); sau khi sửa đạt 107/107 |
+| Đi hết kịch bản demo bản đầy đủ lúc đó (11 cảnh, 107 bước) theo từng vai: mã HTTP, mã lỗi, email trên Mailpit, nội dung file Excel | Lần đầu lệch 2 bước (lỗi 2, 3 bên dưới); sau khi sửa đạt 107/107 |
 | Postman collection gọi mọi endpoint | 48 request, 97 kiểm tra đạt |
 | Gửi dữ liệu lạ tới mọi endpoint, sinh từ OpenAPI: từng tham số path, query, từng field JSON, form, file, header `Authorization`. Ký tự NUL, surrogate, chuỗi 1 MB, số ngoài phạm vi bigint, JSON lồng 100.000 tầng, JSON hỏng, file giả, tên file lạ | 3.875 request; lỗi 500 chỉ ở đăng nhập (lỗi 1), không request nào chậm quá 3 giây. Sau khi sửa: không còn lỗi 5xx |
 
